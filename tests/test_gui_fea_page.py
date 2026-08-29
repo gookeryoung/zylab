@@ -20,6 +20,23 @@ def test_fea_page_builds(qtbot) -> None:
 
 
 @pytest.mark.gui
+def test_fea_page_panel_width_stable(qtbot) -> None:
+    """求解渲染后左面板宽度不得被绘图区挤压（表单防变形回归）."""
+    page = FeaPage()
+    qtbot.addWidget(page)
+    page.resize(1280, 800)
+    panel = page._solve_button.parentWidget().parentWidget()
+    width_before = panel.width()
+    assert panel.minimumWidth() >= 300
+    mesh = build_cantilever_mesh()
+    materials = [page.current_material]
+    sections = [Section(thickness=page._thickness_spin.value())]
+    case = build_cantilever_case(mesh)
+    page._on_finished(solve_static(mesh, materials, sections, case))
+    assert panel.width() == width_before
+
+
+@pytest.mark.gui
 def test_fea_page_renders_solution(qtbot) -> None:
     """求解完成后应渲染云图并更新结果摘要."""
     page = FeaPage()

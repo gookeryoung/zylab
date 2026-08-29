@@ -133,8 +133,12 @@ class FeaPage(QWidget):
         panel_layout.addWidget(self._build_solve_group())
         panel_layout.addWidget(self._build_result_group())
         panel_layout.addStretch()
+        # 锁定面板宽度区间：绘图区自动范围会推高尺寸提示，QSplitter
+        # 重分配时若面板无下限会被压缩，表单标签换行、控件变形
+        panel.setMinimumWidth(300)
         panel.setMaximumWidth(320)
         splitter.addWidget(panel)
+        splitter.setCollapsible(0, False)
 
         self._plot = pg.PlotWidget(background=theme.current_palette().bg_app)
         self._plot.showGrid(x=True, y=True, alpha=0.3)
