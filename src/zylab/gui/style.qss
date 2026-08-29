@@ -1,0 +1,87 @@
+/* zylab 全局样式表（令牌经 string.Template 替换，禁止硬编码色值） */
+
+QWidget {
+    color: ${COLOR_TEXT_PRIMARY};
+    font-family: ${FONT_FAMILY};
+    font-size: ${FONT_BODY};
+}
+QMainWindow { background-color: ${COLOR_BG_APP}; }
+
+/* 头部条 */
+QFrame#headerBar {
+    background-color: ${COLOR_PRIMARY};
+    min-height: 40px;
+    max-height: 40px;
+}
+QLabel#headerTitle {
+    color: ${COLOR_TEXT_ON_PRIMARY};
+    font-size: ${FONT_TITLE};
+    font-weight: bold;
+}
+QLabel#headerMeta {
+    color: ${COLOR_ACCENT};
+    font-size: ${FONT_CAPTION};
+}
+
+/* 侧边栏 */
+QListWidget#sidebar {
+    background-color: ${COLOR_PRIMARY};
+    color: ${COLOR_TEXT_ON_PRIMARY};
+    border: none;
+    font-size: ${FONT_BODY};
+    outline: none;
+    padding: 8px 0;
+}
+QListWidget#sidebar::item {
+    height: 40px;
+    padding-left: 16px;
+}
+QListWidget#sidebar::item:selected {
+    background-color: ${COLOR_PRIMARY_DARK};
+    border-left: 3px solid ${COLOR_ACCENT};
+}
+QListWidget#sidebar::item:hover {
+    background-color: ${COLOR_PRIMARY_DARK};
+}
+
+/* REPL 输出/输入（等宽字体） */
+QPlainTextEdit#replOutput {
+    font-family: ${FONT_MONO};
+    background-color: ${COLOR_BG_APP};
+    border: 1px solid ${COLOR_BORDER};
+    border-radius: ${RADIUS_MD};
+    padding: 8px;
+}
+QPlainTextEdit#replInput {
+    font-family: ${FONT_MONO};
+    background-color: ${COLOR_BG_MUTED};
+    border: 1px solid ${COLOR_PRIMARY};
+    border-radius: ${RADIUS_MD};
+    padding: 8px;
+}
+
+/* 变量浏览器 */
+QTableView#varBrowser {
+    border: 1px solid ${COLOR_BORDER};
+    border-radius: ${RADIUS_MD};
+    gridline-color: ${COLOR_BORDER};
+}
+
+/* 状态栏 */
+QStatusBar {
+    background-color: ${COLOR_BG_MUTED};
+    color: ${COLOR_TEXT_SECONDARY};
+    font-size: ${FONT_CAPTION};
+    min-height: 28px;
+    max-height: 28px;
+}
+
+/* 滚动条 */
+QScrollBar:vertical { background: transparent; width: 8px; margin: 0; }
+QScrollBar::handle:vertical {
+    background: ${COLOR_BORDER};
+    border-radius: 4px;
+    min-height: 32px;
+}
+QScrollBar::handle:vertical:hover { background: ${COLOR_TEXT_SECONDARY}; }
+QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical { height: 0; }
