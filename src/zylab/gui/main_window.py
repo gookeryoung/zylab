@@ -10,6 +10,7 @@ from zylab.core import EventBus, default_data_dir
 
 from . import theme
 from .app import apply_theme, save_theme_name
+from .icons import NAV_ICON_NAMES, nav_icon
 from .pages.console_page import ConsolePage
 from .pages.fea_page import FeaPage
 from .pages.plot_page import PlotPage
@@ -22,6 +23,7 @@ from .qt_compat import (
     QListWidget,
     QListWidgetItem,
     QMainWindow,
+    QSize,
     QSplitter,
     QStackedWidget,
     Qt,
@@ -36,6 +38,9 @@ _PAGE_PLOT = 1
 _PAGE_FEA = 2
 _PAGE_SCRIPT = 3
 _PAGE_ABOUT = 4
+
+#: 侧边栏图标显示尺寸（像素）
+_NAV_ICON_SIZE = QSize(18, 18)
 
 
 class MainWindow(QMainWindow):
@@ -74,8 +79,10 @@ class MainWindow(QMainWindow):
         self._sidebar = QListWidget(objectName="sidebar")
         for label in ("控制台", "绘图", "分析", "脚本", "关于"):
             QListWidgetItem(label, self._sidebar)
+        self._sidebar.setIconSize(_NAV_ICON_SIZE)
         self._sidebar.setFixedWidth(theme.SIDEBAR_WIDTH)
         self._sidebar.setCurrentRow(_PAGE_CONSOLE)
+        self._refresh_sidebar_icons()
 
         self._stack = QStackedWidget()
         self._console_page = ConsolePage(self._kernel, self._history)
@@ -125,7 +132,17 @@ class MainWindow(QMainWindow):
             return
         apply_theme(QApplication.instance(), name)
         save_theme_name(default_data_dir(), name)
+        self._refresh_sidebar_icons()
         self.statusBar().showMessage(f"主题已切换: {theme.current_palette().display_name}")
+
+    def _refresh_sidebar_icons(self) -> None:
+        """按当前主题色重绘侧边栏图标（选中行用强调色）."""
+        pal = theme.current_palette()
+        for row, name in enumerate(NAV_ICON_NAMES):
+            item = self._sidebar.item(row)
+            if item is not None:
+                color = pal.nav_accent if row == self._sidebar.currentRow() else pal.nav_text
+                item.setIcon(nav_icon(name, color))
 
     def _build_about_page(self) -> QWidget:
         """构建关于页."""
@@ -141,6 +158,7 @@ class MainWindow(QMainWindow):
     def _connect(self) -> None:
         """连接导航与跨页信号."""
         self._sidebar.currentRowChanged.connect(self._stack.setCurrentIndex)
+        self._sidebar.currentRowChanged.connect(lambda _row: self._refresh_sidebar_icons())
         # 绘图请求渲染后自动切换到绘图页
         self._plot_page.plot_shown.connect(lambda: self._sidebar.setCurrentRow(_PAGE_PLOT))
 

@@ -54,3 +54,25 @@ def test_main_window_sidebar_switch(qtbot, isolated_data_dir: Path) -> None:
     qtbot.addWidget(win)
     win._sidebar.setCurrentRow(2)
     assert win._stack.currentIndex() == 2
+
+
+@pytest.mark.gui
+def test_main_window_sidebar_icons(qtbot, isolated_data_dir: Path) -> None:
+    """侧边栏导航项应有非空图标（SVG 着色加载成功）."""
+    win = MainWindow()
+    qtbot.addWidget(win)
+    for row in range(win._sidebar.count()):
+        assert not win._sidebar.item(row).icon().isNull(), f"第 {row} 项图标为空"
+
+
+@pytest.mark.gui
+def test_main_window_icons_follow_theme(qtbot, isolated_data_dir: Path) -> None:
+    """切换主题后侧边栏图标应重新着色（选中行 accent 三主题互不相同）."""
+    win = MainWindow()
+    qtbot.addWidget(win)
+    combo = win._theme_combo
+    next_index = (combo.currentIndex() + 1) % combo.count()
+    before = win._sidebar.item(0).icon().pixmap(18, 18).toImage()
+    combo.setCurrentIndex(next_index)
+    after = win._sidebar.item(0).icon().pixmap(18, 18).toImage()
+    assert before != after

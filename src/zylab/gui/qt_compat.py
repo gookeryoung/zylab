@@ -6,8 +6,17 @@ GUI 模块一律从这里导入 Qt 符号，版本差异（exec_/exec、枚举�
 from __future__ import annotations
 
 try:
-    from PySide6.QtCore import QAbstractTableModel, QModelIndex, QObject, Qt, QTimer, Signal, Slot
-    from PySide6.QtGui import QFont, QKeyEvent, QTextCursor
+    from PySide6.QtCore import (
+        QAbstractTableModel,
+        QModelIndex,
+        QObject,
+        QSize,
+        Qt,
+        QTimer,
+        Signal,
+        Slot,
+    )
+    from PySide6.QtGui import QColor, QFont, QIcon, QKeyEvent, QPainter, QPixmap, QTextCursor
     from PySide6.QtWidgets import (
         QAbstractItemView,
         QApplication,
@@ -39,12 +48,21 @@ except ImportError:  # pragma: no cover（3.8 环境走此分支）
         QAbstractTableModel,
         QModelIndex,
         QObject,
+        QSize,
         Qt,
         QTimer,
         Signal,
         Slot,
     )
-    from PySide2.QtGui import QFont, QKeyEvent, QTextCursor  # type: ignore[missing-import]
+    from PySide2.QtGui import (  # type: ignore[missing-import]
+        QColor,
+        QFont,
+        QIcon,
+        QKeyEvent,
+        QPainter,
+        QPixmap,
+        QTextCursor,
+    )
     from PySide2.QtWidgets import (  # type: ignore[missing-import]
         QAbstractItemView,
         QApplication,
@@ -77,6 +95,7 @@ __all__ = [
     "QAbstractItemView",
     "QAbstractTableModel",
     "QApplication",
+    "QColor",
     "QComboBox",
     "QDoubleSpinBox",
     "QFont",
@@ -85,6 +104,7 @@ __all__ = [
     "QGroupBox",
     "QHBoxLayout",
     "QHeaderView",
+    "QIcon",
     "QKeyEvent",
     "QLabel",
     "QLineEdit",
@@ -93,9 +113,12 @@ __all__ = [
     "QMainWindow",
     "QModelIndex",
     "QObject",
+    "QPainter",
+    "QPixmap",
     "QPlainTextEdit",
     "QProgressBar",
     "QPushButton",
+    "QSize",
     "QSplitter",
     "QStackedWidget",
     "QTableView",

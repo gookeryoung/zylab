@@ -88,7 +88,8 @@ QListWidget#sidebar {
 }
 QListWidget#sidebar::item {
     height: 40px;
-    padding-left: 16px;
+    padding-left: 13px;
+    border-left: 3px solid transparent;
     color: ${QSS_NAV_TEXT};
 }
 QListWidget#sidebar::item:selected {
