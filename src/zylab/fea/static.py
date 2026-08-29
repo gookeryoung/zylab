@@ -7,7 +7,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Sequence
+from typing import Callable, Sequence
 
 import numpy as np
 
@@ -20,6 +20,10 @@ from .mesh import ElementType, Mesh
 from .solve import solve_system
 
 __all__ = ["ElementResult", "StaticSolution", "solve_static"]
+
+
+def _no_report(_progress: float, _message: str) -> None:
+    """空进度回调（未注入 report 时使用）."""
 
 
 @dataclass(frozen=True)
@@ -69,6 +73,7 @@ def solve_static(
     materials: Sequence[LinearElastic],
     sections: Sequence[Section],
     case: StaticCase,
+    report: Callable[[float, str], None] | None = None,
 ) -> StaticSolution:
     """线性静力分析主流程（小位移、线弹性）.
 
@@ -77,26 +82,36 @@ def solve_static(
         materials: 材料表（ElementBlock.material 索引引用）。
         sections: 截面表（ElementBlock.section 索引引用）。
         case: 静力工况（约束 + 节点载荷）。
+        report: 进度回调 ``(progress, message)``；进程执行器会自动注入
+            （见 :mod:`zylab.core.executor` 的任务协议）。
 
     Returns:
         :class:`StaticSolution`，含位移/反力/单元应力/应变能。
     """
+    progress = _no_report if report is None else report
+
+    progress(0.05, "校验工况")
     case.validate(mesh)
+    progress(0.3, "装配整体刚度矩阵")
     k_global = assemble_stiffness(mesh, materials, sections)
     force = assemble_loads(mesh, case)
     fixed_dofs, fixed_values = _expand_constraints(mesh, case.constraints)
+    progress(0.6, "求解线性方程组")
     u, reactions = solve_system(k_global, force, fixed_dofs, fixed_values)
 
     reaction_map = {int(dof): float(val) for dof, val in zip(fixed_dofs, reactions)}
+    progress(0.9, "恢复单元应力")
     results = _recover_stresses(mesh, materials, u)
     energy = 0.5 * float(u @ (k_global @ u))
-    return StaticSolution(
+    solution = StaticSolution(
         mesh=mesh,
         displacements=u.reshape(mesh.n_nodes, mesh.dim).copy(),
         reactions=reaction_map,
         element_results=results,
         strain_energy=energy,
     )
+    progress(1.0, "求解完成")
+    return solution
 
 
 def _expand_constraints(mesh: Mesh, constraints: Sequence[Constraint]) -> tuple[np.ndarray, np.ndarray]:

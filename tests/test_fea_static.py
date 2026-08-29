@@ -291,3 +291,21 @@ class TestHex8Uniaxial:
 
         # 应变能 = 0.5 σ ε V
         np.testing.assert_allclose(solution.strain_energy, 0.5 * 100.0 * delta * delta, rtol=1e-12)
+
+
+def test_solve_static_progress_report() -> None:
+    """report 回调应收到单调递增进度且以 1.0 收尾."""
+    mesh = _tria_mesh(3, 3)
+    case = StaticCase(
+        constraints=(Constraint(0, (0, 1)), Constraint(1, (0,))),
+        loads=(NodalLoad(4, (0.0, 1.0)),),
+    )
+    reports: list[tuple[float, str]] = []
+    solution = solve_static(mesh, [MAT_PLANE], [UNIT], case, report=lambda p, m: reports.append((p, m)))
+    # 无回调路径同样可解
+    assert solution.strain_energy > 0.0
+    progresses = [p for p, _ in reports]
+    assert progresses[0] == 0.05
+    assert progresses[-1] == 1.0
+    assert all(b >= a for a, b in zip(progresses, progresses[1:]))
+    assert any(m for _, m in reports)

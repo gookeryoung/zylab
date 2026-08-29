@@ -108,6 +108,22 @@ def test_execute_plot_command_publishes_event() -> None:
     assert len(received) == 1
 
 
+def test_run_script_executes_multiline() -> None:
+    """run_script 应以 exec 模式执行多语句脚本."""
+    kernel = ReplKernel()
+    result = kernel.run_script("x = 1 + 2\nprint(x * 10)\n")
+    assert result.error is None
+    assert "30" in result.stdout
+    assert kernel.namespace["x"] == 3
+
+
+def test_run_script_syntax_error() -> None:
+    """脚本语法错误应返回 error 而不抛异常."""
+    result = ReplKernel().run_script("def broken(:\n")
+    assert result.error is not None
+    assert "SyntaxError" in result.error
+
+
 def test_run_file_executes_script(tmp_path) -> None:
     """run 应执行脚本并共享命名空间."""
     script = tmp_path / "demo.py"

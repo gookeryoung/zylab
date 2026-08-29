@@ -126,6 +126,18 @@ class ReplKernel:
             return ExecResult(source=source, incomplete=True)
         return self._exec_code(code_obj, source)
 
+    def run_script(self, source: str) -> ExecResult:
+        """执行多行脚本文本（``exec`` 模式，语句结果不回显）.
+
+        :param source: 脚本源码。
+        :returns: ExecResult；语法错误时 error 非空。
+        """
+        try:
+            code_obj = compile(source, filename="<script>", mode="exec")
+        except (SyntaxError, OverflowError, ValueError):
+            return ExecResult(source=source, error=traceback.format_exc(limit=0))
+        return self._exec_code(code_obj, source)
+
     def run_file(self, path: str | Path) -> ExecResult:
         """执行脚本文件（``exec`` 模式，脚本末尾表达式不打印）.
 

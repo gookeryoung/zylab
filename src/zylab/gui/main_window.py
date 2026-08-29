@@ -10,7 +10,9 @@ from zylab.core import EventBus, default_data_dir
 
 from . import theme
 from .pages.console_page import ConsolePage
+from .pages.fea_page import FeaPage
 from .pages.plot_page import PlotPage
+from .pages.script_page import ScriptPage
 from .qt_compat import (
     QFrame,
     QHBoxLayout,
@@ -29,7 +31,9 @@ __all__ = ["MainWindow"]
 
 _PAGE_CONSOLE = 0
 _PAGE_PLOT = 1
-_PAGE_ABOUT = 2
+_PAGE_FEA = 2
+_PAGE_SCRIPT = 3
+_PAGE_ABOUT = 4
 
 
 class MainWindow(QMainWindow):
@@ -66,7 +70,7 @@ class MainWindow(QMainWindow):
 
         splitter = QSplitter(Qt.Horizontal)
         self._sidebar = QListWidget(objectName="sidebar")
-        for label in ("控制台", "绘图", "关于"):
+        for label in ("控制台", "绘图", "分析", "脚本", "关于"):
             QListWidgetItem(label, self._sidebar)
         self._sidebar.setFixedWidth(theme.SIDEBAR_WIDTH)
         self._sidebar.setCurrentRow(_PAGE_CONSOLE)
@@ -74,9 +78,13 @@ class MainWindow(QMainWindow):
         self._stack = QStackedWidget()
         self._console_page = ConsolePage(self._kernel, self._history)
         self._plot_page = PlotPage(self._bus)
+        self._fea_page = FeaPage()
+        self._script_page = ScriptPage(self._kernel)
         self._about_page = self._build_about_page()
         self._stack.addWidget(self._console_page)
         self._stack.addWidget(self._plot_page)
+        self._stack.addWidget(self._fea_page)
+        self._stack.addWidget(self._script_page)
         self._stack.addWidget(self._about_page)
 
         splitter.addWidget(self._sidebar)
@@ -117,6 +125,7 @@ class MainWindow(QMainWindow):
         self._plot_page.plot_shown.connect(lambda: self._sidebar.setCurrentRow(_PAGE_PLOT))
 
     def closeEvent(self, event) -> None:  # Qt 命名约定
-        """关闭时持久化命令历史."""
+        """关闭时持久化命令历史并终止后台求解执行器."""
         self._history.save()
+        self._fea_page.shutdown()
         super().closeEvent(event)
