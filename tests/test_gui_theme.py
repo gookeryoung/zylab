@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from pathlib import Path
 
 import pytest
@@ -144,6 +145,72 @@ class TestQssTokens:
     def test_dark_differs_from_light(self) -> None:
         """深色主题样式表应不同于浅色."""
         assert load_stylesheet(theme.LIGHT) != load_stylesheet(theme.DARK)
+
+    @pytest.mark.parametrize("pal", ALL_THEMES, ids=lambda p: p.name)
+    def test_arrow_svg_tokens_resolved(self, pal: theme.Palette) -> None:
+        """箭头 SVG 资源路径应注入 QSS 且文件存在、颜色随主题."""
+        qss = load_stylesheet(pal)
+        urls = re.findall(r"image: url\(([^)]+\.svg)\)", qss)
+        assert len(urls) == 4  # 主题下拉/通用下拉/spinbox 上下
+        for url in urls:
+            assert Path(url).exists()
+        # 生成的 SVG 含当前主题次级文字色
+        content = Path(urls[0]).read_text(encoding="utf-8")
+        assert pal.text_secondary.lstrip("#").lower() in content.lower()
+
+
+# ---------------------------------------------------------------------------
+# 箭头形状回归（Qt QSS 不支持 border 画三角，曾整体渲染成实心方块）
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.gui
+class TestArrowShapes:
+    @staticmethod
+    def _dark_zone(widget, right_w: int = 24) -> list[int]:
+        """抓取控件右侧按钮区，返回每行深色像素数（形状签名）."""
+        img = widget.grab().toImage()
+        w, h = img.width(), img.height()
+        rows: list[int] = []
+        for y in range(h):
+            count = 0
+            for x in range(w - right_w, w):
+                c = img.pixelColor(x, y)
+                if c.alpha() > 50 and (c.red() + c.green() + c.blue()) < 400:
+                    count += 1
+            if count:
+                rows.append(count)
+        return rows
+
+    def test_spinbox_arrows_are_triangles(self, qtbot) -> None:
+        """SpinBox 上下箭头应为三角形（逐行变宽/变窄），不是恒宽方块."""
+        from zylab.gui.app import create_app
+        from zylab.gui.qt_compat import QDoubleSpinBox
+
+        create_app()
+        spin = QDoubleSpinBox()
+        qtbot.addWidget(spin)
+        spin.resize(140, 28)
+        spin.show()
+        rows = self._dark_zone(spin)
+        # 上下两个三角：中间宽两端窄，且存在宽度差（方块则恒定）
+        assert rows, "箭头未渲染"
+        assert max(rows) > min(rows) * 2, f"箭头形状异常（疑似方块）: {rows}"
+
+    def test_combobox_arrow_is_triangle(self, qtbot) -> None:
+        """ComboBox 下拉箭头应为下指三角."""
+        from zylab.gui.app import create_app
+        from zylab.gui.qt_compat import QComboBox
+
+        create_app()
+        combo = QComboBox()
+        combo.addItem("示例")
+        qtbot.addWidget(combo)
+        combo.resize(140, 28)
+        combo.show()
+        rows = self._dark_zone(combo)
+        assert rows, "箭头未渲染"
+        assert max(rows) > min(rows) * 2, f"箭头形状异常（疑似方块）: {rows}"
 
 
 # ---------------------------------------------------------------------------

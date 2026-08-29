@@ -67,10 +67,11 @@ QComboBox#headerThemeCombo {
     min-height: 0;
 }
 QComboBox#headerThemeCombo:hover { background-color: ${QSS_NAV_BG_HOVER}; }
+/* 箭头用 SVG 资源：Qt QSS 不支持 border 画三角（渲染成实心方块） */
 QComboBox#headerThemeCombo::down-arrow {
-    border-top: 5px solid ${QSS_NAV_TEXT};
-    border-left: 4px solid transparent;
-    border-right: 4px solid transparent;
+    image: url(${QSS_ARROW_DOWN});
+    width: 10px;
+    height: 6px;
 }
 QComboBox#headerThemeCombo QAbstractItemView {
     background-color: ${QSS_NAV_BG};
@@ -219,10 +220,9 @@ QComboBox:disabled {
 }
 QComboBox::drop-down { border: none; width: 22px; }
 QComboBox::down-arrow {
-    width: 0; height: 0;
-    border-left: 4px solid transparent;
-    border-right: 4px solid transparent;
-    border-top: 6px solid ${QSS_TEXT_SECONDARY};
+    image: url(${QSS_ARROW_DOWN});
+    width: 10px;
+    height: 6px;
 }
 QComboBox QAbstractItemView {
     background-color: ${QSS_BG_APP};
@@ -263,16 +263,14 @@ QSpinBox::down-button, QDoubleSpinBox::down-button {
     width: 18px;
 }
 QSpinBox::up-arrow, QDoubleSpinBox::up-arrow {
-    width: 0; height: 0;
-    border-left: 4px solid transparent;
-    border-right: 4px solid transparent;
-    border-bottom: 5px solid ${QSS_TEXT_SECONDARY};
+    image: url(${QSS_ARROW_UP});
+    width: 10px;
+    height: 6px;
 }
 QSpinBox::down-arrow, QDoubleSpinBox::down-arrow {
-    width: 0; height: 0;
-    border-left: 4px solid transparent;
-    border-right: 4px solid transparent;
-    border-top: 5px solid ${QSS_TEXT_SECONDARY};
+    image: url(${QSS_ARROW_DOWN});
+    width: 10px;
+    height: 6px;
 }
 
 /* 复选/单选 */

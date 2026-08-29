@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 import sys
+import tempfile
 from pathlib import Path
 from string import Template
 
@@ -23,12 +24,36 @@ logger = logging.getLogger(__name__)
 
 _THEME_FILE = "theme.txt"
 
+# 箭头三角形 SVG 模板（QSS image 引用；Qt QSS 不支持 border 画三角，
+# 须用位图/矢量资源），颜色由主题令牌注入
+_ARROW_SVG = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 10 6"><path d="{path}" fill="{color}"/></svg>'
+_ARROW_UP_PATH = "M0 6 L5 0 L10 6 Z"
+_ARROW_DOWN_PATH = "M0 0 L10 0 L5 6 Z"
+
+
+def _write_arrow_svgs(pal: theme.Palette) -> dict[str, str]:
+    """按主题色生成上/下箭头 SVG 到临时缓存目录，返回 QSS 令牌映射.
+
+    每次加载样式表都重写（主题切换后颜色同步）；目录固定、
+    文件名固定，QSS 中 url() 引用其 POSIX 绝对路径。
+    """
+    cache = Path(tempfile.gettempdir()) / "zylab-icons"
+    cache.mkdir(parents=True, exist_ok=True)
+    color = pal.text_secondary
+    tokens: dict[str, str] = {}
+    for name, path_data in (("arrow-up", _ARROW_UP_PATH), ("arrow-down", _ARROW_DOWN_PATH)):
+        target = cache / f"{name}.svg"
+        target.write_text(_ARROW_SVG.format(path=path_data, color=color), encoding="utf-8")
+        tokens[f"QSS_{name.upper().replace('-', '_')}"] = target.as_posix()
+    return tokens
+
 
 def load_stylesheet(palette: theme.Palette | None = None) -> str:
-    """加载 QSS 并替换当前主题的设计令牌占位符."""
+    """加载 QSS 并替换当前主题的设计令牌占位符（含箭头 SVG 资源路径）."""
     pal = palette if palette is not None else theme.current_palette()
     qss_path = Path(__file__).parent / "style.qss"
-    return Template(qss_path.read_text(encoding="utf-8")).substitute(theme.qss_tokens(pal))
+    tokens = {**theme.qss_tokens(pal), **_write_arrow_svgs(pal)}
+    return Template(qss_path.read_text(encoding="utf-8")).substitute(tokens)
 
 
 def apply_theme(app: QApplication, name: str) -> theme.Palette:
