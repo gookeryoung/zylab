@@ -10,7 +10,8 @@
 - :mod:`zylab.fea.static`：静力分析编排与结果；
 - :mod:`zylab.fea.modal`：模态分析编排与结果；
 - :mod:`zylab.fea.harmonic`：谐响应分析编排与结果（Rayleigh 阻尼）；
-- :mod:`zylab.fea.buckling`：线性屈曲分析编排与结果（杆/梁几何刚度）。
+- :mod:`zylab.fea.buckling`：线性屈曲分析编排与结果（杆/梁几何刚度）；
+- :mod:`zylab.fea.nonlinear`：几何非线性静力（TRUSS2 大位移 Newton-Raphson）。
 """
 
 from __future__ import annotations
@@ -25,12 +26,15 @@ from .elements import (
     element_stiffness,
     element_stress,
     element_stress_at,
+    truss2_internal_force,
+    truss2_tangent_stiffness,
 )
 from .errors import ElementError, MeshError, SolverError
 from .harmonic import HarmonicResponse, solve_harmonic
 from .material import LinearElastic, Section, StressState
 from .mesh import ElementBlock, ElementType, Mesh, element_dofs_per_node
 from .modal import ModalSolution, solve_modal
+from .nonlinear import NonlinearSolution, solve_nonlinear_static
 from .static import ElementResult, StaticSolution, solve_static
 
 __all__ = [
@@ -48,6 +52,7 @@ __all__ = [
     "MeshError",
     "ModalSolution",
     "NodalLoad",
+    "NonlinearSolution",
     "Section",
     "SolverError",
     "StaticCase",
@@ -67,5 +72,8 @@ __all__ = [
     "solve_buckling",
     "solve_harmonic",
     "solve_modal",
+    "solve_nonlinear_static",
     "solve_static",
+    "truss2_internal_force",
+    "truss2_tangent_stiffness",
 ]

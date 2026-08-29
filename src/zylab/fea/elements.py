@@ -28,6 +28,8 @@ __all__ = [
     "element_stiffness",
     "element_stress",
     "element_stress_at",
+    "truss2_internal_force",
+    "truss2_tangent_stiffness",
 ]
 
 _GEOM_TOL = 1.0e-12
@@ -637,6 +639,93 @@ def element_mass(
     if etype is ElementType.HEX8:
         return _hex8_mass(coords, material.density)
     raise ElementError(f"不支持的单元类型: {etype}")  # pragma: no cover（枚举闭合）
+
+
+def _truss2_current_length(coords: np.ndarray, u_elem: np.ndarray) -> tuple[np.ndarray, float, float]:
+    """计算当前构型杆向量、当前长度与原长.
+
+    Returns:
+        (当前节点差向量 c, 当前长度 L, 原长 L0)。
+    """
+    delta = coords[1] - coords[0]
+    length0 = float(np.linalg.norm(delta))
+    if length0 <= _GEOM_TOL:
+        raise ElementError("杆单元两节点重合，长度为零")
+    disp = u_elem.reshape(2, -1)
+    c = delta + disp[1] - disp[0]
+    length = float(np.linalg.norm(c))
+    if length <= _GEOM_TOL:
+        raise ElementError("杆单元当前构型退化（长度为零），载荷步过大")
+    return c, length, length0
+
+
+def truss2_internal_force(
+    coords: np.ndarray,
+    u_elem: np.ndarray,
+    e_modulus: float,
+    area: float,
+) -> np.ndarray:
+    """杆单元非线性内力（总拉格朗日格式，Green-Lagrange 应变）.
+
+    ``E = (L² - L0²)/(2L0²)``，PK2 应力 ``S = E·E_modulus``，
+    内力 ``f_int = (S·A/L0)·[−c; c]``（c 为当前构型节点差向量）。
+    刚体转动 L = L0 时内力恰为 0（几何精确性）。
+
+    Args:
+        coords: 单元节点坐标 ``(2, dim)``。
+        u_elem: 单元节点位移（展平，长度 ``2*dim``）。
+        e_modulus: 弹性模量。
+        area: 截面面积。
+
+    Returns:
+        节点等效力 ``(2*dim,)``（节点 1 取负、节点 2 取正）。
+
+    Raises:
+        ElementError: 几何退化（原长或当前长度为零）时抛出。
+    """
+    c, length, length0 = _truss2_current_length(coords, u_elem)
+    strain = (length * length - length0 * length0) / (2.0 * length0 * length0)
+    stiffness = e_modulus * area * strain / length0
+    return stiffness * np.concatenate((-c, c))
+
+
+def truss2_tangent_stiffness(
+    coords: np.ndarray,
+    u_elem: np.ndarray,
+    e_modulus: float,
+    area: float,
+) -> np.ndarray:
+    """杆单元非线性切线刚度（与 :func:`truss2_internal_force` 一致的导数）.
+
+    节点块结构 ``K[i][j] = ±(k·I + EA·L²/L0³·n nᵀ)``，
+    ``k = S·A/L0``，n 为当前构型单位方向向量。
+    小位移极限退化为线性刚度 ``EA/L0·n nᵀ``。
+
+    Args:
+        coords: 单元节点坐标 ``(2, dim)``。
+        u_elem: 单元节点位移（展平，长度 ``2*dim``）。
+        e_modulus: 弹性模量。
+        area: 截面面积。
+
+    Returns:
+        切线刚度矩阵 ``(2*dim, 2*dim)``（对称）。
+
+    Raises:
+        ElementError: 几何退化时抛出。
+    """
+    c, length, length0 = _truss2_current_length(coords, u_elem)
+    n = c / length
+    strain = (length * length - length0 * length0) / (2.0 * length0 * length0)
+    k_secant = e_modulus * area * strain / length0
+    k_tangent = e_modulus * area * length * length / (length0**3)
+    dim = coords.shape[1]
+    block = k_secant * np.eye(dim) + k_tangent * np.outer(n, n)
+    matrix = np.zeros((2 * dim, 2 * dim))
+    matrix[:dim, :dim] = block
+    matrix[dim:, dim:] = block
+    matrix[:dim, dim:] = -block
+    matrix[dim:, :dim] = -block
+    return matrix
 
 
 def element_geometric_stiffness(
