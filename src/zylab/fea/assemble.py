@@ -14,12 +14,12 @@ import numpy as np
 from scipy.sparse import csr_matrix
 
 from .boundary import BodyForce, EdgePressure, StaticCase
-from .elements import element_measure, element_stiffness
+from .elements import element_mass, element_measure, element_stiffness
 from .errors import MeshError
 from .material import LinearElastic, Section
 from .mesh import ElementBlock, ElementType, Mesh
 
-__all__ = ["assemble_loads", "assemble_stiffness", "element_dofs"]
+__all__ = ["assemble_loads", "assemble_mass", "assemble_stiffness", "element_dofs"]
 
 # 连续体单元族（可施加体力；杆/梁的自重等分布载荷 v1 暂不涉及）
 _CONTINUUM_TYPES = frozenset({ElementType.TRIA3, ElementType.QUAD4, ElementType.TET4, ElementType.HEX8})
@@ -67,6 +67,46 @@ def assemble_stiffness(
             values.append(ke.ravel())
     if not rows:  # pragma: no cover（Mesh 校验已保证块非空，但 blocks 可为空元组）
         raise MeshError("网格无单元，无法装配刚度矩阵")
+    row = np.concatenate(rows)
+    col = np.concatenate(cols)
+    value = np.concatenate(values)
+    return csr_matrix((value, (row, col)), shape=(mesh.n_dofs, mesh.n_dofs))
+
+
+def assemble_mass(
+    mesh: Mesh,
+    materials: Sequence[LinearElastic],
+    sections: Sequence[Section],
+) -> csr_matrix:
+    """装配全局一致质量矩阵（CSR）.
+
+    Args:
+        mesh: 网格。
+        materials: 材料表（须配置正的质量密度）。
+        sections: 截面表（ElementBlock.section 索引引用）。
+
+    Returns:
+        全局质量矩阵 ``(n_dofs, n_dofs)`` CSR 稀疏矩阵。
+
+    Raises:
+        MeshError: 材料/截面索引越界或密度非正时抛出。
+    """
+    _check_tables(mesh, materials, sections)
+    rows: list[np.ndarray] = []
+    cols: list[np.ndarray] = []
+    values: list[np.ndarray] = []
+    for block in mesh.blocks:
+        material = materials[block.material]
+        section = sections[block.section]
+        for conn in block.conn:
+            dofs = element_dofs(mesh, conn)
+            me = element_mass(block.etype, mesh.coords[conn], material, section)
+            n_dof_elem = dofs.size
+            rows.append(np.repeat(dofs, n_dof_elem))
+            cols.append(np.tile(dofs, n_dof_elem))
+            values.append(me.ravel())
+    if not rows:  # pragma: no cover（Mesh 校验已保证块非空，但 blocks 可为空元组）
+        raise MeshError("网格无单元，无法装配质量矩阵")
     row = np.concatenate(rows)
     col = np.concatenate(cols)
     value = np.concatenate(values)

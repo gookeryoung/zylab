@@ -15,13 +15,13 @@ from .pages.fea_page import FeaPage
 from .pages.plot_page import PlotPage
 from .pages.script_page import ScriptPage
 from .qt_compat import (
+    QComboBox,
     QFrame,
     QHBoxLayout,
     QLabel,
     QListWidget,
     QListWidgetItem,
     QMainWindow,
-    QPushButton,
     QSplitter,
     QStackedWidget,
     Qt,
@@ -98,36 +98,33 @@ class MainWindow(QMainWindow):
         self.setCentralWidget(central)
 
     def _build_header(self) -> QFrame:
-        """构建头部条：左侧标题，右侧主题切换与运行环境信息."""
+        """构建头部条：左侧标题，右侧主题下拉与运行环境信息."""
         bar = QFrame(objectName="headerBar")
         layout = QHBoxLayout(bar)
         layout.setContentsMargins(theme.SPACING_MD, 0, theme.SPACING_MD, 0)
         layout.addWidget(QLabel("zylab", objectName="headerTitle"))
         layout.addStretch()
-        self._theme_button = QPushButton(objectName="headerBtn")
-        self._theme_button.setToolTip("点击切换界面主题")
-        self._theme_button.clicked.connect(self._cycle_theme)
-        layout.addWidget(self._theme_button)
-        self._refresh_theme_button()
+        self._theme_combo = QComboBox(objectName="headerThemeCombo")
+        self._theme_combo.setToolTip("选择界面主题")
+        for name in theme.THEMES:
+            self._theme_combo.addItem(theme.palette(name).display_name, name)
+        current = theme.current_palette().name
+        self._theme_combo.setCurrentIndex(list(theme.THEMES).index(current))
+        self._theme_combo.currentIndexChanged.connect(self._on_theme_selected)
+        layout.addWidget(self._theme_combo)
         meta = QLabel(f"Python {platform.python_version()} · v{__version__}", objectName="headerMeta")
         layout.addWidget(meta)
         return bar
 
-    def _refresh_theme_button(self) -> None:
-        """按当前主题刷新切换按钮文案."""
-        pal = theme.current_palette()
-        self._theme_button.setText(f"主题: {pal.display_name}")
-
-    def _cycle_theme(self) -> None:
-        """循环切换主题（浅色 → 深色 → 高对比）并持久化."""
+    def _on_theme_selected(self, index: int) -> None:
+        """下拉选择主题后应用并持久化."""
         from .qt_compat import QApplication
 
-        names = list(theme.THEMES)
-        current = theme.current_palette().name
-        next_name = names[(names.index(current) + 1) % len(names)]
-        apply_theme(QApplication.instance(), next_name)
-        self._refresh_theme_button()
-        save_theme_name(default_data_dir(), next_name)
+        name = self._theme_combo.itemData(index)
+        if name == theme.current_palette().name:
+            return
+        apply_theme(QApplication.instance(), name)
+        save_theme_name(default_data_dir(), name)
         self.statusBar().showMessage(f"主题已切换: {theme.current_palette().display_name}")
 
     def _build_about_page(self) -> QWidget:

@@ -54,6 +54,29 @@ QPushButton#headerBtn {
 QPushButton#headerBtn:hover { background-color: ${QSS_NAV_BG_HOVER}; }
 QPushButton#headerBtn:pressed { background-color: ${QSS_NAV_BG_SELECTED}; }
 
+/* 头部条主题下拉（nav 色系） */
+QComboBox#headerThemeCombo {
+    background-color: transparent;
+    color: ${QSS_NAV_TEXT};
+    border: 1px solid ${QSS_NAV_ACCENT};
+    border-radius: ${RADIUS_SM};
+    padding: 2px 24px 2px 10px;
+    min-height: 0;
+}
+QComboBox#headerThemeCombo:hover { background-color: ${QSS_NAV_BG_HOVER}; }
+QComboBox#headerThemeCombo::down-arrow {
+    border-top: 5px solid ${QSS_NAV_TEXT};
+    border-left: 4px solid transparent;
+    border-right: 4px solid transparent;
+}
+QComboBox#headerThemeCombo QAbstractItemView {
+    background-color: ${QSS_NAV_BG};
+    color: ${QSS_NAV_TEXT};
+    border: 1px solid ${QSS_NAV_ACCENT};
+    selection-background-color: ${QSS_NAV_BG_SELECTED};
+    selection-color: ${QSS_NAV_TEXT};
+}
+
 /* ------------------------------------------------ 侧边栏 */
 QListWidget#sidebar {
     background-color: ${QSS_NAV_BG};

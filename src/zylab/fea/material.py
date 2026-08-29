@@ -32,11 +32,13 @@ class LinearElastic:
         e_modulus: 弹性模量 E（> 0）。
         poisson: 泊松比 nu（平面应变/空间单元要求 < 0.5）。
         state: 应力状态，平面单元默认平面应力。
+        density: 质量密度（> 0；模态/动力分析必需，静力默认 0）。
     """
 
     e_modulus: float
     poisson: float = 0.0
     state: StressState = StressState.PLANE_STRESS
+    density: float = 0.0
 
     def __post_init__(self) -> None:
         """校验材料参数范围."""
@@ -44,6 +46,8 @@ class LinearElastic:
             raise ElementError(f"弹性模量须为正，实际 E={self.e_modulus}")
         if self.poisson < -1.0 or self.poisson >= 0.5:
             raise ElementError(f"泊松比须在 [-1, 0.5) 内，实际 nu={self.poisson}")
+        if self.density < 0.0:
+            raise ElementError(f"质量密度须非负，实际 rho={self.density}")
 
     @property
     def shear_modulus(self) -> float:

@@ -1,4 +1,4 @@
-"""单元库：刚度矩阵与应力恢复（v1 静力内核）.
+"""单元库：刚度矩阵、质量矩阵与应力恢复（v1 静力/模态内核）.
 
 支持单元族：
 - TRUSS2：2 节点杆（平面/空间），每节点 dim 个平动自由度；
@@ -10,6 +10,7 @@
 
 应变分量顺序：平面 (εxx, εyy, γxy)，空间 (εxx, εyy, εzz, γxy, γyz, γxz)。
 单元自由度顺序：节点优先，节点内按 x/y/z 分量（梁附转角分量）。
+质量矩阵为一致质量（∫ ρ N^T N dV），杆/梁为解析公式，等参单元高斯数值积分。
 """
 
 from __future__ import annotations
@@ -20,7 +21,7 @@ from .errors import ElementError
 from .material import LinearElastic, Section
 from .mesh import ElementType
 
-__all__ = ["element_measure", "element_stiffness", "element_stress", "element_stress_at"]
+__all__ = ["element_mass", "element_measure", "element_stiffness", "element_stress", "element_stress_at"]
 
 _GEOM_TOL = 1.0e-12
 
@@ -47,6 +48,21 @@ def _truss2_stiffness(coords: np.ndarray, e_modulus: float, area: float) -> np.n
     t[0, :dim] = c
     t[1, dim:] = c
     return t.T @ k_local @ t
+
+
+def _truss2_mass(coords: np.ndarray, density: float, area: float) -> np.ndarray:
+    """杆单元一致质量（ρAL/6 [2,1;1,2] 各向同性块对角展开到全局）.
+
+    质量无方向性，不能沿方向余弦投影变换（否则横向自由度质量为零，
+    质量矩阵奇异）；与刚度矩阵的方向余弦变换不同，此处按节点块直接展开。
+    """
+    delta = coords[1] - coords[0]
+    length = float(np.linalg.norm(delta))
+    if length <= _GEOM_TOL:
+        raise ElementError("杆单元两节点重合，长度为零")
+    dim = coords.shape[1]
+    m_scalar = density * area * length / 6.0 * np.array([[2.0, 1.0], [1.0, 2.0]])
+    return np.kron(m_scalar, np.eye(dim))
 
 
 def _truss2_axial_stress(coords: np.ndarray, e_modulus: float, u_elem: np.ndarray) -> float:
@@ -98,6 +114,38 @@ def _beam2_stiffness(coords: np.ndarray, e_modulus: float, area: float, inertia:
         t[base + 1, base + 1] = c
         t[base + 2, base + 2] = 1.0
     return t.T @ k_local @ t
+
+
+def _beam2_mass(coords: np.ndarray, density: float, area: float) -> np.ndarray:
+    """平面梁单元一致质量（轴向线性插值 + 横向 Hermite 插值，经坐标变换）.
+
+    转动惯量项（回转半径平方乘质量）未计入（Euler-Bernoulli 细梁常规做法）。
+    """
+    delta = coords[1] - coords[0]
+    length = float(np.linalg.norm(delta))
+    if length <= _GEOM_TOL:
+        raise ElementError("梁单元两节点重合，长度为零")
+    c, s = float(delta[0] / length), float(delta[1] / length)
+    r = density * area * length
+    m_local = r * np.array(
+        [
+            [1.0 / 3.0, 0.0, 0.0, 1.0 / 6.0, 0.0, 0.0],
+            [0.0, 13.0 / 35.0, 11.0 * length / 210.0, 0.0, 9.0 / 70.0, -13.0 * length / 420.0],
+            [0.0, 11.0 * length / 210.0, length**2 / 105.0, 0.0, 13.0 * length / 420.0, -(length**2) / 210.0],
+            [1.0 / 6.0, 0.0, 0.0, 1.0 / 3.0, 0.0, 0.0],
+            [0.0, 9.0 / 70.0, 13.0 * length / 420.0, 0.0, 13.0 / 35.0, -11.0 * length / 210.0],
+            [0.0, -13.0 * length / 420.0, -(length**2) / 210.0, 0.0, -11.0 * length / 210.0, length**2 / 105.0],
+        ]
+    )
+    t = np.zeros((6, 6))
+    for node in (0, 1):
+        base = 3 * node
+        t[base, base] = c
+        t[base, base + 1] = s
+        t[base + 1, base] = -s
+        t[base + 1, base + 1] = c
+        t[base + 2, base + 2] = 1.0
+    return t.T @ m_local @ t
 
 
 def _beam2_stress(
@@ -167,6 +215,25 @@ def _tria3_stiffness(coords: np.ndarray, dmat: np.ndarray, thickness: float) -> 
     return thickness * area * (b.T @ dmat @ b)
 
 
+def _tria3_mass(coords: np.ndarray, density: float, thickness: float) -> np.ndarray:
+    """CST 一致质量（ρtA/12 [2,1,1;...] 标量块展开为 2 DOF 块对角）."""
+    _, area = _tria3_b_matrix(coords)
+    m_scalar = (
+        density
+        * thickness
+        * area
+        / 12.0
+        * np.array(
+            [
+                [2.0, 1.0, 1.0],
+                [1.0, 2.0, 1.0],
+                [1.0, 1.0, 2.0],
+            ]
+        )
+    )
+    return np.kron(m_scalar, np.eye(2))
+
+
 # ---------------------------------------------------------------------------
 # QUAD4：4 节点等参四边形（2x2 高斯）
 # ---------------------------------------------------------------------------
@@ -178,6 +245,18 @@ def _quad4_shape_derivs(xi: float, eta: float) -> np.ndarray:
         [
             [-(1.0 - eta), (1.0 - eta), (1.0 + eta), -(1.0 + eta)],
             [-(1.0 - xi), -(1.0 + xi), (1.0 + xi), (1.0 - xi)],
+        ]
+    )
+
+
+def _quad4_shape_values(xi: float, eta: float) -> np.ndarray:
+    """Q4 形函数值 (4,)（节点顺序与导数函数一致）."""
+    return 0.25 * np.array(
+        [
+            (1.0 - xi) * (1.0 - eta),
+            (1.0 + xi) * (1.0 - eta),
+            (1.0 + xi) * (1.0 + eta),
+            (1.0 - xi) * (1.0 + eta),
         ]
     )
 
@@ -210,6 +289,17 @@ def _quad4_stiffness(coords: np.ndarray, dmat: np.ndarray, thickness: float) -> 
             b, det_j = _quad4_b_matrix(coords, xi, eta)
             ke += det_j * thickness * (b.T @ dmat @ b)
     return ke
+
+
+def _quad4_mass(coords: np.ndarray, density: float, thickness: float) -> np.ndarray:
+    """Q4 一致质量（2x2 高斯积分 ρt Σ w |J| N^T N，标量块展开为 2 DOF）."""
+    m_scalar = np.zeros((4, 4))
+    for xi in (-_GAUSS_ABSCISSA, _GAUSS_ABSCISSA):
+        for eta in (-_GAUSS_ABSCISSA, _GAUSS_ABSCISSA):
+            n = _quad4_shape_values(xi, eta)
+            _, det_j = _quad4_b_matrix(coords, xi, eta)
+            m_scalar += det_j * np.outer(n, n)
+    return np.kron(density * thickness * m_scalar, np.eye(2))
 
 
 def _quad4_stress(coords: np.ndarray, dmat: np.ndarray, u_elem: np.ndarray) -> np.ndarray:
@@ -263,6 +353,13 @@ def _tet4_stiffness(coords: np.ndarray, dmat: np.ndarray) -> np.ndarray:
     return volume * (b.T @ dmat @ b)
 
 
+def _tet4_mass(coords: np.ndarray, density: float) -> np.ndarray:
+    """TET4 一致质量（ρV/20 [2,1,1,1;...] 标量块展开为 3 DOF）."""
+    _, volume = _tet4_geometry(coords)
+    m_scalar = density * volume / 20.0 * (np.eye(4) + np.ones((4, 4)))
+    return np.kron(m_scalar, np.eye(3))
+
+
 # ---------------------------------------------------------------------------
 # HEX8：8 节点等参六面体（2x2x2 高斯）
 # ---------------------------------------------------------------------------
@@ -293,6 +390,12 @@ def _hex8_shape_derivs(xi: float, eta: float, zeta: float) -> np.ndarray:
         dn[1, i] = se * (1.0 + xi * sx) * (1.0 + zeta * sz) / 8.0
         dn[2, i] = sz * (1.0 + xi * sx) * (1.0 + eta * se) / 8.0
     return dn
+
+
+def _hex8_shape_values(xi: float, eta: float, zeta: float) -> np.ndarray:
+    """HEX8 形函数值 (8,)（节点顺序与符号表一致）."""
+    signs = _HEX8_SIGNS
+    return np.array([(1.0 + xi * sx) * (1.0 + eta * se) * (1.0 + zeta * sz) / 8.0 for sx, se, sz in signs])
 
 
 def _hex8_b_matrix(coords: np.ndarray, xi: float, eta: float, zeta: float) -> tuple[np.ndarray, float]:
@@ -332,6 +435,18 @@ def _hex8_stiffness(coords: np.ndarray, dmat: np.ndarray) -> np.ndarray:
                 b, det_j = _hex8_b_matrix(coords, xi, eta, zeta)
                 ke += det_j * (b.T @ dmat @ b)
     return ke
+
+
+def _hex8_mass(coords: np.ndarray, density: float) -> np.ndarray:
+    """HEX8 一致质量（2x2x2 高斯积分 ρ Σ w |J| N^T N，标量块展开为 3 DOF）."""
+    m_scalar = np.zeros((8, 8))
+    for xi in (-_GAUSS_ABSCISSA, _GAUSS_ABSCISSA):
+        for eta in (-_GAUSS_ABSCISSA, _GAUSS_ABSCISSA):
+            for zeta in (-_GAUSS_ABSCISSA, _GAUSS_ABSCISSA):
+                n = _hex8_shape_values(xi, eta, zeta)
+                _, det_j = _hex8_b_matrix(coords, xi, eta, zeta)
+                m_scalar += det_j * np.outer(n, n)
+    return np.kron(density * m_scalar, np.eye(3))
 
 
 def _hex8_stress(coords: np.ndarray, dmat: np.ndarray, u_elem: np.ndarray) -> np.ndarray:
@@ -420,6 +535,45 @@ def element_stiffness(
         return _tet4_stiffness(coords, material.d_matrix())
     if etype is ElementType.HEX8:
         return _hex8_stiffness(coords, material.d_matrix())
+    raise ElementError(f"不支持的单元类型: {etype}")  # pragma: no cover（枚举闭合）
+
+
+def element_mass(
+    etype: ElementType,
+    coords: np.ndarray,
+    material: LinearElastic,
+    section: Section,
+) -> np.ndarray:
+    """按单元类型计算一致质量矩阵（全局坐标系）.
+
+    杆/梁为解析公式，等参单元为高斯数值积分 ``∫ ρ N^T N dV``。
+
+    Args:
+        etype: 单元类型。
+        coords: 单元节点坐标 ``(n_node, dim)``。
+        material: 线弹性材料（须配置正的质量密度）。
+        section: 截面属性（杆/梁取面积，平面单元取厚度）。
+
+    Returns:
+        单元质量矩阵，形状与单元刚度矩阵一致 ``(n_node*每节点 DOF, ...)``。
+
+    Raises:
+        ElementError: 密度非正或单元几何退化时抛出。
+    """
+    if material.density <= 0.0:
+        raise ElementError(f"模态分析须提供正的质量密度，实际 rho={material.density}")
+    if etype is ElementType.TRUSS2:
+        return _truss2_mass(coords, material.density, section.area)
+    if etype is ElementType.BEAM2:
+        return _beam2_mass(coords, material.density, section.area)
+    if etype is ElementType.TRIA3:
+        return _tria3_mass(coords, material.density, section.thickness)
+    if etype is ElementType.QUAD4:
+        return _quad4_mass(coords, material.density, section.thickness)
+    if etype is ElementType.TET4:
+        return _tet4_mass(coords, material.density)
+    if etype is ElementType.HEX8:
+        return _hex8_mass(coords, material.density)
     raise ElementError(f"不支持的单元类型: {etype}")  # pragma: no cover（枚举闭合）
 
 

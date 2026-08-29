@@ -190,24 +190,29 @@ class TestThemePersistence:
 
 
 # ---------------------------------------------------------------------------
-# 主窗口主题切换按钮
+# 主窗口主题下拉框
 # ---------------------------------------------------------------------------
 
 
 class TestMainWindowThemeSwitch:
-    def test_cycle_theme(self, qtbot, monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
-        """点击主题按钮应循环切换并持久化到数据目录."""
+    def test_select_theme(self, qtbot, monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+        """下拉选择主题应立即应用并持久化到数据目录."""
         monkeypatch.setattr("zylab.gui.main_window.default_data_dir", lambda: tmp_path)
         from zylab.gui.main_window import MainWindow
 
         win = MainWindow()
         qtbot.addWidget(win)
         assert theme.current_palette().name == "light"
-        win._theme_button.click()
+        # 初始下拉应显示当前主题
+        assert win._theme_combo.currentIndex() == 0
+        # 选择深色
+        win._theme_combo.setCurrentIndex(1)
         assert theme.current_palette().name == "dark"
         assert (tmp_path / "theme.txt").read_text(encoding="utf-8") == "dark"
-        win._theme_button.click()
+        # 选择高对比
+        win._theme_combo.setCurrentIndex(2)
         assert theme.current_palette().name == "high_contrast"
-        win._theme_button.click()
-        assert theme.current_palette().name == "light"  # 循环回起点
+        # 选回浅色
+        win._theme_combo.setCurrentIndex(0)
+        assert theme.current_palette().name == "light"
         theme.set_current_theme(theme.DEFAULT_THEME)
