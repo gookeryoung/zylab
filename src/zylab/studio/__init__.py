@@ -6,7 +6,9 @@
 - :mod:`zylab.studio.nodes`：节点执行函数（源节点建模 + 五类分析节点）；
 - :mod:`zylab.studio.template`：模板定义与 JSON 加载/校验；
 - :mod:`zylab.studio.registry`：模板注册表（内置 + 用户目录）；
-- :mod:`zylab.studio.builtin`：内置模板表。
+- :mod:`zylab.studio.builtin`：内置模板表；
+- :mod:`zylab.studio.graph`：工作流图（节点状态机 + 级联脏传播 + 拓扑执行计划）；
+- :mod:`zylab.studio.runner`：编排执行（拓扑序驱动 ProcessExecutor，缓存命中跳过）。
 """
 
 from __future__ import annotations
@@ -21,6 +23,7 @@ from .errors import (
     TemplateError,
     TemplateNotFoundError,
 )
+from .graph import NodeInstance, NodeState, WorkflowGraph
 from .module import (
     BUILTIN_MODULES,
     ModuleCategory,
@@ -33,6 +36,7 @@ from .module import (
     module_spec,
 )
 from .registry import TemplateRegistry
+from .runner import NodeRunEvent, WorkflowRunner
 from .template import ParamGroup, Template, TemplateNode, load_template, template_from_json
 
 __all__ = [
@@ -43,6 +47,9 @@ __all__ = [
     "ModuleCategory",
     "ModuleNotFoundError_",
     "ModuleSpec",
+    "NodeInstance",
+    "NodeRunEvent",
+    "NodeState",
     "ParamError",
     "ParamGroup",
     "ParamSpec",
@@ -55,6 +62,8 @@ __all__ = [
     "TemplateNode",
     "TemplateNotFoundError",
     "TemplateRegistry",
+    "WorkflowGraph",
+    "WorkflowRunner",
     "all_modules",
     "load_template",
     "module_spec",

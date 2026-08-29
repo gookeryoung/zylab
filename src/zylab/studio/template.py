@@ -130,6 +130,9 @@ class Template:
             except ParamError as exc:
                 raise TemplateError(f"模板 {self.id!r} 节点 {n.id!r} 参数非法: {exc}") from exc
             self._validate_node_links(n, spec)
+            for port in spec.inputs:
+                if port.name not in n.inputs:
+                    raise TemplateError(f"模板 {self.id!r} 节点 {n.id!r} 缺输入连接: {port.name!r}")
         for ref in self.results:
             self.node(ref)  # 结果引用必须存在
         for group in self.param_groups:

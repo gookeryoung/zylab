@@ -184,6 +184,19 @@ class TestLinkValidation:
         with pytest.raises(TemplateError, match="无输入端口"):
             Template.from_dict(self._linked({"ghost": "model.model"}))
 
+    def test_missing_required_input(self) -> None:
+        """必填输入端口未接."""
+        raw = {
+            "id": "t",
+            "name": "t",
+            "nodes": [
+                {"id": "model", "type": "example.truss2_two_bar"},
+                {"id": "solve", "type": "analysis.static"},
+            ],
+        }
+        with pytest.raises(TemplateError, match="缺输入连接"):
+            Template.from_dict(raw)
+
     def test_port_type_mismatch(self) -> None:
         """端口类型不匹配（解端口接回模型输入）."""
         raw = {
