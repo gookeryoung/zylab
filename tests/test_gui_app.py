@@ -13,7 +13,7 @@ def test_load_stylesheet_replaces_tokens() -> None:
     """QSS 加载后不应残留令牌占位符."""
     qss = load_stylesheet()
     assert "${" not in qss
-    assert "#0887A0" in qss  # COLOR_PRIMARY
+    assert "#056574" in qss  # 默认浅色主题主色
 
 
 @pytest.mark.gui

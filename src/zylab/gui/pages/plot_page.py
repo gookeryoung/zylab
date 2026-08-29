@@ -21,9 +21,10 @@ class PlotPage(QWidget):
     def __init__(self, bus: EventBus, parent: QWidget | None = None) -> None:
         """初始化绘图页并订阅绘图事件."""
         super().__init__(parent)
-        self._plot = pg.PlotWidget(background=theme.COLOR_BG_APP)
+        pal = theme.current_palette()
+        self._plot = pg.PlotWidget(background=pal.bg_app)
         self._plot.showGrid(x=True, y=True, alpha=0.3)
-        self._pen = pg.mkPen(theme.COLOR_PRIMARY, width=2)
+        self._pen = pg.mkPen(pal.primary, width=2)
         layout = QVBoxLayout(self)
         layout.setContentsMargins(theme.SPACING_MD, theme.SPACING_MD, theme.SPACING_MD, theme.SPACING_MD)
         layout.addWidget(self._plot)

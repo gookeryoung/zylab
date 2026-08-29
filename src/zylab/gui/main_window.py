@@ -9,6 +9,7 @@ from zylab.console import CommandHistory, ReplKernel
 from zylab.core import EventBus, default_data_dir
 
 from . import theme
+from .app import apply_theme, save_theme_name
 from .pages.console_page import ConsolePage
 from .pages.fea_page import FeaPage
 from .pages.plot_page import PlotPage
@@ -20,6 +21,7 @@ from .qt_compat import (
     QListWidget,
     QListWidgetItem,
     QMainWindow,
+    QPushButton,
     QSplitter,
     QStackedWidget,
     Qt,
@@ -96,23 +98,44 @@ class MainWindow(QMainWindow):
         self.setCentralWidget(central)
 
     def _build_header(self) -> QFrame:
-        """构建头部条：左侧标题，右侧运行环境信息."""
+        """构建头部条：左侧标题，右侧主题切换与运行环境信息."""
         bar = QFrame(objectName="headerBar")
         layout = QHBoxLayout(bar)
         layout.setContentsMargins(theme.SPACING_MD, 0, theme.SPACING_MD, 0)
         layout.addWidget(QLabel("zylab", objectName="headerTitle"))
         layout.addStretch()
+        self._theme_button = QPushButton(objectName="headerBtn")
+        self._theme_button.setToolTip("点击切换界面主题")
+        self._theme_button.clicked.connect(self._cycle_theme)
+        layout.addWidget(self._theme_button)
+        self._refresh_theme_button()
         meta = QLabel(f"Python {platform.python_version()} · v{__version__}", objectName="headerMeta")
         layout.addWidget(meta)
         return bar
+
+    def _refresh_theme_button(self) -> None:
+        """按当前主题刷新切换按钮文案."""
+        pal = theme.current_palette()
+        self._theme_button.setText(f"主题: {pal.display_name}")
+
+    def _cycle_theme(self) -> None:
+        """循环切换主题（浅色 → 深色 → 高对比）并持久化."""
+        from .qt_compat import QApplication
+
+        names = list(theme.THEMES)
+        current = theme.current_palette().name
+        next_name = names[(names.index(current) + 1) % len(names)]
+        apply_theme(QApplication.instance(), next_name)
+        self._refresh_theme_button()
+        save_theme_name(default_data_dir(), next_name)
+        self.statusBar().showMessage(f"主题已切换: {theme.current_palette().display_name}")
 
     def _build_about_page(self) -> QWidget:
         """构建关于页."""
         page = QWidget()
         layout = QVBoxLayout(page)
         layout.setContentsMargins(theme.SPACING_LG, theme.SPACING_LG, theme.SPACING_LG, theme.SPACING_LG)
-        title = QLabel("zylab 通用科学计算仿真分析平台")
-        title.setStyleSheet(f"font-size: {theme.FONT_TITLE}; font-weight: bold;")
+        title = QLabel("zylab 通用科学计算仿真分析平台", objectName="pageTitle")
         layout.addWidget(title)
         layout.addWidget(QLabel(f"版本 {__version__} · Python {platform.python_version()} · 离线可用"))
         layout.addStretch()

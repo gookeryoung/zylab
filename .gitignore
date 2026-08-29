@@ -33,4 +33,5 @@ coverage.xml
 
 # Sphinx 文档构建输出
 docs/_build/
-.trae/ref
+# 本地协作产物（需求/迭代/规则记录，勿提交）
+/.trae/

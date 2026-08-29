@@ -129,7 +129,7 @@ class ConsolePage(QWidget):
         self._kernel = kernel
         self._build_ui(kernel, history)
         self._append_html(
-            f'<span style="color:{theme.COLOR_TEXT_SECONDARY}">'
+            f'<span style="color:{theme.current_palette().text_secondary}">'
             f"zylab 控制台就绪 · whos() 查看变量 · plot(x, y) 绘图 · run('脚本.py') 执行脚本</span>"
         )
 
@@ -164,16 +164,15 @@ class ConsolePage(QWidget):
 
     def _on_result(self, result: ExecResult) -> None:
         """渲染执行结果并刷新变量浏览器."""
-        self._append_html(f'<span style="color:{theme.COLOR_PRIMARY}">&gt;&gt;&gt; {html.escape(result.source)}</span>')
+        pal = theme.current_palette()
+        self._append_html(f'<span style="color:{pal.primary}">&gt;&gt;&gt; {html.escape(result.source)}</span>')
         if result.stdout:
             self._append_html(f"<pre>{html.escape(result.stdout.rstrip())}</pre>")
         if result.result_repr is not None:
-            self._append_html(
-                f'<span style="color:{theme.COLOR_SUCCESS}">ans = {html.escape(result.result_repr)}</span>'
-            )
+            self._append_html(f'<span style="color:{pal.success_text}">ans = {html.escape(result.result_repr)}</span>')
         error_text = result.error or (result.stderr if result.stderr else "")
         if error_text:
-            self._append_html(f'<pre style="color:{theme.COLOR_ERROR_TEXT}">{html.escape(error_text.rstrip())}</pre>')
+            self._append_html(f'<pre style="color:{pal.error_text}">{html.escape(error_text.rstrip())}</pre>')
         self._var_model.set_vars(whos(self._kernel.namespace))
         self._output.moveCursor(QTextCursor.End)
 

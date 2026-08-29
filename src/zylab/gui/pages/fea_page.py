@@ -116,7 +116,7 @@ class FeaPage(QWidget):
         panel.setMaximumWidth(320)
         splitter.addWidget(panel)
 
-        self._plot = pg.PlotWidget(background=theme.COLOR_BG_APP)
+        self._plot = pg.PlotWidget(background=theme.current_palette().bg_app)
         self._plot.showGrid(x=True, y=True, alpha=0.3)
         self._plot.setAspectLocked(True)
         self._plot.addLegend(offset=(12, 12))
@@ -136,8 +136,7 @@ class FeaPage(QWidget):
         self._model_combo = QComboBox()
         self._model_combo.addItem("悬臂梁（Q4 平面应力）")
         form.addRow("示例", self._model_combo)
-        self._model_info = QLabel("40 x 8 网格 · 369 节点 · 320 单元")
-        self._model_info.setStyleSheet(f"color: {theme.COLOR_TEXT_SECONDARY}; font-size: {theme.FONT_CAPTION};")
+        self._model_info = QLabel("40 x 8 网格 · 369 节点 · 320 单元", objectName="secondaryText")
         form.addRow(self._model_info)
         return box
 
@@ -172,8 +171,7 @@ class FeaPage(QWidget):
         self._solve_button.setMinimumHeight(36)
         self._progress = QProgressBar()
         self._progress.setRange(0, 100)
-        self._status_label = QLabel("就绪")
-        self._status_label.setStyleSheet(f"color: {theme.COLOR_TEXT_SECONDARY}; font-size: {theme.FONT_CAPTION};")
+        self._status_label = QLabel("就绪", objectName="secondaryText")
         layout.addWidget(self._solve_button)
         layout.addWidget(self._progress)
         layout.addWidget(self._status_label)
@@ -183,8 +181,7 @@ class FeaPage(QWidget):
         """构建结果摘要组."""
         box = QGroupBox("结果")
         layout = QVBoxLayout(box)
-        self._result_label = QLabel("尚未求解")
-        self._result_label.setStyleSheet(f"color: {theme.COLOR_TEXT_SECONDARY};")
+        self._result_label = QLabel("尚未求解", objectName="resultText")
         self._result_label.setWordWrap(True)
         layout.addWidget(self._result_label)
         return box
@@ -207,7 +204,7 @@ class FeaPage(QWidget):
             segments[:, :, 0].ravel(),
             segments[:, :, 1].ravel(),
             connect="pairs",
-            pen=pg.mkPen(theme.COLOR_BORDER, width=1),
+            pen=pg.mkPen(theme.current_palette().border, width=1),
             name="未变形",
         )
 
@@ -225,7 +222,7 @@ class FeaPage(QWidget):
             segments[:, :, 0].ravel(),
             segments[:, :, 1].ravel(),
             connect="pairs",
-            pen=pg.mkPen(theme.COLOR_PRIMARY, width=2),
+            pen=pg.mkPen(theme.current_palette().primary, width=2),
             name=f"变形 (x{scale:.0f})",
         )
         colors = [pg.mkColor(int(r * 255), int(g * 255), int(b * 255)) for r, g, b in scalar_colors(field)]
@@ -292,13 +289,21 @@ class FeaPage(QWidget):
         self._render_solution(solution)
         max_u = float(np.max(np.linalg.norm(solution.displacements, axis=1)))
         self._result_label.setText(f"最大位移 |u| = {max_u:.6g}\n应变能 = {solution.strain_energy:.6g}")
+        self._set_result_error(False)
 
     def _on_failed(self, message: str) -> None:
         """显示求解失败信息."""
         self._solve_button.setEnabled(True)
         self._status_label.setText("求解失败")
         self._result_label.setText(message)
-        self._result_label.setStyleSheet(f"color: {theme.COLOR_ERROR_TEXT};")
+        self._set_result_error(True)
+
+    def _set_result_error(self, error: bool) -> None:
+        """切换结果摘要的错误着色（objectName 切换 + 重刷样式）."""
+        self._result_label.setObjectName("errorText" if error else "resultText")
+        style = self._result_label.style()
+        style.unpolish(self._result_label)
+        style.polish(self._result_label)
 
     def shutdown(self) -> None:
         """关闭后台执行器（主窗口关闭时调用）."""
