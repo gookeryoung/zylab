@@ -5,7 +5,14 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
-from zylab.fea import Section, solve_buckling, solve_harmonic, solve_modal, solve_static
+from zylab.fea import (
+    Section,
+    solve_buckling,
+    solve_harmonic,
+    solve_modal,
+    solve_nonlinear_static,
+    solve_static,
+)
 from zylab.gui.pages.fea_page import (
     FeaPage,
     build_cantilever_case,
@@ -18,7 +25,8 @@ def test_fea_page_builds(qtbot) -> None:
     """分析页应完成布局装配并渲染初始线框."""
     page = FeaPage()
     qtbot.addWidget(page)
-    assert page._model_combo.count() == 2
+    assert page._model_combo.count() == 3
+    assert page._analysis_combo.count() == 5
     assert page._solve_button.isEnabled()
     assert page._plot.getPlotItem().listDataItems()  # 初始未变形线框已渲染
 
@@ -240,6 +248,63 @@ def test_fea_page_buckling_solve_end_to_end(qtbot) -> None:
     assert solution.n_modes == page._n_modes_spin.value()
     assert solution.load_factors[0] > 0.0
     assert page._freq_table.rowCount() == solution.n_modes
+    page.shutdown()
+
+
+@pytest.mark.gui
+def test_fea_page_model_switch_to_truss(qtbot) -> None:
+    """切换到两杆桁架模型：信息标签更新、截面为面积型、工况为顶点集中力."""
+    page = FeaPage()
+    qtbot.addWidget(page)
+    page._model_combo.setCurrentIndex(2)
+    assert "TRUSS2" in page._model_info.text()
+    mesh, _materials, sections, case = page._current_model()
+    assert mesh.n_nodes == 3
+    assert sections[0].area == 1.0
+    # 桁架工况：两支座双向固支 + 顶点向下集中力
+    assert len(case.constraints) == 2
+    assert case.loads[0].node == 1
+    assert case.loads[0].forces[1] < 0.0
+
+
+@pytest.mark.gui
+def test_fea_page_nonlinear_renders(qtbot) -> None:
+    """非线性结果应渲染变形云图并显示迭代历程摘要."""
+    page = FeaPage()
+    qtbot.addWidget(page)
+    page._model_combo.setCurrentIndex(2)  # 两杆桁架
+
+    mesh, materials, sections, case = page._current_model()
+    solution = solve_nonlinear_static(mesh, materials, sections, case, n_increments=5)
+
+    page._on_finished(solution)
+    assert page._nonlinear_solution is solution
+    assert page._freq_table.isHidden()
+    assert page._mode_spin.isHidden()
+    assert "Newton 迭代" in page._result_label.text()
+    assert "增量步" in page._result_label.text()
+    # 大位移已渲染（变形线框 + 散点）
+    assert len(page._plot.getPlotItem().listDataItems()) >= 1
+    # 两杆桁架浅拱：顶点竖向位移为大位移量级（非线性效应显著）
+    apex_vy = float(solution.displacements[1, 1])
+    assert abs(apex_vy) > 0.05
+
+
+@pytest.mark.gui
+def test_fea_page_nonlinear_solve_end_to_end(qtbot) -> None:
+    """端到端：几何非线性经进程执行器完成并渲染（真实 spawn 子进程）."""
+    page = FeaPage()
+    qtbot.addWidget(page)
+    page._model_combo.setCurrentIndex(2)  # 两杆桁架
+    page._analysis_combo.setCurrentIndex(4)  # 切到几何非线性
+    page._increments_spin.setValue(5)
+    page._on_solve()
+    with qtbot.waitSignal(page._bridge.finished, timeout=120_000) as blocker:
+        pass
+    solution = blocker.args[0]
+    assert solution.converged
+    assert solution.load_factor == 1.0
+    assert "Newton 迭代" in page._result_label.text()
     page.shutdown()
 
 

@@ -21,10 +21,11 @@ from zylab.fea import (
     Mesh,
     ModalSolution,
     NodalLoad,
+    NonlinearSolution,
     Section,
     StaticCase,
 )
-from zylab.fea.viewdata import deformed_coords, displacement_field, edge_segments, mesh_edges, scalar_colors
+from zylab.fea.viewdata import deformed_coords, edge_segments, mesh_edges, scalar_colors
 
 from .. import theme
 from ..qt_compat import (
@@ -128,6 +129,30 @@ def build_column_case(mesh: Mesh) -> StaticCase:
     )
 
 
+# 两杆浅桁架示例：几何非线性大位移经典算例（顶点集中力下弦转角效应显著）
+_TRUSS_HALF_SPAN = 5.0
+_TRUSS_RISE = 0.5
+_TRUSS_APEX_LOAD = -60.0  # 顶点竖向集中力（向下，接近极限点，非线性效应显著）
+
+
+def build_truss_mesh() -> Mesh:
+    """构建两杆浅桁架 TRUSS2 网格（顶点为节点 1）."""
+    b, h = _TRUSS_HALF_SPAN, _TRUSS_RISE
+    coords = np.array([[-b, 0.0], [0.0, h], [b, 0.0]])
+    conn = np.array([[0, 1], [1, 2]], dtype=np.int64)
+    block = ElementBlock(etype=ElementType.TRUSS2, conn=conn, name="桁架")
+    return Mesh(coords=coords, blocks=(block,))
+
+
+def build_truss_case(mesh: Mesh) -> StaticCase:
+    """构建两杆桁架工况：两支座固支，顶点竖向集中力."""
+    apex = mesh.n_nodes - 2  # 3 节点模型的中间顶点
+    return StaticCase(
+        constraints=(Constraint(node=0, dofs=(0, 1)), Constraint(node=2, dofs=(0, 1))),
+        loads=(NodalLoad(node=apex, forces=(0.0, _TRUSS_APEX_LOAD)),),
+    )
+
+
 class FeaPage(QWidget):
     """FEA 分析页：左侧模型参数与求解控制，右侧变形云图."""
 
@@ -139,6 +164,7 @@ class FeaPage(QWidget):
         self._modal_solution: ModalSolution | None = None
         self._harmonic_solution: HarmonicResponse | None = None
         self._buckling_solution: BucklingSolution | None = None
+        self._nonlinear_solution: NonlinearSolution | None = None
         self._bridge = _SolveBridge()
 
         self._build_ui()
@@ -194,6 +220,7 @@ class FeaPage(QWidget):
         self._model_combo = QComboBox()
         self._model_combo.addItem("悬臂梁（Q4 平面应力）")
         self._model_combo.addItem("悬臂柱（BEAM2 屈曲）")
+        self._model_combo.addItem("两杆桁架（TRUSS2 非线性）")
         self._model_combo.currentIndexChanged.connect(self._on_model_changed)
         form.addRow("示例", self._model_combo)
         self._analysis_combo = QComboBox()
@@ -201,6 +228,7 @@ class FeaPage(QWidget):
         self._analysis_combo.addItem("模态", "modal")
         self._analysis_combo.addItem("谐响应", "harmonic")
         self._analysis_combo.addItem("屈曲", "buckling")
+        self._analysis_combo.addItem("几何非线性", "nonlinear")
         form.addRow("分析类型", self._analysis_combo)
         self._model_info = QLabel("40 x 8 网格 · 369 节点 · 320 单元", objectName="secondaryText")
         form.addRow(self._model_info)
@@ -224,6 +252,9 @@ class FeaPage(QWidget):
         self._n_freq_spin.setValue(60)
         self._alpha_spin = self._make_spin(0.0, 1.0e6, 0.1, 0.05)
         self._beta_spin = self._make_spin(0.0, 1.0e3, 0.0, 0.01)
+        self._increments_spin = QSpinBox()
+        self._increments_spin.setRange(1, 100)
+        self._increments_spin.setValue(10)
         form.addRow("弹性模量 E", self._young_spin)
         form.addRow("泊松比 ν", self._poisson_spin)
         form.addRow("厚度 t", self._thickness_spin)
@@ -233,6 +264,7 @@ class FeaPage(QWidget):
         form.addRow("扫频点数（谐响应）", self._n_freq_spin)
         form.addRow("阻尼 α（谐响应）", self._alpha_spin)
         form.addRow("阻尼 β（谐响应）", self._beta_spin)
+        form.addRow("增量步数（非线性）", self._increments_spin)
         return box
 
     @staticmethod
@@ -312,13 +344,16 @@ class FeaPage(QWidget):
 
     def _render_solution(self, solution: StaticSolution) -> None:
         """渲染变形线框与节点位移模云图."""
+        self._render_deformation(solution.mesh, solution.displacements)
+
+    def _render_deformation(self, mesh: Mesh, displacements: np.ndarray) -> None:
+        """渲染大位移变形云图（静力/几何非线性共用）."""
         self._restore_mesh_view()
-        mesh = solution.mesh
         edges = mesh_edges(mesh)
-        field = displacement_field(solution)
+        field = np.linalg.norm(displacements, axis=1)
         scale = self._deform_scale(mesh, field)
 
-        deformed = deformed_coords(mesh, solution.displacements, scale)
+        deformed = deformed_coords(mesh, displacements, scale)
         segments = edge_segments(deformed, edges)
         self._plot.clear()
         self._plot.plot(
@@ -497,11 +532,18 @@ class FeaPage(QWidget):
 
     def _current_model(self) -> tuple[Mesh, list, list, StaticCase]:
         """按当前模型选择构建 (mesh, materials, sections, case)."""
-        if self._model_combo.currentIndex() == 1:
+        index = self._model_combo.currentIndex()
+        if index == 1:
             mesh = build_column_mesh()
             materials = [self.current_material]
             sections = [Section(area=1.0, inertia=1.0e-4)]
             case = build_column_case(mesh)
+            return mesh, materials, sections, case
+        if index == 2:
+            mesh = build_truss_mesh()
+            materials = [self.current_material]
+            sections = [Section(area=1.0)]
+            case = build_truss_case(mesh)
             return mesh, materials, sections, case
         mesh = build_cantilever_mesh()
         materials = [self.current_material]
@@ -513,6 +555,8 @@ class FeaPage(QWidget):
         """切换示例模型：更新信息标签、参数行可见性并重绘初始线框."""
         if index == 1:
             self._model_info.setText(f"BEAM2 梁 · {_COLUMN_N_ELEM + 1} 节点 · {_COLUMN_N_ELEM} 单元 · 顶部压缩")
+        elif index == 2:
+            self._model_info.setText("TRUSS2 两杆浅桁架 · 3 节点 · 2 单元 · 顶点集中力")
         else:
             self._model_info.setText("40 x 8 网格 · 369 节点 · 320 单元")
         self._update_param_visibility()
@@ -532,6 +576,7 @@ class FeaPage(QWidget):
             self._n_freq_spin: analysis == "harmonic",
             self._alpha_spin: analysis == "harmonic",
             self._beta_spin: analysis == "harmonic",
+            self._increments_spin: analysis == "nonlinear",
         }
         for field, visible in rules.items():
             label = self._params_form.labelForField(field)
@@ -563,6 +608,12 @@ class FeaPage(QWidget):
                 args=(mesh, materials, sections, case),
                 kwargs={"n_modes": self._n_modes_spin.value()},
             )
+        elif analysis == "nonlinear":
+            spec = TaskSpec(
+                target="zylab.fea.nonlinear:solve_nonlinear_static",
+                args=(mesh, materials, sections, case),
+                kwargs={"n_increments": self._increments_spin.value()},
+            )
         else:
             spec = TaskSpec(
                 target="zylab.fea.static:solve_static",
@@ -585,10 +636,11 @@ class FeaPage(QWidget):
         self._status_label.setText(message)
 
     def _on_finished(self, solution: object) -> None:
-        """按结果类型分发渲染（静力/模态/谐响应/屈曲）."""
+        """按结果类型分发渲染（静力/模态/谐响应/屈曲/非线性）."""
         self._solve_button.setEnabled(True)
         self._status_label.setText("求解完成")
         self._set_result_error(False)
+        self._nonlinear_solution = None
         if isinstance(solution, ModalSolution):
             self._solution = None
             self._modal_solution = solution
@@ -609,6 +661,15 @@ class FeaPage(QWidget):
             self._harmonic_solution = None
             self._buckling_solution = solution
             self._render_buckling(solution)
+        elif isinstance(solution, NonlinearSolution):
+            self._solution = None
+            self._modal_solution = None
+            self._harmonic_solution = None
+            self._buckling_solution = None
+            self._nonlinear_solution = solution
+            self._freq_table.setVisible(False)
+            self._mode_spin.setVisible(False)
+            self._render_nonlinear(solution)
         else:
             self._solution = solution
             self._modal_solution = None
@@ -619,6 +680,15 @@ class FeaPage(QWidget):
             self._render_solution(solution)
             max_u = float(np.max(np.linalg.norm(solution.displacements, axis=1)))
             self._result_label.setText(f"最大位移 |u| = {max_u:.6g}\n应变能 = {solution.strain_energy:.6g}")
+
+    def _render_nonlinear(self, solution: NonlinearSolution) -> None:
+        """渲染非线性收敛态变形云图与迭代历程摘要."""
+        self._render_deformation(solution.mesh, solution.displacements)
+        max_u = float(np.max(np.linalg.norm(solution.displacements, axis=1)))
+        steps = len(solution.iterations)
+        self._result_label.setText(
+            f"最大位移 |u| = {max_u:.6g}\n收敛：{steps} 增量步 · {solution.total_iterations} 次 Newton 迭代"
+        )
 
     def _on_failed(self, message: str) -> None:
         """显示求解失败信息."""
