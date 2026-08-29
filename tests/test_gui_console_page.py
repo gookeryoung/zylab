@@ -170,6 +170,35 @@ def test_console_page_side_tabs(qtbot, kernel: ReplKernel, history: CommandHisto
 
 
 @pytest.mark.gui
+def test_console_page_work_tabs(qtbot, kernel: ReplKernel, history: CommandHistory, bus: EventBus) -> None:
+    """左侧选项卡应为 交互/脚本 两页，默认停在交互页."""
+    page = ConsolePage(kernel, history, bus)
+    qtbot.addWidget(page)
+    assert page._work_tabs.count() == 2
+    assert page._work_tabs.tabText(0) == "交互"
+    assert page._work_tabs.tabText(1) == "脚本"
+    assert page._work_tabs.currentIndex() == 0
+
+
+@pytest.mark.gui
+def test_console_page_script_plot_same_screen(
+    qtbot, kernel: ReplKernel, history: CommandHistory, bus: EventBus
+) -> None:
+    """脚本页运行含 plot 的脚本：停在脚本页的同时右侧自动切绘图（同屏可见）."""
+    page = ConsolePage(kernel, history, bus)
+    qtbot.addWidget(page)
+    page._work_tabs.setCurrentIndex(1)  # 切到脚本页
+    page._script_page._run_button.click()
+    # 默认示例脚本含 plot：左仍停在脚本、右侧已切绘图
+    assert page._work_tabs.currentIndex() == 1
+    assert page._side_tabs.currentIndex() == 1
+    assert len(page._plot_page._plot.listDataItems()) == 1
+    # 脚本产生的变量同步进变量表（共享命名空间）
+    names = [page._var_model.data(page._var_model.index(row, 0)) for row in range(page._var_model.rowCount())]
+    assert "x" in names
+
+
+@pytest.mark.gui
 def test_console_page_vars_always_visible(qtbot, kernel: ReplKernel, history: CommandHistory, bus: EventBus) -> None:
     """任意命令执行后变量表即时刷新（无需 whos）."""
     page = ConsolePage(kernel, history, bus)

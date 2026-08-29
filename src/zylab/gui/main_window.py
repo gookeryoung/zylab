@@ -13,7 +13,6 @@ from .app import apply_theme, save_theme_name
 from .icons import NAV_ICON_NAMES, nav_icon
 from .pages.console_page import ConsolePage
 from .pages.fea_page import FeaPage
-from .pages.script_page import ScriptPage
 from .qt_compat import (
     QComboBox,
     QFrame,
@@ -34,8 +33,7 @@ __all__ = ["MainWindow"]
 
 _PAGE_CONSOLE = 0
 _PAGE_FEA = 1
-_PAGE_SCRIPT = 2
-_PAGE_ABOUT = 3
+_PAGE_ABOUT = 2
 
 #: 侧边栏图标显示尺寸（像素）
 _NAV_ICON_SIZE = QSize(18, 18)
@@ -75,7 +73,7 @@ class MainWindow(QMainWindow):
 
         splitter = QSplitter(Qt.Horizontal)
         self._sidebar = QListWidget(objectName="sidebar")
-        for label in ("控制台", "分析", "脚本", "关于"):
+        for label in ("控制台", "分析", "关于"):
             QListWidgetItem(label, self._sidebar)
         self._sidebar.setIconSize(_NAV_ICON_SIZE)
         self._sidebar.setFixedWidth(theme.SIDEBAR_WIDTH)
@@ -85,11 +83,9 @@ class MainWindow(QMainWindow):
         self._stack = QStackedWidget()
         self._console_page = ConsolePage(self._kernel, self._history, self._bus)
         self._fea_page = FeaPage()
-        self._script_page = ScriptPage(self._kernel)
         self._about_page = self._build_about_page()
         self._stack.addWidget(self._console_page)
         self._stack.addWidget(self._fea_page)
-        self._stack.addWidget(self._script_page)
         self._stack.addWidget(self._about_page)
 
         splitter.addWidget(self._sidebar)

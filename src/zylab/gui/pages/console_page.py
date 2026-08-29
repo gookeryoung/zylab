@@ -1,4 +1,4 @@
-"""控制台页：REPL 输出/输入 + 右侧选项卡（变量浏览器 / 绘图）."""
+"""控制台页：左侧选项卡（交互 / 脚本）+ 右侧选项卡（变量 / 绘图）."""
 
 from __future__ import annotations
 
@@ -26,6 +26,7 @@ from ..qt_compat import (
     Signal,
 )
 from .plot_page import PlotPage
+from .script_page import ScriptPage
 
 __all__ = ["ConsolePage", "ReplInput", "VarTableModel"]
 
@@ -124,10 +125,10 @@ class ReplInput(QPlainTextEdit):
 
 
 class ConsolePage(QWidget):
-    """控制台页：左 REPL（输出+输入），右侧「变量 / 绘图」选项卡.
+    """控制台页：左侧「交互 / 脚本」选项卡，右侧「变量 / 绘图」选项卡.
 
     变量浏览器随每条命令执行自动刷新（常态显示）；
-    plot 命令渲染后自动切换到绘图选项卡。
+    plot 渲染后自动切换右侧到绘图选项卡 —— 左侧脚本与右侧绘图可同屏查看。
     """
 
     def __init__(
@@ -143,7 +144,7 @@ class ConsolePage(QWidget):
         self._build_ui(kernel, history, bus)
         self._append_html(
             f'<span style="color:{theme.current_palette().text_secondary}">'
-            f"zylab 控制台就绪 · 右侧选项卡实时查看变量 · plot(x, y) 绘图 · run('脚本.py') 执行脚本</span>"
+            f"zylab 控制台就绪 · 右侧选项卡实时查看变量 · plot(x, y) 绘图 · 左侧「脚本」页可编辑运行多行脚本</span>"
         )
 
     def _build_ui(self, kernel: ReplKernel, history: CommandHistory, bus: EventBus) -> None:
@@ -160,20 +161,29 @@ class ConsolePage(QWidget):
         left_layout.addWidget(self._output, stretch=1)
         left_layout.addWidget(self._input)
 
+        # 左侧：交互 / 脚本（脚本与右侧绘图同屏）
+        self._work_tabs = QTabWidget(objectName="consoleSideTabs")
+        self._work_tabs.addTab(left, "交互")
+        self._script_page = ScriptPage(kernel, self)
+        self._work_tabs.addTab(self._script_page, "脚本")
+
         self._var_model = VarTableModel(self)
         var_view = QTableView(objectName="varBrowser")
         var_view.setModel(self._var_model)
         var_view.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
         var_view.verticalHeader().setVisible(False)
 
+        # 右侧：变量 / 绘图
         self._side_tabs = QTabWidget(objectName="consoleSideTabs")
         self._side_tabs.addTab(var_view, "变量")
         self._plot_page = PlotPage(bus, self)
         self._side_tabs.addTab(self._plot_page, "绘图")
-        # plot 命令渲染后自动切到绘图选项卡
+        # plot 渲染后自动切到绘图选项卡（REPL 与脚本共用内核，脚本绘图同样触发）
         self._plot_page.plot_shown.connect(lambda: self._side_tabs.setCurrentIndex(1))
+        # 脚本运行后变量表同步刷新（脚本与 REPL 共享命名空间）
+        self._script_page.run_finished.connect(lambda: self._var_model.set_vars(whos(self._kernel.namespace)))
 
-        splitter.addWidget(left)
+        splitter.addWidget(self._work_tabs)
         splitter.addWidget(self._side_tabs)
         splitter.setStretchFactor(0, 3)
         splitter.setStretchFactor(1, 2)

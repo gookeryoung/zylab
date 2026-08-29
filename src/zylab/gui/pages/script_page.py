@@ -5,7 +5,7 @@ from __future__ import annotations
 from zylab.console import ReplKernel
 
 from .. import theme
-from ..qt_compat import QFont, QPlainTextEdit, QPushButton, QSplitter, Qt, QVBoxLayout, QWidget
+from ..qt_compat import QFont, QPlainTextEdit, QPushButton, QSplitter, Qt, QVBoxLayout, QWidget, Signal
 
 __all__ = ["ScriptPage"]
 
@@ -20,6 +20,9 @@ plot(x, y, title="衰减振荡", xlabel="x", ylabel="y")
 
 class ScriptPage(QWidget):
     """脚本页：上方编辑器 + 下方输出，运行结果写入共享 REPL 工作区."""
+
+    #: 脚本运行完成后发出（宿主页据此刷新变量浏览器等）
+    run_finished = Signal()
 
     def __init__(self, kernel: ReplKernel, parent: QWidget | None = None) -> None:
         """初始化脚本页.
@@ -72,3 +75,4 @@ class ScriptPage(QWidget):
             parts.append(result.error.rstrip())
         text = "\n".join(parts) if parts else "(无输出)"
         self._output.setPlainText(text)
+        self.run_finished.emit()
