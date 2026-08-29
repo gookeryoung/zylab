@@ -1,34 +1,46 @@
 """工作台页：模板库 + 竖向流式画布 + 参数表单 + 结果视图四区整合.
 
 交互模型（对标 ANSYS Workbench 单元格语义）：
-- 模板库双击/单击实例化模板 → 画布生成节点图，源节点即时在进程内建模预览；
+- 模板库单击实例化模板 → 画布生成节点图，源节点即时在进程内建模预览；
 - 「运行全部」按拓扑序级联求解（UP_TO_DATE 节点命中缓存自动跳过）；
 - 单击节点查看其结果（模型线框/云图/曲线）；双击节点运行到该节点；
 - 右键节点：运行到此 / 强制重跑 / 查看结果；
-- 参数编辑即级联失效（画布徽标变为待运行），运行中表单禁用。
+- 参数编辑即级联失效（画布徽标变为待运行），运行中表单禁用；
+- 模板另存（用户模板存 data_dir/templates/*.json）、工程保存/打开（.zprj 内嵌模板+参数）。
 """
 
 from __future__ import annotations
 
 import importlib
+import logging
+import re
+from pathlib import Path
 from typing import Callable
 
 import numpy as np
 
+from zylab import __version__
+from zylab.core import default_data_dir
+from zylab.core.errors import ProjectFileError
 from zylab.core.executor import EventKind
+from zylab.core.project import Project
 from zylab.studio import (
     ModelBundle,
     NodeRunEvent,
     NodeState,
+    Template,
+    TemplateError,
     TemplateRegistry,
     WorkflowGraph,
     WorkflowRunner,
+    save_template,
 )
 
 from .. import theme
 from ..qt_compat import (
     QFrame,
     QGroupBox,
+    QHBoxLayout,
     QLabel,
     QListWidget,
     QListWidgetItem,
@@ -49,6 +61,8 @@ from ..widgets.param_form import ParamForm
 from ..widgets.result_view import ResultView
 
 __all__ = ["StudioPage"]
+
+logger = logging.getLogger(__name__)
 
 
 def _resolve_target(target: str) -> Callable:
@@ -81,12 +95,16 @@ class _StudioBridge(QObject):
 class StudioPage(QWidget):
     """分析工作台页（模板配置化多学科计算工具）."""
 
-    def __init__(self, parent: QWidget | None = None) -> None:
-        """初始化工作台页：模板注册表 + 四区布局 + 首个模板实例化."""
+    def __init__(self, parent: QWidget | None = None, data_dir: Path | None = None) -> None:
+        """初始化工作台页：模板注册表（内置 + 用户目录 + 插件）+ 四区布局."""
         super().__init__(parent)
+        self._data_dir = Path(data_dir) if data_dir is not None else default_data_dir()
         self._registry = TemplateRegistry.with_builtin()
+        self._registry.load_dir(self._data_dir / "templates")
+        self._registry.load_entry_points()
         self._graph: WorkflowGraph | None = None
         self._runner: WorkflowRunner | None = None
+        self._active_row = -1
         self._bridge = _StudioBridge()
 
         self._build_ui()
@@ -131,7 +149,7 @@ class StudioPage(QWidget):
         root.addWidget(splitter)
 
     def _build_library_panel(self) -> QWidget:
-        """左栏：模板库 + 运行控制."""
+        """左栏：模板库 + 模板/工程操作 + 运行控制."""
         panel = QWidget()
         panel.setMinimumWidth(220)
         panel.setMaximumWidth(280)
@@ -142,12 +160,17 @@ class StudioPage(QWidget):
         lib_box = QGroupBox("模板库")
         lib_layout = QVBoxLayout(lib_box)
         self._template_list = QListWidget(objectName="templateList")
-        for template in self._registry.list():
-            item = QListWidgetItem(template.name)
-            item.setData(Qt.UserRole, template.id)
-            item.setToolTip(template.description)
-            self._template_list.addItem(item)
-        lib_layout.addWidget(self._template_list)
+        self._reload_template_list()
+        lib_layout.addWidget(self._template_list, stretch=1)
+        tools = QHBoxLayout()
+        tools.setSpacing(theme.SPACING_XS)
+        self._save_template_button = QPushButton("另存模板")
+        self._save_project_button = QPushButton("保存工程")
+        self._open_project_button = QPushButton("打开工程")
+        tools.addWidget(self._save_template_button)
+        tools.addWidget(self._save_project_button)
+        tools.addWidget(self._open_project_button)
+        lib_layout.addLayout(tools)
         layout.addWidget(lib_box, stretch=1)
 
         run_box = QGroupBox("运行")
@@ -173,6 +196,9 @@ class StudioPage(QWidget):
         self._template_list.currentRowChanged.connect(self._on_template_selected)
         self._run_all_button.clicked.connect(self._on_run_all)
         self._cancel_button.clicked.connect(self._on_cancel)
+        self._save_template_button.clicked.connect(self._on_save_template_as)
+        self._save_project_button.clicked.connect(self._on_save_project)
+        self._open_project_button.clicked.connect(self._on_open_project)
         self._canvas.node_clicked.connect(self._on_node_clicked)
         self._canvas.node_double_clicked.connect(self._on_node_double_clicked)
         self._canvas.node_context_menu.connect(self._on_node_context_menu)
@@ -182,10 +208,26 @@ class StudioPage(QWidget):
         self._bridge.node_result.connect(self._on_node_result)
         self._bridge.node_failed.connect(self._on_node_failed)
 
+    def _reload_template_list(self, select_id: str | None = None) -> None:
+        """重建模板列表（注册表变化后）；select_id 非空时选中并触发实例化."""
+        self._template_list.blockSignals(True)
+        self._template_list.clear()
+        for template in self._registry.list():
+            item = QListWidgetItem(template.name)
+            item.setData(Qt.UserRole, template.id)
+            item.setToolTip(template.description)
+            self._template_list.addItem(item)
+        self._template_list.blockSignals(False)
+        if select_id is not None:
+            for row in range(self._template_list.count()):
+                if self._template_list.item(row).data(Qt.UserRole) == select_id:
+                    self._template_list.setCurrentRow(row)
+                    return
+
     # ------------------------------------------------------------------ 模板实例化
 
     def _on_template_selected(self, row: int) -> None:
-        """实例化模板：建图 + 画布/表单装配 + 源节点进程内建模预览."""
+        """模板选择入口（运行中回退选择）."""
         if row < 0:
             return
         if self._runner is not None and self._runner.running:
@@ -194,9 +236,13 @@ class StudioPage(QWidget):
             self._template_list.setCurrentRow(self._active_row)
             self._template_list.blockSignals(False)
             return
-        self._shutdown_runner()
         self._active_row = row
         template = self._registry.get(self._template_list.item(row).data(Qt.UserRole))
+        self._instantiate(template)
+
+    def _instantiate(self, template: Template) -> None:
+        """实例化模板：建图 + 画布/表单装配 + 源节点进程内建模预览."""
+        self._shutdown_runner()
         self._graph = WorkflowGraph(template)
         self._canvas.set_graph(self._graph)
         self._param_form.set_graph(self._graph, template.param_groups)
@@ -215,11 +261,97 @@ class StudioPage(QWidget):
             try:
                 result = _resolve_target(node.spec.target)({}, node.params)
             except Exception as exc:  # 预览失败不阻断：标记 FAILED 由画布呈现
+                logger.warning("模型预览失败: %s", exc)
                 self._graph.mark_failed(node.id, f"{type(exc).__name__}: {exc}")
                 continue
             self._graph.mark_result(node.id, result, 0.0)
             self._result_view.show_mesh(result)
         self._canvas.refresh_states()
+
+    # ------------------------------------------------------------------ 模板与工程
+
+    def _template_with_current_params(self) -> Template:
+        """当前模板叠加图内最新参数."""
+        assert self._graph is not None  # 调用方保证
+        return self._graph.template.with_params({n.id: dict(n.params) for n in self._graph.nodes()})
+
+    def _save_template_as(self, name: str) -> Template | None:
+        """将当前图（含参数）另存为用户模板并注册；空名或空图返回 None."""
+        name = name.strip()
+        if not name or self._graph is None:
+            return None
+        base = re.sub(r"\W+", "_", name).strip("_") or "template"
+        existing = {t.id for t in self._registry.list()}
+        candidate = f"user.{base}"
+        suffix = 2
+        while candidate in existing:
+            candidate = f"user.{base}_{suffix}"
+            suffix += 1
+        current = self._template_with_current_params()
+        template = Template(
+            id=candidate,
+            name=name,
+            nodes=current.nodes,
+            discipline=current.discipline,
+            description=current.description,
+            tags=current.tags,
+            param_groups=current.param_groups,
+            results=current.results,
+        )
+        save_template(template, self._data_dir / "templates" / f"{candidate}.json")
+        self._registry.register(template)
+        self._reload_template_list(select_id=template.id)
+        return template
+
+    def _save_project(self, path: Path) -> None:
+        """保存工程：模板（含当前参数）内嵌 .zprj（自包含，不依赖模板库）."""
+        template = self._template_with_current_params()
+        with Project.create(path, name=template.name, app_version=__version__) as proj:
+            proj.write_json("model", "workflow", template.to_dict())
+        self._status_label.setText(f"工程已保存: {path.name}")
+
+    def _load_project(self, path: Path) -> None:
+        """打开工程：内嵌模板注册并实例化."""
+        try:
+            with Project.open(path) as proj:
+                data = proj.read_json("model", "workflow")
+            template = Template.from_dict(data)
+        except (ProjectFileError, TemplateError) as exc:
+            self._status_label.setText(f"工程打开失败: {exc}")
+            return
+        self._registry.register(template, replace=True)
+        self._reload_template_list(select_id=template.id)
+        self._status_label.setText(f"工程已打开: {path.name}")
+
+    def _on_save_template_as(self) -> None:
+        """对话框：另存为模板."""
+        if self._graph is None:
+            return
+        from ..qt_compat import QInputDialog
+
+        name, ok = QInputDialog.getText(self, "另存为模板", "模板名称:", text=f"{self._graph.template.name} 副本")
+        if ok:
+            template = self._save_template_as(name)
+            if template is not None:
+                self._status_label.setText(f"模板已保存: {template.name}")
+
+    def _on_save_project(self) -> None:
+        """对话框：保存工程."""
+        if self._graph is None:
+            return
+        from ..qt_compat import QFileDialog
+
+        path_str, _ = QFileDialog.getSaveFileName(self, "保存工程", "workflow.zprj", "zylab 工程 (*.zprj)")
+        if path_str:
+            self._save_project(Path(path_str))
+
+    def _on_open_project(self) -> None:
+        """对话框：打开工程."""
+        from ..qt_compat import QFileDialog
+
+        path_str, _ = QFileDialog.getOpenFileName(self, "打开工程", "", "zylab 工程 (*.zprj)")
+        if path_str:
+            self._load_project(Path(path_str))
 
     # ------------------------------------------------------------------ 运行控制
 

@@ -248,3 +248,59 @@ def test_refresh_theme(qtbot) -> None:
     qtbot.addWidget(page)
     page.refresh_theme()
     page.shutdown()
+
+
+@pytest.mark.gui
+def test_save_template_as(qtbot, tmp_path) -> None:
+    """另存为模板：注册 + 写文件 + 列表新增并选中."""
+    page = StudioPage(data_dir=tmp_path)
+    qtbot.addWidget(page)
+    before = page._template_list.count()
+    _select_template(page, "structural.cantilever_static")
+    page._graph.set_param("model", "nx", 12)
+    template = page._save_template_as("我的悬臂梁")
+    assert template is not None
+    assert template.id == "user.我的悬臂梁"
+    assert template.node("model").params["nx"] == 12  # 当前参数已内嵌
+    assert (tmp_path / "templates" / "user.我的悬臂梁.json").exists()
+    assert page._template_list.count() == before + 1
+    # 重名自动加后缀
+    again = page._save_template_as("我的悬臂梁")
+    assert again is not None and again.id == "user.我的悬臂梁_2"
+    # 空名拒绝
+    assert page._save_template_as("  ") is None
+    page.shutdown()
+
+
+@pytest.mark.gui
+def test_project_save_and_load(qtbot, tmp_path) -> None:
+    """工程保存/打开：模板与参数自包含回读."""
+    page = StudioPage(data_dir=tmp_path)
+    qtbot.addWidget(page)
+    _select_template(page, "structural.truss_nonlinear")
+    page._graph.set_param("model", "rise", 0.8)
+    path = tmp_path / "case.zprj"
+    page._save_project(path)
+    assert path.exists()
+
+    # 新页面打开工程：内嵌模板注册并实例化，参数还原
+    page2 = StudioPage(data_dir=tmp_path / "other")
+    qtbot.addWidget(page2)
+    page2._load_project(path)
+    assert page2._graph.template.id == "structural.truss_nonlinear"
+    assert page2._graph.node("model").params["rise"] == 0.8
+    assert "已打开" in page2._status_label.text()
+    page.shutdown()
+    page2.shutdown()
+
+
+@pytest.mark.gui
+def test_load_project_bad_file(qtbot, tmp_path) -> None:
+    """打开非法工程文件：状态标签报错不崩溃."""
+    page = StudioPage(data_dir=tmp_path)
+    qtbot.addWidget(page)
+    bad = tmp_path / "bad.zprj"
+    bad.write_text("not a hdf5", encoding="utf-8")
+    page._load_project(bad)
+    assert "打开失败" in page._status_label.text()
+    page.shutdown()

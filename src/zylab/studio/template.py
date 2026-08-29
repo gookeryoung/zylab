@@ -15,7 +15,7 @@ from typing import Any, Mapping
 from .errors import LinkError, ParamError, StudioError, TemplateError
 from .module import ModuleSpec, module_spec
 
-__all__ = ["ParamGroup", "Template", "TemplateNode", "load_template", "template_from_json"]
+__all__ = ["ParamGroup", "Template", "TemplateNode", "load_template", "save_template", "template_from_json"]
 
 
 @dataclass(frozen=True)
@@ -172,6 +172,48 @@ class Template:
         except StudioError as exc:
             raise TemplateError(f"模板 {self.id!r} 参数引用 {ref!r} 无效: {exc}") from exc
 
+    def with_params(self, overrides: Mapping[str, Mapping[str, Any]]) -> Template:
+        """以节点参数覆盖表生成新模板（如保存工作流图当前参数）.
+
+        :param overrides: 节点 id -> 参数表（整体替换该节点 params）。
+        """
+        nodes = tuple(
+            TemplateNode(
+                id=n.id,
+                type_id=n.type_id,
+                params=dict(overrides.get(n.id, n.params)),
+                inputs=dict(n.inputs),
+            )
+            for n in self.nodes
+        )
+        return Template(
+            id=self.id,
+            name=self.name,
+            nodes=nodes,
+            discipline=self.discipline,
+            description=self.description,
+            tags=self.tags,
+            param_groups=self.param_groups,
+            results=self.results,
+        )
+
+    def to_dict(self) -> dict[str, Any]:
+        """序列化为可 :meth:`from_dict` 回读的字典."""
+        return {
+            "id": self.id,
+            "name": self.name,
+            "discipline": self.discipline,
+            "description": self.description,
+            "tags": list(self.tags),
+            "nodes": [
+                {"id": n.id, "type": n.type_id, "params": dict(n.params), "inputs": dict(n.inputs)} for n in self.nodes
+            ],
+            "ui": {
+                "param_groups": [{"title": g.title, "params": list(g.params)} for g in self.param_groups],
+                "results": list(self.results),
+            },
+        }
+
 
 def _expect_list(data: Mapping[str, Any], key: str, where: str) -> list[Any]:
     """取字段并要求为列表."""
@@ -203,3 +245,11 @@ def load_template(path: Path) -> Template:
         return template_from_json(text)
     except TemplateError as exc:
         raise TemplateError(f"模板文件 {path.name} 非法: {exc}") from exc
+
+
+def save_template(template: Template, path: Path) -> Path:
+    """将模板写为 JSON 文件（UTF-8 无 BOM、保留中文），返回路径."""
+    path = Path(path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(template.to_dict(), ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    return path

@@ -37,7 +37,7 @@ from .module import (
 )
 from .registry import TemplateRegistry
 from .runner import NodeRunEvent, WorkflowRunner
-from .template import ParamGroup, Template, TemplateNode, load_template, template_from_json
+from .template import ParamGroup, Template, TemplateNode, load_template, save_template, template_from_json
 
 __all__ = [
     "BUILTIN_MODULES",
@@ -67,5 +67,6 @@ __all__ = [
     "all_modules",
     "load_template",
     "module_spec",
+    "save_template",
     "template_from_json",
 ]

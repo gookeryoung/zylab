@@ -14,6 +14,7 @@ from zylab.studio import (
     Template,
     TemplateError,
     load_template,
+    save_template,
     template_from_json,
 )
 
@@ -275,6 +276,43 @@ class TestJsonLoading:
         path.write_text("{oops", encoding="utf-8")
         with pytest.raises(TemplateError, match=r"bad\.json"):
             load_template(path)
+
+
+class TestSerialize:
+    """模板序列化（另存/工程内嵌）."""
+
+    def test_to_dict_roundtrip(self) -> None:
+        """to_dict -> from_dict 等价回读."""
+        template = Template.from_dict(
+            {
+                **_MINIMAL,
+                "description": "说明",
+                "ui": {
+                    "param_groups": [{"title": "几何", "params": ["model.half_span"]}],
+                    "results": ["solve"],
+                },
+            }
+        )
+        restored = Template.from_dict(template.to_dict())
+        assert restored.id == template.id
+        assert restored.nodes == template.nodes
+        assert restored.param_groups == template.param_groups
+        assert restored.results == template.results
+
+    def test_with_params_overrides(self) -> None:
+        """with_params 整体替换指定节点参数，未指定节点保持原样."""
+        template = Template.from_dict(_MINIMAL)
+        overridden = template.with_params({"model": {"half_span": 8.0}})
+        assert overridden.node("model").params == {"half_span": 8.0}
+        assert overridden.node("solve").params == {}
+        assert template.node("model").params == {}  # 原模板不变
+
+    def test_save_and_load_file(self, tmp_path: Path) -> None:
+        """save_template 写文件可由 load_template 回读."""
+        template = Template.from_dict(_MINIMAL)
+        path = save_template(template, tmp_path / "sub" / "t.json")
+        assert path.exists()
+        assert load_template(path).id == "test.minimal"
 
 
 class TestBuiltinTemplates:

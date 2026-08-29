@@ -36,6 +36,7 @@ class PluginKind(Enum):
     SOLVER = "solver"
     POSTPROCESS = "postprocess"
     FILE_FORMAT = "file_format"
+    TEMPLATE = "template"  # 分析模板（studio.Template 或其字典表示）
 
 
 @dataclass(frozen=True)

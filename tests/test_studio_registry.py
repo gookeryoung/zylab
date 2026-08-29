@@ -1,4 +1,4 @@
-"""studio.registry 模板注册表测试：注册/查询/目录加载."""
+"""studio.registry 模板注册表测试：注册/查询/目录加载/插件 entry point."""
 
 from __future__ import annotations
 
@@ -7,6 +7,7 @@ from pathlib import Path
 
 import pytest
 
+from zylab.core.registry import PluginKind, PluginRegistry, PluginSpec
 from zylab.studio import BUILTIN_TEMPLATES, Template, TemplateError, TemplateNotFoundError, TemplateRegistry
 
 __all__ = []
@@ -81,3 +82,52 @@ class TestLoadDir:
         """目录不存在返回 0 且不抛异常."""
         registry = TemplateRegistry()
         assert registry.load_dir(tmp_path / "nope") == 0
+
+
+class TestLoadEntryPoints:
+    """插件模板 entry point 发现."""
+
+    def _plugins_with(self, *specs: PluginSpec) -> PluginRegistry:
+        """构造含给定插件的注册表."""
+        plugins = PluginRegistry()
+        for spec in specs:
+            plugins.register(spec)
+        return plugins
+
+    def test_dict_factory_registered(self) -> None:
+        """字典工厂解析为模板并注册."""
+        plugins = self._plugins_with(
+            PluginSpec(name="sample", kind=PluginKind.TEMPLATE, factory="tests._targets:SAMPLE_TEMPLATE")
+        )
+        registry = TemplateRegistry()
+        assert registry.load_entry_points(plugins) == 1
+        assert registry.get("plugin.sample").name == "插件示例模板"
+
+    def test_template_instance_factory(self) -> None:
+        """Template 实例工厂直接注册."""
+        template = BUILTIN_TEMPLATES[0]
+        registry = TemplateRegistry()
+
+        class _FakeResolver:
+            """替身：resolve 返回 Template 实例."""
+
+            def list(self, kind=None):
+                """返回单个模板插件描述."""
+                return [PluginSpec(name="t", kind=PluginKind.TEMPLATE, factory="x:y")]
+
+            def resolve(self, name):
+                """返回内置模板实例."""
+                return template
+
+        assert registry.load_entry_points(_FakeResolver()) == 1
+        assert registry.get(template.id).name == template.name
+
+    def test_bad_factory_skipped(self) -> None:
+        """非模板结果（元组）跳过不阻断."""
+        plugins = self._plugins_with(
+            PluginSpec(name="bad", kind=PluginKind.TEMPLATE, factory="zylab.studio:BUILTIN_TEMPLATES"),
+            PluginSpec(name="good", kind=PluginKind.TEMPLATE, factory="tests._targets:SAMPLE_TEMPLATE"),
+        )
+        registry = TemplateRegistry()
+        assert registry.load_entry_points(plugins) == 1
+        assert registry.get("plugin.sample").name == "插件示例模板"
