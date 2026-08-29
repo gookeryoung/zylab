@@ -39,6 +39,7 @@ try:
         QSplitter,
         QStackedWidget,
         QTableView,
+        QTabWidget,
         QVBoxLayout,
         QWidget,
     )
@@ -84,6 +85,7 @@ except ImportError:  # pragma: no cover（3.8 环境走此分支）
         QSplitter,
         QStackedWidget,
         QTableView,
+        QTabWidget,
         QVBoxLayout,
         QWidget,
     )
@@ -120,6 +122,7 @@ __all__ = [
     "QSize",
     "QSplitter",
     "QStackedWidget",
+    "QTabWidget",
     "QTableView",
     "QTextCursor",
     "QTimer",

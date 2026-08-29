@@ -22,19 +22,20 @@ def test_main_window_builds(qtbot, isolated_data_dir: Path) -> None:
     win = MainWindow()
     qtbot.addWidget(win)
     assert "zylab" in win.windowTitle()
-    assert win._stack.count() == 5
+    assert win._stack.count() == 4
     assert win._sidebar.currentRow() == 0
 
 
 @pytest.mark.gui
-def test_main_window_switches_to_plot_on_plot_command(qtbot, isolated_data_dir: Path) -> None:
-    """plot 命令渲染后应自动切换到绘图页."""
+def test_main_window_plot_stays_in_console(qtbot, isolated_data_dir: Path) -> None:
+    """plot 命令应在控制台页内渲染并切到绘图选项卡，不离开当前页."""
     win = MainWindow()
     qtbot.addWidget(win)
     result = win.kernel.execute("plot([1, 2, 3])")
     assert result.error is None
-    assert win._sidebar.currentRow() == 1
-    assert win._stack.currentIndex() == 1
+    assert win._sidebar.currentRow() == 0
+    assert win._stack.currentIndex() == 0
+    assert win._console_page._side_tabs.currentIndex() == 1
 
 
 @pytest.mark.gui

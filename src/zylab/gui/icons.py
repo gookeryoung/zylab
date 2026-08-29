@@ -18,7 +18,7 @@ __all__ = ["NAV_ICON_NAMES", "nav_icon"]
 _ICONS_DIR = Path(__file__).resolve().parent.parent / "assets" / "icons"
 
 #: 侧边栏页序对应的图标文件基名（与 MainWindow 页序一致）
-NAV_ICON_NAMES = ("console", "plot", "analysis", "script", "about")
+NAV_ICON_NAMES = ("console", "analysis", "script", "about")
 
 
 def nav_icon(name: str, color: str | None = None) -> QIcon:

@@ -5,15 +5,22 @@ from __future__ import annotations
 import pytest
 
 from zylab.console import CommandHistory, ReplKernel
+from zylab.core import EventBus
 from zylab.gui.pages.console_page import ConsolePage, ReplInput, VarTableModel
 from zylab.gui.qt_compat import QModelIndex, Qt
 from zylab.sci import VarInfo
 
 
 @pytest.fixture
-def kernel() -> ReplKernel:
-    """每测试独立内核."""
-    return ReplKernel()
+def bus() -> EventBus:
+    """每测试独立事件总线."""
+    return EventBus()
+
+
+@pytest.fixture
+def kernel(bus: EventBus) -> ReplKernel:
+    """每测试独立内核（与页面共享事件总线，绘图事件可达）."""
+    return ReplKernel(bus)
 
 
 @pytest.fixture
@@ -113,9 +120,9 @@ def test_repl_input_history_navigation(qtbot, kernel: ReplKernel, history: Comma
 
 
 @pytest.mark.gui
-def test_console_page_renders_result(qtbot, kernel: ReplKernel, history: CommandHistory) -> None:
+def test_console_page_renders_result(qtbot, kernel: ReplKernel, history: CommandHistory, bus: EventBus) -> None:
     """执行后输出区含命令与结果，变量浏览器刷新."""
-    page = ConsolePage(kernel, history)
+    page = ConsolePage(kernel, history, bus)
     qtbot.addWidget(page)
     page._input.setPlainText("z = 42")
     qtbot.keyClick(page._input, Qt.Key_Return)
@@ -128,9 +135,9 @@ def test_console_page_renders_result(qtbot, kernel: ReplKernel, history: Command
 
 
 @pytest.mark.gui
-def test_console_page_renders_error(qtbot, kernel: ReplKernel, history: CommandHistory) -> None:
+def test_console_page_renders_error(qtbot, kernel: ReplKernel, history: CommandHistory, bus: EventBus) -> None:
     """异常应渲染到输出区."""
-    page = ConsolePage(kernel, history)
+    page = ConsolePage(kernel, history, bus)
     qtbot.addWidget(page)
     page._input.setPlainText("1 / 0")
     qtbot.keyClick(page._input, Qt.Key_Return)
@@ -138,9 +145,9 @@ def test_console_page_renders_error(qtbot, kernel: ReplKernel, history: CommandH
 
 
 @pytest.mark.gui
-def test_console_page_whos_refresh(qtbot, kernel: ReplKernel, history: CommandHistory) -> None:
+def test_console_page_whos_refresh(qtbot, kernel: ReplKernel, history: CommandHistory, bus: EventBus) -> None:
     """whos 命令输出表格且变量模型同步."""
-    page = ConsolePage(kernel, history)
+    page = ConsolePage(kernel, history, bus)
     qtbot.addWidget(page)
     page._input.setPlainText("my_var = [1, 2, 3]")
     qtbot.keyClick(page._input, Qt.Key_Return)
@@ -149,3 +156,39 @@ def test_console_page_whos_refresh(qtbot, kernel: ReplKernel, history: CommandHi
     assert "my_var" in page._output.toPlainText()
     names = [page._var_model.data(page._var_model.index(row, 0)) for row in range(page._var_model.rowCount())]
     assert "my_var" in names
+
+
+@pytest.mark.gui
+def test_console_page_side_tabs(qtbot, kernel: ReplKernel, history: CommandHistory, bus: EventBus) -> None:
+    """右侧选项卡应为 变量/绘图 两页，默认停在变量页."""
+    page = ConsolePage(kernel, history, bus)
+    qtbot.addWidget(page)
+    assert page._side_tabs.count() == 2
+    assert page._side_tabs.tabText(0) == "变量"
+    assert page._side_tabs.tabText(1) == "绘图"
+    assert page._side_tabs.currentIndex() == 0
+
+
+@pytest.mark.gui
+def test_console_page_vars_always_visible(qtbot, kernel: ReplKernel, history: CommandHistory, bus: EventBus) -> None:
+    """任意命令执行后变量表即时刷新（无需 whos）."""
+    page = ConsolePage(kernel, history, bus)
+    qtbot.addWidget(page)
+    assert page._var_model.rowCount() == 0  # 初始空
+    page._input.setPlainText("a = 1")
+    qtbot.keyClick(page._input, Qt.Key_Return)
+    names = [page._var_model.data(page._var_model.index(row, 0)) for row in range(page._var_model.rowCount())]
+    assert "a" in names  # 未调用 whos 即出现在变量表
+
+
+@pytest.mark.gui
+def test_console_page_plot_switches_tab(qtbot, kernel: ReplKernel, history: CommandHistory, bus: EventBus) -> None:
+    """plot 命令渲染后自动切换到绘图选项卡."""
+    page = ConsolePage(kernel, history, bus)
+    qtbot.addWidget(page)
+    page._input.setPlainText("import numpy as np")
+    qtbot.keyClick(page._input, Qt.Key_Return)
+    page._input.setPlainText("plot(np.arange(3), np.arange(3))")
+    qtbot.keyClick(page._input, Qt.Key_Return)
+    assert page._side_tabs.currentIndex() == 1
+    assert len(page._plot_page._plot.listDataItems()) == 1

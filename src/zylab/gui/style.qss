@@ -99,6 +99,33 @@ QListWidget#sidebar::item:selected {
 }
 QListWidget#sidebar::item:hover { background-color: ${QSS_NAV_BG_HOVER}; }
 
+/* ------------------------------------------------ 选项卡（控制台右侧 变量/绘图） */
+QTabWidget#consoleSideTabs::pane {
+    border: 1px solid ${QSS_BORDER};
+    border-radius: ${RADIUS_SM};
+    top: -1px;
+    background-color: ${QSS_BG_APP};
+}
+QTabWidget#consoleSideTabs::tab-bar { top: 6px; left: 6px; }
+QTabWidget#consoleSideTabs > QTabBar::tab {
+    background-color: ${QSS_BG_MUTED};
+    color: ${QSS_TEXT_SECONDARY};
+    padding: 5px 14px;
+    margin-right: 2px;
+    border-top-left-radius: ${RADIUS_SM};
+    border-top-right-radius: ${RADIUS_SM};
+    border: 1px solid ${QSS_BORDER};
+    border-bottom: none;
+}
+QTabWidget#consoleSideTabs > QTabBar::tab:selected {
+    background-color: ${QSS_BG_APP};
+    color: ${QSS_PRIMARY};
+    border-bottom: 2px solid ${QSS_PRIMARY};
+}
+QTabWidget#consoleSideTabs > QTabBar::tab:hover:!selected {
+    background-color: ${QSS_SELECTION_BG};
+}
+
 /* ------------------------------------------------ 按钮 */
 QPushButton {
     background-color: ${QSS_PRIMARY};

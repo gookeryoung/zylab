@@ -1,10 +1,11 @@
-"""控制台页：REPL 输出/输入 + 变量浏览器（QAbstractTableModel）."""
+"""控制台页：REPL 输出/输入 + 右侧选项卡（变量浏览器 / 绘图）."""
 
 from __future__ import annotations
 
 import html
 
 from zylab.console import CommandHistory, ExecResult, ReplKernel
+from zylab.core import EventBus
 from zylab.sci import VarInfo, whos
 
 from .. import theme
@@ -18,11 +19,13 @@ from ..qt_compat import (
     QSplitter,
     Qt,
     QTableView,
+    QTabWidget,
     QTextCursor,
     QVBoxLayout,
     QWidget,
     Signal,
 )
+from .plot_page import PlotPage
 
 __all__ = ["ConsolePage", "ReplInput", "VarTableModel"]
 
@@ -121,19 +124,29 @@ class ReplInput(QPlainTextEdit):
 
 
 class ConsolePage(QWidget):
-    """控制台页：左 REPL（输出+输入），右变量浏览器."""
+    """控制台页：左 REPL（输出+输入），右侧「变量 / 绘图」选项卡.
 
-    def __init__(self, kernel: ReplKernel, history: CommandHistory, parent: QWidget | None = None) -> None:
+    变量浏览器随每条命令执行自动刷新（常态显示）；
+    plot 命令渲染后自动切换到绘图选项卡。
+    """
+
+    def __init__(
+        self,
+        kernel: ReplKernel,
+        history: CommandHistory,
+        bus: EventBus,
+        parent: QWidget | None = None,
+    ) -> None:
         """初始化控制台页."""
         super().__init__(parent)
         self._kernel = kernel
-        self._build_ui(kernel, history)
+        self._build_ui(kernel, history, bus)
         self._append_html(
             f'<span style="color:{theme.current_palette().text_secondary}">'
-            f"zylab 控制台就绪 · whos() 查看变量 · plot(x, y) 绘图 · run('脚本.py') 执行脚本</span>"
+            f"zylab 控制台就绪 · 右侧选项卡实时查看变量 · plot(x, y) 绘图 · run('脚本.py') 执行脚本</span>"
         )
 
-    def _build_ui(self, kernel: ReplKernel, history: CommandHistory) -> None:
+    def _build_ui(self, kernel: ReplKernel, history: CommandHistory, bus: EventBus) -> None:
         """组装布局."""
         splitter = QSplitter(Qt.Horizontal)
 
@@ -153,8 +166,15 @@ class ConsolePage(QWidget):
         var_view.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
         var_view.verticalHeader().setVisible(False)
 
+        self._side_tabs = QTabWidget(objectName="consoleSideTabs")
+        self._side_tabs.addTab(var_view, "变量")
+        self._plot_page = PlotPage(bus, self)
+        self._side_tabs.addTab(self._plot_page, "绘图")
+        # plot 命令渲染后自动切到绘图选项卡
+        self._plot_page.plot_shown.connect(lambda: self._side_tabs.setCurrentIndex(1))
+
         splitter.addWidget(left)
-        splitter.addWidget(var_view)
+        splitter.addWidget(self._side_tabs)
         splitter.setStretchFactor(0, 3)
         splitter.setStretchFactor(1, 2)
 
@@ -163,7 +183,7 @@ class ConsolePage(QWidget):
         layout.addWidget(splitter)
 
     def _on_result(self, result: ExecResult) -> None:
-        """渲染执行结果并刷新变量浏览器."""
+        """渲染执行结果并刷新变量浏览器（常态显示）."""
         pal = theme.current_palette()
         self._append_html(f'<span style="color:{pal.primary}">&gt;&gt;&gt; {html.escape(result.source)}</span>')
         if result.stdout:
