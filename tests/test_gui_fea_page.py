@@ -2,9 +2,10 @@
 
 from __future__ import annotations
 
+import numpy as np
 import pytest
 
-from zylab.fea import Section, solve_modal, solve_static
+from zylab.fea import Section, solve_harmonic, solve_modal, solve_static
 from zylab.gui.pages.fea_page import FeaPage, build_cantilever_case, build_cantilever_mesh
 
 
@@ -78,6 +79,48 @@ def test_fea_page_modal_solve_end_to_end(qtbot) -> None:
     assert solution.n_modes == page._n_modes_spin.value()
     assert solution.frequencies[0] > 0.0
     assert page._freq_table.rowCount() == solution.n_modes
+    page.shutdown()
+
+
+@pytest.mark.gui
+def test_fea_page_harmonic_renders(qtbot) -> None:
+    """谐响应结果应渲染频响曲线并标注峰值."""
+    page = FeaPage()
+    qtbot.addWidget(page)
+
+    mesh = build_cantilever_mesh()
+    materials = [page.current_material]
+    sections = [Section(thickness=page._thickness_spin.value())]
+    case = build_cantilever_case(mesh)
+    solution = solve_harmonic(mesh, materials, sections, case, np.linspace(0.0, 3.0, 30), alpha=0.1)
+
+    page._on_finished(solution)
+    assert page._harmonic_solution is solution
+    assert page._solution is None
+    assert "峰值" in page._result_label.text()
+    # 频响曲线 + 峰值散点已加入绘图区
+    items = page._plot.getPlotItem().listDataItems()
+    assert len(items) >= 2
+    # 静力结果路径应恢复云图视图（log 轴关闭）
+    static = solve_static(mesh, materials, sections, case)
+    page._on_finished(static)
+    assert page._solution is static
+    assert page._harmonic_solution is None
+
+
+@pytest.mark.gui
+def test_fea_page_harmonic_solve_end_to_end(qtbot) -> None:
+    """端到端：谐响应经进程执行器完成并渲染（真实 spawn 子进程）."""
+    page = FeaPage()
+    qtbot.addWidget(page)
+    page._analysis_combo.setCurrentIndex(2)  # 切到谐响应
+    page._n_freq_spin.setValue(20)  # 减少频率点加速测试
+    page._on_solve()
+    with qtbot.waitSignal(page._bridge.finished, timeout=120_000) as blocker:
+        pass
+    solution = blocker.args[0]
+    assert solution.n_frequencies == 20
+    assert "峰值" in page._result_label.text()
     page.shutdown()
 
 

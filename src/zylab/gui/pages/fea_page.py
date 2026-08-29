@@ -1,6 +1,6 @@
 """FEA 分析页：内置示例模型 + 参数编辑 + 进程隔离后台求解 + 云图可视化.
 
-支持静力（变形云图）与模态（频率表 + 振型云图切换）两类分析。
+支持静力（变形云图）、模态（频率表 + 振型云图切换）与谐响应（频响曲线）三类分析。
 """
 
 from __future__ import annotations
@@ -15,6 +15,7 @@ from zylab.fea import (
     Constraint,
     ElementBlock,
     ElementType,
+    HarmonicResponse,
     LinearElastic,
     Mesh,
     ModalSolution,
@@ -110,6 +111,7 @@ class FeaPage(QWidget):
         self._executor: ProcessExecutor | None = None
         self._solution: StaticSolution | None = None
         self._modal_solution: ModalSolution | None = None
+        self._harmonic_solution: HarmonicResponse | None = None
         self._bridge = _SolveBridge()
 
         self._build_ui()
@@ -157,6 +159,7 @@ class FeaPage(QWidget):
         self._analysis_combo = QComboBox()
         self._analysis_combo.addItem("静力", "static")
         self._analysis_combo.addItem("模态", "modal")
+        self._analysis_combo.addItem("谐响应", "harmonic")
         form.addRow("分析类型", self._analysis_combo)
         self._model_info = QLabel("40 x 8 网格 · 369 节点 · 320 单元", objectName="secondaryText")
         form.addRow(self._model_info)
@@ -173,11 +176,21 @@ class FeaPage(QWidget):
         self._n_modes_spin = QSpinBox()
         self._n_modes_spin.setRange(1, 50)
         self._n_modes_spin.setValue(6)
+        self._fmax_spin = self._make_spin(1.0e-6, 1.0e6, 3.0, 0.5)
+        self._n_freq_spin = QSpinBox()
+        self._n_freq_spin.setRange(10, 2000)
+        self._n_freq_spin.setValue(60)
+        self._alpha_spin = self._make_spin(0.0, 1.0e6, 0.1, 0.05)
+        self._beta_spin = self._make_spin(0.0, 1.0e3, 0.0, 0.01)
         form.addRow("弹性模量 E", self._young_spin)
         form.addRow("泊松比 ν", self._poisson_spin)
         form.addRow("厚度 t", self._thickness_spin)
-        form.addRow("密度 ρ（模态）", self._density_spin)
+        form.addRow("密度 ρ（动力学）", self._density_spin)
         form.addRow("模态阶数（模态）", self._n_modes_spin)
+        form.addRow("扫频上限 ω（谐响应）", self._fmax_spin)
+        form.addRow("扫频点数（谐响应）", self._n_freq_spin)
+        form.addRow("阻尼 α（谐响应）", self._alpha_spin)
+        form.addRow("阻尼 β（谐响应）", self._beta_spin)
         return box
 
     @staticmethod
@@ -254,6 +267,7 @@ class FeaPage(QWidget):
 
     def _render_solution(self, solution: StaticSolution) -> None:
         """渲染变形线框与节点位移模云图."""
+        self._restore_mesh_view()
         mesh = solution.mesh
         edges = mesh_edges(mesh)
         field = displacement_field(solution)
@@ -311,6 +325,7 @@ class FeaPage(QWidget):
 
     def _render_mode_shape(self, index: int) -> None:
         """渲染第 index 阶（1 基）振型云图."""
+        self._restore_mesh_view()
         solution = self._modal_solution
         if solution is None or not 1 <= index <= solution.n_modes:
             return
@@ -342,6 +357,56 @@ class FeaPage(QWidget):
             )
         )
 
+    def _restore_mesh_view(self) -> None:
+        """恢复云图视图状态（锁纵横比 + 线性轴，清除频响曲线的视图残留）."""
+        self._plot.setAspectLocked(True)
+        self._plot.setLogMode(y=False)
+
+    @staticmethod
+    def _tip_node(mesh: Mesh) -> int:
+        """取末端中点节点（x 最大列中 y 居中者）作为频响观察点."""
+        coords = mesh.coords
+        tip_mask = coords[:, 0] >= coords[:, 0].max() - 1e-9
+        tip_rows = np.flatnonzero(tip_mask)
+        return int(tip_rows[np.argmin(np.abs(coords[tip_rows, 1] - np.mean(coords[tip_rows, 1])))])
+
+    def _render_harmonic(self, solution: HarmonicResponse) -> None:
+        """渲染频响曲线（观察点 |uy| 随 ω 变化，对数幅值轴）并标注峰值."""
+        mesh = solution.mesh
+        node = self._tip_node(mesh)
+        dof_y = node * mesh.dofs_per_node + 1  # 观察点竖向分量
+        amplitude = np.abs(solution.displacements[dof_y, :])
+        omegas = solution.frequencies
+
+        self._plot.clear()
+        self._plot.setAspectLocked(False)  # 频响曲线恢复自由纵横比
+        self._plot.showGrid(x=True, y=True, alpha=0.3)
+        self._plot.setLogMode(y=True)
+        self._plot.addLegend(offset=(12, 12))
+        self._plot.setLabel("bottom", "ω", units="rad/s")
+        self._plot.setLabel("left", "|uy|（对数）")
+        self._plot.plot(
+            omegas,
+            amplitude,
+            pen=pg.mkPen(theme.current_palette().primary, width=2),
+            name=f"节点 {node} |uy|",
+        )
+        peak_index = int(np.argmax(amplitude))
+        self._plot.addItem(
+            pg.ScatterPlotItem(
+                x=[omegas[peak_index]],
+                y=[amplitude[peak_index]],
+                size=10,
+                brush=pg.mkBrush(theme.current_palette().error_text),
+                pen=None,
+                name="峰值",
+            )
+        )
+        self._result_label.setText(
+            f"峰值 |uy| = {amplitude[peak_index]:.6g} @ ω = {omegas[peak_index]:.6g} rad/s"
+            f"（{solution.n_frequencies} 个频率点）"
+        )
+
     # ---------------------------------------------------------------- 求解
 
     @property
@@ -366,11 +431,18 @@ class FeaPage(QWidget):
         mesh, materials, sections, case = self._current_model()
         if self._executor is None:
             self._executor = ProcessExecutor()
-        if self._analysis_combo.currentData() == "modal":
+        analysis = self._analysis_combo.currentData()
+        if analysis == "modal":
             spec = TaskSpec(
                 target="zylab.fea.modal:solve_modal",
                 args=(mesh, materials, sections, case.constraints),
                 kwargs={"n_modes": self._n_modes_spin.value()},
+            )
+        elif analysis == "harmonic":
+            spec = TaskSpec(
+                target="zylab.fea.harmonic:solve_harmonic",
+                args=(mesh, materials, sections, case, self._sweep_frequencies()),
+                kwargs={"alpha": self._alpha_spin.value(), "beta": self._beta_spin.value()},
             )
         else:
             spec = TaskSpec(
@@ -383,23 +455,37 @@ class FeaPage(QWidget):
         handle = self._executor.submit(spec)
         handle.add_listener(self._bridge.dispatch)
 
+    def _sweep_frequencies(self) -> np.ndarray:
+        """构造谐响应频率扫描序列（0 到扫频上限，等间距）."""
+        n_points = self._n_freq_spin.value()
+        return np.linspace(0.0, self._fmax_spin.value(), n_points)
+
     def _on_progress(self, progress: float, message: str) -> None:
         """更新进度条与状态."""
         self._progress.setValue(int(progress * 100))
         self._status_label.setText(message)
 
     def _on_finished(self, solution: object) -> None:
-        """按结果类型分发渲染（StaticSolution / ModalSolution）."""
+        """按结果类型分发渲染（StaticSolution / ModalSolution / HarmonicResponse）."""
         self._solve_button.setEnabled(True)
         self._status_label.setText("求解完成")
         self._set_result_error(False)
         if isinstance(solution, ModalSolution):
             self._solution = None
             self._modal_solution = solution
+            self._harmonic_solution = None
             self._render_modal(solution)
+        elif isinstance(solution, HarmonicResponse):
+            self._solution = None
+            self._modal_solution = None
+            self._harmonic_solution = solution
+            self._freq_table.setVisible(False)
+            self._mode_spin.setVisible(False)
+            self._render_harmonic(solution)
         else:
             self._solution = solution
             self._modal_solution = None
+            self._harmonic_solution = None
             self._freq_table.setVisible(False)
             self._mode_spin.setVisible(False)
             self._render_solution(solution)
