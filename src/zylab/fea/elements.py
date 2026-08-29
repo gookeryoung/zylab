@@ -21,7 +21,14 @@ from .errors import ElementError
 from .material import LinearElastic, Section
 from .mesh import ElementType
 
-__all__ = ["element_mass", "element_measure", "element_stiffness", "element_stress", "element_stress_at"]
+__all__ = [
+    "element_geometric_stiffness",
+    "element_mass",
+    "element_measure",
+    "element_stiffness",
+    "element_stress",
+    "element_stress_at",
+]
 
 _GEOM_TOL = 1.0e-12
 
@@ -146,6 +153,61 @@ def _beam2_mass(coords: np.ndarray, density: float, area: float) -> np.ndarray:
         t[base + 1, base + 1] = c
         t[base + 2, base + 2] = 1.0
     return t.T @ m_local @ t
+
+
+def _truss2_geometric_stiffness(coords: np.ndarray, axial_force: float) -> np.ndarray:
+    """杆单元几何刚度（初应力刚度，全局坐标）.
+
+    弦张紧刚度 ``(N/L)·n nᵀ``，n 为垂直杆轴的方向向量（每节点重复）。
+    轴力 N 拉伸为正：拉伸增强横向刚度，压缩削弱（屈曲来源）。
+    与质量不同，几何刚度源于轴向应变能的二阶项，方向性强，
+    但其对偶变量是横向位移（轴向分量不贡献），故经法向向量构造。
+    """
+    delta = coords[1] - coords[0]
+    length = float(np.linalg.norm(delta))
+    if length <= _GEOM_TOL:
+        raise ElementError("杆单元两节点重合，长度为零")
+    if coords.shape[1] != 2:
+        raise ElementError("杆几何刚度 v1 仅支持平面杆（2D）")
+    c, s = float(delta[0] / length), float(delta[1] / length)
+    # 每节点法向（垂直杆轴）：(-s, c)；节点序 (n1, n2)
+    normal = np.array([-s, c])
+    g = np.concatenate((normal, normal))
+    return axial_force / length * np.outer(g, g)
+
+
+def _beam2_geometric_stiffness(coords: np.ndarray, axial_force: float) -> np.ndarray:
+    """平面梁单元几何刚度（初应力刚度，经坐标变换）.
+
+    经典 Hermite 梁几何刚度（局部坐标），轴力 P 拉伸为正：
+    横向平动项 6/5、平动-转动耦合 L/10、转动项 2L²/15（对角）与 -L²/30（耦合）。
+    轴向平动分量不贡献（与杆单元同理）。
+    """
+    delta = coords[1] - coords[0]
+    length = float(np.linalg.norm(delta))
+    if length <= _GEOM_TOL:
+        raise ElementError("梁单元两节点重合，长度为零")
+    c, s = float(delta[0] / length), float(delta[1] / length)
+    p = axial_force / length
+    kg_local = p * np.array(
+        [
+            [0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+            [0.0, 6.0 / 5.0, length / 10.0, 0.0, -6.0 / 5.0, length / 10.0],
+            [0.0, length / 10.0, 2.0 * length**2 / 15.0, 0.0, -length / 10.0, -(length**2) / 30.0],
+            [0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+            [0.0, -6.0 / 5.0, -length / 10.0, 0.0, 6.0 / 5.0, -length / 10.0],
+            [0.0, length / 10.0, -(length**2) / 30.0, 0.0, -length / 10.0, 2.0 * length**2 / 15.0],
+        ]
+    )
+    t = np.zeros((6, 6))
+    for node in (0, 1):
+        base = 3 * node
+        t[base, base] = c
+        t[base, base + 1] = s
+        t[base + 1, base] = -s
+        t[base + 1, base + 1] = c
+        t[base + 2, base + 2] = 1.0
+    return t.T @ kg_local @ t
 
 
 def _beam2_stress(
@@ -575,6 +637,34 @@ def element_mass(
     if etype is ElementType.HEX8:
         return _hex8_mass(coords, material.density)
     raise ElementError(f"不支持的单元类型: {etype}")  # pragma: no cover（枚举闭合）
+
+
+def element_geometric_stiffness(
+    etype: ElementType,
+    coords: np.ndarray,
+    axial_force: float,
+) -> np.ndarray:
+    """按单元类型计算几何刚度矩阵（初应力刚度，全局坐标）.
+
+    v1 仅支持杆/梁单元（连续体几何刚度推迟）。轴力以拉伸为正；
+    压缩轴力削弱横向刚度，是屈曲的物理来源。
+
+    Args:
+        etype: 单元类型（TRUSS2 / BEAM2）。
+        coords: 单元节点坐标 ``(n_node, dim)``。
+        axial_force: 参考态轴力（拉伸为正）。
+
+    Returns:
+        单元几何刚度矩阵（与单元刚度矩阵同维度）。
+
+    Raises:
+        ElementError: 单元类型不支持或几何退化时抛出。
+    """
+    if etype is ElementType.TRUSS2:
+        return _truss2_geometric_stiffness(coords, axial_force)
+    if etype is ElementType.BEAM2:
+        return _beam2_geometric_stiffness(coords, axial_force)
+    raise ElementError(f"几何刚度暂不支持该单元类型: {etype}")
 
 
 def element_stress(

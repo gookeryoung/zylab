@@ -14,15 +14,24 @@ import numpy as np
 from scipy.sparse import csr_matrix
 
 from .boundary import BodyForce, EdgePressure, StaticCase
-from .elements import element_mass, element_measure, element_stiffness
+from .elements import element_geometric_stiffness, element_mass, element_measure, element_stiffness
 from .errors import MeshError
 from .material import LinearElastic, Section
 from .mesh import ElementBlock, ElementType, Mesh
 
-__all__ = ["assemble_loads", "assemble_mass", "assemble_stiffness", "element_dofs"]
+__all__ = [
+    "assemble_geometric",
+    "assemble_loads",
+    "assemble_mass",
+    "assemble_stiffness",
+    "element_dofs",
+]
 
 # 连续体单元族（可施加体力；杆/梁的自重等分布载荷 v1 暂不涉及）
 _CONTINUUM_TYPES = frozenset({ElementType.TRIA3, ElementType.QUAD4, ElementType.TET4, ElementType.HEX8})
+
+# 支持几何刚度的单元族（v1 限杆/梁）
+_GEOMETRIC_TYPES = frozenset({ElementType.TRUSS2, ElementType.BEAM2})
 
 
 def element_dofs(mesh: Mesh, conn: np.ndarray) -> np.ndarray:
@@ -111,6 +120,54 @@ def assemble_mass(
     col = np.concatenate(cols)
     value = np.concatenate(values)
     return csr_matrix((value, (row, col)), shape=(mesh.n_dofs, mesh.n_dofs))
+
+
+def assemble_geometric(
+    mesh: Mesh,
+    axial_forces: Sequence[float],
+) -> csr_matrix:
+    """装配全局几何刚度矩阵（初应力刚度，CSR）.
+
+    仅杆/梁单元贡献几何刚度；其余单元族位置跳过（贡献 0）。
+    ``axial_forces`` 与网格单元展平序（块序 + 块内序）一一对应，
+    连续体单元位置的数值被忽略。
+
+    Args:
+        mesh: 网格。
+        axial_forces: 每单元参考态轴力（拉伸为正），长度 = 总单元数。
+
+    Returns:
+        全局几何刚度矩阵 ``(n_dofs, n_dofs)`` CSR 稀疏矩阵。
+
+    Raises:
+        MeshError: 轴力数组长度与单元数不符时抛出。
+        ElementError: 单元几何退化时抛出（经 :func:`element_geometric_stiffness`）。
+    """
+    total = sum(block.conn.shape[0] for block in mesh.blocks)
+    if len(axial_forces) != total:
+        raise MeshError(f"轴力数组长度 {len(axial_forces)} 与单元总数 {total} 不符")
+    rows: list[np.ndarray] = []
+    cols: list[np.ndarray] = []
+    values: list[np.ndarray] = []
+    cursor = 0
+    for block in mesh.blocks:
+        for conn in block.conn:
+            force = axial_forces[cursor]
+            cursor += 1
+            if block.etype in _GEOMETRIC_TYPES and force != 0.0:
+                dofs = element_dofs(mesh, conn)
+                kg = element_geometric_stiffness(block.etype, mesh.coords[conn], force)
+                n_dof_elem = dofs.size
+                rows.append(np.repeat(dofs, n_dof_elem))
+                cols.append(np.tile(dofs, n_dof_elem))
+                values.append(kg.ravel())
+    shape = (mesh.n_dofs, mesh.n_dofs)
+    if not rows:
+        return csr_matrix(shape)
+    row = np.concatenate(rows)
+    col = np.concatenate(cols)
+    value = np.concatenate(values)
+    return csr_matrix((value, (row, col)), shape=shape)
 
 
 def assemble_loads(
