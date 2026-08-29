@@ -8,6 +8,7 @@ from __future__ import annotations
 try:
     from PySide6.QtCore import (
         QAbstractTableModel,
+        QByteArray,
         QModelIndex,
         QObject,
         QSize,
@@ -16,7 +17,7 @@ try:
         Signal,
         Slot,
     )
-    from PySide6.QtGui import QColor, QFont, QIcon, QKeyEvent, QPainter, QPixmap, QTextCursor
+    from PySide6.QtGui import QFont, QIcon, QKeyEvent, QPixmap, QTextCursor
     from PySide6.QtWidgets import (
         QAbstractItemView,
         QApplication,
@@ -46,6 +47,7 @@ try:
 except ImportError:  # pragma: no cover（3.8 环境走此分支）
     from PySide2.QtCore import (  # type: ignore[missing-import]
         QAbstractTableModel,
+        QByteArray,
         QModelIndex,
         QObject,
         QSize,
@@ -55,11 +57,9 @@ except ImportError:  # pragma: no cover（3.8 环境走此分支）
         Slot,
     )
     from PySide2.QtGui import (  # type: ignore[missing-import]
-        QColor,
         QFont,
         QIcon,
         QKeyEvent,
-        QPainter,
         QPixmap,
         QTextCursor,
     )
@@ -95,7 +95,7 @@ __all__ = [
     "QAbstractItemView",
     "QAbstractTableModel",
     "QApplication",
-    "QColor",
+    "QByteArray",
     "QComboBox",
     "QDoubleSpinBox",
     "QFont",
@@ -113,7 +113,6 @@ __all__ = [
     "QMainWindow",
     "QModelIndex",
     "QObject",
-    "QPainter",
     "QPixmap",
     "QPlainTextEdit",
     "QProgressBar",

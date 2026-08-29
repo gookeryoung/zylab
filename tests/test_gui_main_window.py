@@ -66,6 +66,18 @@ def test_main_window_sidebar_icons(qtbot, isolated_data_dir: Path) -> None:
 
 
 @pytest.mark.gui
+def test_nav_icon_background_transparent(qtbot) -> None:
+    """图标角落像素应全透明（无背景色块）."""
+    from zylab.gui.icons import nav_icon
+
+    icon = nav_icon("console")
+    assert not icon.isNull()
+    image = icon.pixmap(32, 32).toImage()
+    corner = image.pixelColor(1, 1)
+    assert corner.alpha() == 0, f"左上角存在非透明背景: alpha={corner.alpha()}"
+
+
+@pytest.mark.gui
 def test_main_window_icons_follow_theme(qtbot, isolated_data_dir: Path) -> None:
     """切换主题后侧边栏图标应重新着色（选中行 accent 三主题互不相同）."""
     win = MainWindow()
