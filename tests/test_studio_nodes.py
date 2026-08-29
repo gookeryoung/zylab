@@ -154,3 +154,38 @@ class TestBuiltinTemplatesExecutable:
         coords = bundle.mesh.coords
         assert coords[node, 0] == pytest.approx(coords[:, 0].max())
         assert coords[node, 1] == pytest.approx(coords[:, 1].max() / 2.0)
+
+
+class TestLinkedNodes:
+    """链接节点（可选 STATIC 输入端口）."""
+
+    def test_buckling_with_reference_matches_standalone(self) -> None:
+        """reference 链接上游静力解与独立屈曲结果一致."""
+        bundle = nodes.build_column({}, {})
+        static = nodes.run_static({"model": bundle}, {})
+        linked = nodes.run_buckling({"model": bundle, "reference": static}, {"n_modes": 2})
+        standalone = nodes.run_buckling({"model": bundle}, {"n_modes": 2})
+        np.testing.assert_allclose(linked.load_factors, standalone.load_factors, rtol=1e-9)
+        assert linked.reference is static
+
+    def test_buckling_reference_wrong_type(self) -> None:
+        """reference 端口载荷类型错误抛 TypeError."""
+        bundle = nodes.build_column({}, {})
+        with pytest.raises(TypeError, match="StaticSolution"):
+            nodes.run_buckling({"model": bundle, "reference": object()}, {})
+
+    def test_nonlinear_with_initial_from_static(self) -> None:
+        """initial 链接静力解：首帧为初态，收敛点与零位移起算一致."""
+        bundle = nodes.build_truss({}, {})
+        static = nodes.run_static({"model": bundle}, {})
+        linked = nodes.run_nonlinear({"model": bundle, "initial": static}, {"n_increments": 4})
+        fresh = nodes.run_nonlinear({"model": bundle}, {"n_increments": 4})
+        assert linked.converged
+        np.testing.assert_allclose(linked.displacements, fresh.displacements, rtol=1e-6)
+        np.testing.assert_allclose(linked.history_displacements[0], static.displacements, rtol=1e-12)
+
+    def test_nonlinear_initial_wrong_type(self) -> None:
+        """initial 端口载荷类型错误抛 TypeError."""
+        bundle = nodes.build_truss({}, {})
+        with pytest.raises(TypeError, match="StaticSolution"):
+            nodes.run_nonlinear({"model": bundle, "initial": object()}, {})

@@ -105,6 +105,56 @@ BUILTIN_TEMPLATES: tuple[Template, ...] = tuple(
             },
         },
         {
+            "id": "structural.column_buckling_linked",
+            "name": "压杆屈曲分析（静力参考态链接）",
+            "discipline": "structural",
+            "description": "静力节点产出参考态，屈曲节点经 reference 端口复用其轴力，演示模块 Link 连接。",
+            "tags": ["稳定性", "链接"],
+            "nodes": [
+                {"id": "model", "type": "example.column_beam2"},
+                {"id": "static", "type": "analysis.static", "inputs": {"model": "model.model"}},
+                {
+                    "id": "buckling",
+                    "type": "analysis.buckling",
+                    "inputs": {"model": "model.model", "reference": "static.solution"},
+                },
+            ],
+            "ui": {
+                "param_groups": [
+                    {"title": "几何与网格", "params": ["model.height", "model.n_elem"]},
+                    {"title": "截面", "params": ["model.area", "model.inertia"]},
+                    {"title": "载荷", "params": ["model.tip_load"]},
+                    {"title": "分析", "params": ["buckling.n_modes"]},
+                ],
+                "results": ["static", "buckling"],
+            },
+        },
+        {
+            "id": "structural.truss_nonlinear_linked",
+            "name": "两杆桁架非线性（静力初态链接）",
+            "discipline": "structural",
+            "description": "静力节点产出初态位移，非线性节点经 initial 端口从初态起算，演示模块 Link 连接。",
+            "tags": ["非线性", "链接"],
+            "nodes": [
+                {"id": "model", "type": "example.truss2_two_bar"},
+                {"id": "static", "type": "analysis.static", "inputs": {"model": "model.model"}},
+                {
+                    "id": "nonlinear",
+                    "type": "analysis.nonlinear",
+                    "inputs": {"model": "model.model", "initial": "static.solution"},
+                },
+            ],
+            "ui": {
+                "param_groups": [
+                    {"title": "几何", "params": ["model.half_span", "model.rise"]},
+                    {"title": "材料与截面", "params": ["model.e_modulus", "model.area"]},
+                    {"title": "载荷", "params": ["model.apex_load"]},
+                    {"title": "分析", "params": ["nonlinear.n_increments"]},
+                ],
+                "results": ["static", "nonlinear"],
+            },
+        },
+        {
             "id": "structural.cantilever_combo",
             "name": "悬臂梁静力 + 模态联合分析",
             "discipline": "structural",

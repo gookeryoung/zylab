@@ -21,6 +21,7 @@ from zylab.fea import (
     SolverError,
     StaticCase,
     solve_nonlinear_static,
+    solve_static,
     truss2_internal_force,
     truss2_tangent_stiffness,
 )
@@ -232,6 +233,54 @@ class TestNonlinearSolve:
                 n_increments=1,
                 max_iterations=2,
             )
+
+
+# ---------------------------------------------------------------------------
+# 初态链接
+# ---------------------------------------------------------------------------
+
+
+class TestNonlinearInitialState:
+    """初态静力解注入（工作流初态链接）."""
+
+    def test_initial_state_same_converged_point(self) -> None:
+        """弹性路径无关：静力初态起算与零位移起算收敛到同一平衡态."""
+        mesh = _two_bar_mesh(1.0, 1.0)
+        case = StaticCase(
+            constraints=(Constraint(0, (0, 1)), Constraint(2, (0, 1))),
+            loads=(NodalLoad(1, (0.0, -40.0)),),
+        )
+        materials = [LinearElastic(E_MOD)]
+        sections = [Section(area=AREA)]
+        fresh = solve_nonlinear_static(mesh, materials, sections, case, n_increments=4)
+        initial = solve_static(mesh, materials, sections, case)
+        restarted = solve_nonlinear_static(mesh, materials, sections, case, n_increments=4, initial=initial)
+        assert restarted.converged
+        np.testing.assert_allclose(restarted.displacements, fresh.displacements, rtol=1e-6)
+        # 历史首帧为初态（静力解位移），而非零位移
+        np.testing.assert_allclose(restarted.history_displacements[0], initial.displacements, rtol=1e-12)
+
+    def test_mismatched_initial_rejected(self) -> None:
+        """初态解自由度数与模型不匹配时抛 SolverError."""
+        mesh = _two_bar_mesh(1.0, 1.0)
+        case = StaticCase(
+            constraints=(Constraint(0, (0, 1)), Constraint(2, (0, 1))),
+            loads=(NodalLoad(1, (0.0, -1.0)),),
+        )
+        materials = [LinearElastic(E_MOD)]
+        sections = [Section(area=AREA)]
+        # 单杆模型（2 节点）与两杆模型（3 节点）自由度数不同
+        rod = Mesh(
+            coords=np.array([[0.0, 0.0], [1.0, 0.0]]),
+            blocks=(ElementBlock(etype=ElementType.TRUSS2, conn=np.array([[0, 1]])),),
+        )
+        rod_case = StaticCase(
+            constraints=(Constraint(0, (0, 1)), Constraint(1, (0, 1))),
+            loads=(NodalLoad(1, (1.0, 0.0)),),
+        )
+        initial = solve_static(rod, materials, sections, rod_case)
+        with pytest.raises(SolverError, match="不匹配"):
+            solve_nonlinear_static(mesh, materials, sections, case, initial=initial)
 
 
 # ---------------------------------------------------------------------------

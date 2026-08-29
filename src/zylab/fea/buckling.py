@@ -63,6 +63,7 @@ def solve_buckling(  # noqa: PLR0913  静力四要素 + 阶数与回调，语义
     case: StaticCase,
     *,
     n_modes: int = 5,
+    reference: StaticSolution | None = None,
     report: Callable[[float, str], None] | None = None,
 ) -> BucklingSolution:
     """线性特征值屈曲分析（杆/梁结构）.
@@ -76,19 +77,28 @@ def solve_buckling(  # noqa: PLR0913  静力四要素 + 阶数与回调，语义
         sections: 截面表（ElementBlock.section 索引引用）。
         case: 参考载荷工况（约束 + 载荷；临界载荷 = 因子 × 工况载荷）。
         n_modes: 提取屈曲阶数。
+        reference: 外部参考静力解（如工作流中上游静力节点的输出，预应力链接）；
+            缺省时内部按 case 自算。
         report: 进度回调 ``(progress, message)``；进程执行器自动注入。
 
     Returns:
         :class:`BucklingSolution`，含升序临界载荷因子与屈曲振型。
 
     Raises:
-        SolverError: 约束不足、无正特征值（参考态不受压）、
-            阶数越界或特征值求解失败时抛出。
+        SolverError: 约束不足、参考解与模型自由度不匹配、无正特征值
+            （参考态不受压）、阶数越界或特征值求解失败时抛出。
     """
     progress = _no_report if report is None else report
 
-    progress(0.2, "参考态线性静力求解")
-    reference = solve_static(mesh, materials, sections, case)
+    if reference is None:
+        progress(0.2, "参考态线性静力求解")
+        reference = solve_static(mesh, materials, sections, case)
+    else:
+        if reference.mesh.n_dofs != mesh.n_dofs:
+            raise SolverError(
+                f"参考静力解自由度数 {reference.mesh.n_dofs} 与模型 {mesh.n_dofs} 不匹配（预应力链接须同模型）"
+            )
+        progress(0.2, "使用外部参考静力解")
     progress(0.5, "提取单元轴力并装配几何刚度")
     axial_forces = _extract_axial_forces(mesh, sections, reference)
     k_global = assemble_stiffness(mesh, materials, sections)

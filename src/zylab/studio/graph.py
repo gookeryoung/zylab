@@ -62,7 +62,7 @@ class NodeInstance:
         """当前状态（由运行标志/输入完整性/错误/结果推导）."""
         if self.running:
             return NodeState.RUNNING
-        if any(port.name not in self.inputs for port in self.spec.inputs):
+        if any(port.name not in self.inputs for port in self.spec.inputs if port.required):
             return NodeState.UNFULFILLED
         if self.error:
             return NodeState.FAILED

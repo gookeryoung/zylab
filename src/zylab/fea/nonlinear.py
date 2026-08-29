@@ -20,6 +20,7 @@ from .elements import truss2_internal_force, truss2_tangent_stiffness
 from .errors import SolverError
 from .material import LinearElastic, Section
 from .mesh import ElementType, Mesh
+from .static import StaticSolution
 
 __all__ = ["NonlinearSolution", "solve_nonlinear_static"]
 
@@ -79,6 +80,7 @@ def solve_nonlinear_static(  # noqa: PLR0913  求解四要素 + 步进控制参�
     n_increments: int = 10,
     tolerance: float = 1.0e-8,
     max_iterations: int = 30,
+    initial: StaticSolution | None = None,
     report: Callable[[float, str], None] | None = None,
 ) -> NonlinearSolution:
     """几何非线性静力分析（载荷增量 + Newton-Raphson 平衡迭代）.
@@ -96,6 +98,8 @@ def solve_nonlinear_static(  # noqa: PLR0913  求解四要素 + 步进控制参�
         n_increments: 载荷增量步数（>= 1）。
         tolerance: 残差收敛容差（相对自由自由度外载荷范数）。
         max_iterations: 每增量步最大 Newton 迭代次数。
+        initial: 初态静力解（如工作流中上游静力节点输出，从其位移状态起算）；
+            缺省时从零位移起算。
         report: 进度回调 ``(progress, message)``；进程执行器自动注入。
 
     Returns:
@@ -103,7 +107,7 @@ def solve_nonlinear_static(  # noqa: PLR0913  求解四要素 + 步进控制参�
 
     Raises:
         SolverError: 单元类型不支持、约束非法、载荷类型不支持、
-            或 Newton 迭代不收敛时抛出。
+            初态解与模型自由度不匹配、或 Newton 迭代不收敛时抛出。
     """
     progress = _no_report if report is None else report
     _validate_model(mesh, case)
@@ -128,12 +132,21 @@ def solve_nonlinear_static(  # noqa: PLR0913  求解四要素 + 步进控制参�
     if f_ref <= 0.0:
         raise SolverError("非线性分析缺少非零外载荷（自由自由度上外力范数为零）")
 
-    u = np.zeros(mesh.n_dofs)
+    # 初态：缺省零位移；给定初态静力解时从其位移状态起算（历史首帧即初态）
+    if initial is None:
+        u = np.zeros(mesh.n_dofs)
+        snapshots: list[np.ndarray] = [np.zeros((mesh.n_nodes, mesh.dofs_per_node))]
+    else:
+        if initial.mesh.n_dofs != mesh.n_dofs:
+            raise SolverError(
+                f"初态静力解自由度数 {initial.mesh.n_dofs} 与模型 {mesh.n_dofs} 不匹配（初态链接须同模型）"
+            )
+        u = initial.displacements.reshape(-1).copy()
+        snapshots = [initial.displacements.copy()]
     iterations: list[int] = []
     converged = True
     # 全过程追踪：载荷因子 + 每步收敛位移快照（载荷-位移曲线数据源）
     factors: list[float] = [0.0]
-    snapshots: list[np.ndarray] = [np.zeros((mesh.n_nodes, mesh.dofs_per_node))]
     for step in range(1, n_increments + 1):
         factor = step / n_increments
         target = f_ext * factor

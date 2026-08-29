@@ -119,11 +119,13 @@ class PortSpec:
     :param name: 端口名（模板 inputs 中以 ``"node_id.port_name"`` 引用）。
     :param port_type: 载荷类型。
     :param label: 中文显示名。
+    :param required: 是否必须连接（可选端口如屈曲的预应力参考，缺省不连即可运行）。
     """
 
     name: str
     port_type: PortType
     label: str = ""
+    required: bool = True
 
 
 @dataclass(frozen=True)
@@ -274,7 +276,10 @@ BUILTIN_MODULES: tuple[ModuleSpec, ...] = (
         name="屈曲分析",
         category=ModuleCategory.ANALYSIS,
         target="zylab.studio.nodes:run_buckling",
-        inputs=(PortSpec("model", PortType.MODEL, "模型"),),
+        inputs=(
+            PortSpec("model", PortType.MODEL, "模型"),
+            PortSpec("reference", PortType.STATIC, "参考静力", required=False),
+        ),
         outputs=(PortSpec("solution", PortType.BUCKLING, "屈曲解"),),
         params=(ParamSpec("n_modes", "模态阶数", ParamType.INT, 5, 1, 50, 1),),
     ),
@@ -283,7 +288,10 @@ BUILTIN_MODULES: tuple[ModuleSpec, ...] = (
         name="几何非线性分析",
         category=ModuleCategory.ANALYSIS,
         target="zylab.studio.nodes:run_nonlinear",
-        inputs=(PortSpec("model", PortType.MODEL, "模型"),),
+        inputs=(
+            PortSpec("model", PortType.MODEL, "模型"),
+            PortSpec("initial", PortType.STATIC, "初态静力", required=False),
+        ),
         outputs=(PortSpec("solution", PortType.NONLINEAR, "非线性解"),),
         params=(
             ParamSpec("n_increments", "增量步数", ParamType.INT, 10, 1, 100, 5),

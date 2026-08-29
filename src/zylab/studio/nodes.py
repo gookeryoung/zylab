@@ -83,6 +83,16 @@ def _model_of(inputs: NodeInputs) -> ModelBundle:
     return model
 
 
+def _optional_static(inputs: NodeInputs, port: str) -> StaticSolution | None:
+    """取可选静力解端口载荷（未连接返回 None）."""
+    value = inputs.get(port)
+    if value is None:
+        return None
+    if not isinstance(value, StaticSolution):
+        raise TypeError(f"输入端口 {port!r} 应为 StaticSolution，得到 {type(value).__name__}")
+    return value
+
+
 def _material(p: Mapping[str, float | int]) -> LinearElastic:
     """由参数表构建线弹性材料（泊松比缺失时按杆系模型置 0）."""
     return LinearElastic(
@@ -227,23 +237,32 @@ def run_harmonic(inputs: NodeInputs, params: NodeParams, report: ReportFn | None
 
 
 def run_buckling(inputs: NodeInputs, params: NodeParams, report: ReportFn | None = None) -> BucklingSolution:
-    """屈曲分析节点：MODEL -> BucklingSolution（参考静力解内部自算）."""
+    """屈曲分析节点：MODEL(+可选 STATIC 参考) -> BucklingSolution.
+
+    接入 ``reference`` 上游静力解时复用其轴力（预应力链接），否则内部自算。
+    """
     model = _model_of(inputs)
     p = _params("analysis.buckling", params)
+    reference = _optional_static(inputs, "reference")
     return solve_buckling(
         model.mesh,
         model.materials,
         model.sections,
         model.case,
         n_modes=int(p["n_modes"]),
+        reference=reference,
         report=report,
     )
 
 
 def run_nonlinear(inputs: NodeInputs, params: NodeParams, report: ReportFn | None = None) -> NonlinearSolution:
-    """几何非线性分析节点：MODEL -> NonlinearSolution（载荷增量 + Newton-Raphson）."""
+    """几何非线性分析节点：MODEL(+可选 STATIC 初态) -> NonlinearSolution.
+
+    接入 ``initial`` 上游静力解时从其位移状态起算（初态链接），否则零位移起算。
+    """
     model = _model_of(inputs)
     p = _params("analysis.nonlinear", params)
+    initial = _optional_static(inputs, "initial")
     return solve_nonlinear_static(
         model.mesh,
         model.materials,
@@ -252,6 +271,7 @@ def run_nonlinear(inputs: NodeInputs, params: NodeParams, report: ReportFn | Non
         n_increments=int(p["n_increments"]),
         tolerance=float(p["tolerance"]),
         max_iterations=int(p["max_iterations"]),
+        initial=initial,
         report=report,
     )
 

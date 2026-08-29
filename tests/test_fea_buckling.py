@@ -25,6 +25,7 @@ from zylab.fea import (
     assemble_geometric,
     element_geometric_stiffness,
     solve_buckling,
+    solve_static,
 )
 
 E_MOD = 2.1e5  # 统一单位制下的弹性模量
@@ -36,6 +37,41 @@ def _column_mesh(n_elem: int, length: float) -> Mesh:
     conn = np.array([[i, i + 1] for i in range(n_elem)], dtype=np.int64)
     block = ElementBlock(etype=ElementType.BEAM2, conn=conn, material=0, section=0)
     return Mesh(coords=coords, blocks=(block,))
+
+
+def _column_case(n_elem: int) -> StaticCase:
+    """悬臂柱工况：根部固支 + 顶部单位压缩轴力."""
+    return StaticCase(
+        constraints=(Constraint(0, (0, 1, 2)),),
+        loads=(NodalLoad(n_elem, (-1.0, 0.0, 0.0)),),
+    )
+
+
+class TestExternalReference:
+    """外部参考静力解注入（工作流预应力链接）."""
+
+    def test_external_reference_matches_internal(self) -> None:
+        """外部参考解与内部自算结果一致."""
+        n_elem, length, inertia = 8, 1.0, 1.0e-4
+        mesh = _column_mesh(n_elem, length)
+        material = LinearElastic(E_MOD)
+        section = Section(area=0.01, inertia=inertia)
+        case = _column_case(n_elem)
+        internal = solve_buckling(mesh, [material], [section], case, n_modes=1)
+        reference = solve_static(mesh, [material], [section], case)
+        external = solve_buckling(mesh, [material], [section], case, n_modes=1, reference=reference)
+        np.testing.assert_allclose(external.load_factors, internal.load_factors, rtol=1e-9)
+        assert external.reference is reference
+
+    def test_mismatched_reference_rejected(self) -> None:
+        """参考解自由度数与模型不匹配时抛 SolverError."""
+        mesh = _column_mesh(4, 1.0)
+        other = _column_mesh(8, 1.0)  # 自由度数不同
+        material = LinearElastic(E_MOD)
+        section = Section(area=0.01, inertia=1e-4)
+        reference = solve_static(other, [material], [section], _column_case(8))
+        with pytest.raises(SolverError, match="不匹配"):
+            solve_buckling(mesh, [material], [section], _column_case(4), reference=reference)
 
 
 # ---------------------------------------------------------------------------

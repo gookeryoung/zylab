@@ -129,6 +129,18 @@ class TestBuiltinModules:
             assert spec.input_port("model").port_type is PortType.MODEL
             assert spec.output_port("solution").port_type is port_type
 
+    def test_optional_link_ports(self) -> None:
+        """屈曲/非线性声明可选 STATIC 链接端口（reference/initial），model 必填."""
+        buckling = module_spec("analysis.buckling")
+        assert buckling.input_port("model").required
+        reference = buckling.input_port("reference")
+        assert not reference.required
+        assert reference.port_type is PortType.STATIC
+        nonlinear = module_spec("analysis.nonlinear")
+        initial = nonlinear.input_port("initial")
+        assert not initial.required
+        assert initial.port_type is PortType.STATIC
+
     def test_param_defaults_within_range(self) -> None:
         """全部参数默认值落在自身范围内（schema 自洽）."""
         for spec in all_modules():

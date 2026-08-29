@@ -149,6 +149,64 @@ class TestDirtyPropagation:
         assert graph.node("model").params["nx"] == 4
 
 
+class TestOptionalPorts:
+    """可选输入端口（屈曲 reference / 非线性 initial）."""
+
+    def _linked_graph(self) -> WorkflowGraph:
+        """model -> static -> buckling(reference) 三节点链接图."""
+        return WorkflowGraph(
+            Template.from_dict(
+                {
+                    "id": "t.linked",
+                    "name": "链接",
+                    "nodes": [
+                        {"id": "model", "type": "example.column_beam2"},
+                        {"id": "static", "type": "analysis.static", "inputs": {"model": "model.model"}},
+                        {
+                            "id": "buckling",
+                            "type": "analysis.buckling",
+                            "inputs": {"model": "model.model", "reference": "static.solution"},
+                        },
+                    ],
+                }
+            )
+        )
+
+    def test_optional_port_absent_stays_ready(self) -> None:
+        """可选端口不连接仍为 READY（非 UNFULFILLED）."""
+        graph = WorkflowGraph(
+            Template.from_dict(
+                {
+                    "id": "t.b",
+                    "name": "b",
+                    "nodes": [
+                        {"id": "model", "type": "example.column_beam2"},
+                        {"id": "solve", "type": "analysis.buckling", "inputs": {"model": "model.model"}},
+                    ],
+                }
+            )
+        )
+        assert graph.node("solve").state is NodeState.READY
+
+    def test_linked_topology(self) -> None:
+        """链接图拓扑：buckling 上游含 static，execution_order 含序."""
+        graph = self._linked_graph()
+        assert graph.upstream_ids("buckling") == ("model", "static")
+        assert graph.ancestors("buckling") == frozenset({"model", "static"})
+        order = graph.execution_order()
+        assert order.index("model") < order.index("static") < order.index("buckling")
+
+    def test_static_dirty_cascades_to_linked_buckling(self) -> None:
+        """static 失效级联到 buckling（链接下游）."""
+        graph = self._linked_graph()
+        for node in graph.nodes():
+            graph.mark_result(node.id, result=object(), elapsed=0.1)
+        graph.invalidate("static")
+        assert graph.node("static").state is NodeState.READY
+        assert graph.node("buckling").state is NodeState.READY
+        assert graph.node("model").state is NodeState.UP_TO_DATE
+
+
 class TestLinkEditing:
     """连接编辑（画布交互的内核支撑）."""
 
