@@ -1,4 +1,4 @@
-"""zylab.fea - 有限元分析内核（Qt-free，线弹性静力/模态）.
+"""zylab.fea - 有限元分析内核（Qt-free，线弹性静力/模态/谐响应）.
 
 模块划分：
 - :mod:`zylab.fea.mesh`：网格数据结构（节点坐标 + 单元块）；
@@ -8,7 +8,8 @@
 - :mod:`zylab.fea.assemble`：CSR 稀疏装配（刚度/质量/载荷）；
 - :mod:`zylab.fea.solve`：约束消元 + 稀疏 LU 直接求解；
 - :mod:`zylab.fea.static`：静力分析编排与结果；
-- :mod:`zylab.fea.modal`：模态分析编排与结果。
+- :mod:`zylab.fea.modal`：模态分析编排与结果；
+- :mod:`zylab.fea.harmonic`：谐响应分析编排与结果（Rayleigh 阻尼）。
 """
 
 from __future__ import annotations
@@ -17,6 +18,7 @@ from .assemble import assemble_loads, assemble_mass, assemble_stiffness
 from .boundary import BodyForce, Constraint, EdgePressure, NodalLoad, StaticCase
 from .elements import element_mass, element_measure, element_stiffness, element_stress, element_stress_at
 from .errors import ElementError, MeshError, SolverError
+from .harmonic import HarmonicResponse, solve_harmonic
 from .material import LinearElastic, Section, StressState
 from .mesh import ElementBlock, ElementType, Mesh, element_dofs_per_node
 from .modal import ModalSolution, solve_modal
@@ -30,6 +32,7 @@ __all__ = [
     "ElementError",
     "ElementResult",
     "ElementType",
+    "HarmonicResponse",
     "LinearElastic",
     "Mesh",
     "MeshError",
@@ -49,6 +52,7 @@ __all__ = [
     "element_stiffness",
     "element_stress",
     "element_stress_at",
+    "solve_harmonic",
     "solve_modal",
     "solve_static",
 ]
