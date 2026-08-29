@@ -214,6 +214,10 @@ class WorkflowGraph:
             del node.inputs[dst_port]
             self._invalidate(dst_id)
 
+    def invalidate(self, node_id: str) -> None:
+        """手动失效本节点与全部下游（强制重跑用）；清空结果/错误/耗时."""
+        self._invalidate(node_id)
+
     def _invalidate(self, node_id: str) -> None:
         """本节点与全部下游：清空结果/错误/耗时（回到 READY 或 UNFULFILLED）."""
         for nid in (node_id, *self.descendants(node_id)):

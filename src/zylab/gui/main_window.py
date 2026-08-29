@@ -12,7 +12,7 @@ from . import theme
 from .app import apply_theme, save_theme_name
 from .icons import NAV_ICON_NAMES, nav_icon
 from .pages.console_page import ConsolePage
-from .pages.fea_page import FeaPage
+from .pages.studio_page import StudioPage
 from .qt_compat import (
     QComboBox,
     QFrame,
@@ -82,10 +82,10 @@ class MainWindow(QMainWindow):
 
         self._stack = QStackedWidget()
         self._console_page = ConsolePage(self._kernel, self._history, self._bus)
-        self._fea_page = FeaPage()
+        self._studio_page = StudioPage()
         self._about_page = self._build_about_page()
         self._stack.addWidget(self._console_page)
-        self._stack.addWidget(self._fea_page)
+        self._stack.addWidget(self._studio_page)
         self._stack.addWidget(self._about_page)
 
         splitter.addWidget(self._sidebar)
@@ -155,5 +155,5 @@ class MainWindow(QMainWindow):
     def closeEvent(self, event) -> None:  # Qt 命名约定
         """关闭时持久化命令历史并终止后台求解执行器."""
         self._history.save()
-        self._fea_page.shutdown()
+        self._studio_page.shutdown()
         super().closeEvent(event)
