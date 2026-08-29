@@ -31,12 +31,14 @@ from ..qt_compat import (
     QComboBox,
     QDoubleSpinBox,
     QFormLayout,
+    QFrame,
     QGroupBox,
     QHeaderView,
     QLabel,
     QObject,
     QProgressBar,
     QPushButton,
+    QScrollArea,
     QSpinBox,
     QSplitter,
     Qt,
@@ -146,7 +148,7 @@ class FeaPage(QWidget):
     # ------------------------------------------------------------------ UI
 
     def _build_ui(self) -> None:
-        """组装左右分栏布局."""
+        """组装左右分栏布局（左面板入滚动区，纵向永不压缩）."""
         splitter = QSplitter(Qt.Horizontal)
 
         panel = QWidget()
@@ -158,12 +160,19 @@ class FeaPage(QWidget):
         panel_layout.addWidget(self._build_solve_group())
         panel_layout.addWidget(self._build_result_group())
         panel_layout.addStretch()
-        # 锁定面板宽度区间：绘图区自动范围会推高尺寸提示，QSplitter
-        # 重分配时若面板无下限会被压缩，表单标签换行、控件变形
-        panel.setMinimumWidth(300)
-        panel.setMaximumWidth(320)
-        splitter.addWidget(panel)
+
+        # 面板包滚动区：小窗口/高 DPI 下内容超高时出滚动条，
+        # 而不是压缩表单行导致输入框变形（宽度区间由滚动区承载）
+        scroll = QScrollArea()
+        scroll.setWidget(panel)
+        scroll.setWidgetResizable(True)
+        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        scroll.setFrameShape(QFrame.NoFrame)
+        scroll.setMinimumWidth(300)
+        scroll.setMaximumWidth(340)
+        splitter.addWidget(scroll)
         splitter.setCollapsible(0, False)
+        self._panel_scroll = scroll
 
         self._plot = pg.PlotWidget(background=theme.current_palette().bg_app)
         self._plot.showGrid(x=True, y=True, alpha=0.3)
@@ -198,9 +207,10 @@ class FeaPage(QWidget):
         return box
 
     def _build_params_group(self) -> QGroupBox:
-        """构建材料/截面参数组."""
+        """构建材料/截面参数组（行可见性按模型/分析类型联动）."""
         box = QGroupBox("参数")
         form = QFormLayout(box)
+        self._params_form = form
         self._young_spin = self._make_spin(1.0e3, 1.0e12, 2.1e5, 1.0e5)
         self._poisson_spin = self._make_spin(0.0, 0.49, 0.3, 0.05)
         self._thickness_spin = self._make_spin(0.01, 100.0, 1.0, 0.1)
@@ -277,6 +287,8 @@ class FeaPage(QWidget):
     def _connect(self) -> None:
         """连接信号槽."""
         self._solve_button.clicked.connect(self._on_solve)
+        self._analysis_combo.currentIndexChanged.connect(self._update_param_visibility)
+        self._update_param_visibility()
         self._mode_spin.valueChanged.connect(self._render_mode_shape)
         self._bridge.progress.connect(self._on_progress)
         self._bridge.finished.connect(self._on_finished)
@@ -498,12 +510,34 @@ class FeaPage(QWidget):
         return mesh, materials, sections, case
 
     def _on_model_changed(self, index: int) -> None:
-        """切换示例模型：更新信息标签并重绘初始线框."""
+        """切换示例模型：更新信息标签、参数行可见性并重绘初始线框."""
         if index == 1:
             self._model_info.setText(f"BEAM2 梁 · {_COLUMN_N_ELEM + 1} 节点 · {_COLUMN_N_ELEM} 单元 · 顶部压缩")
         else:
             self._model_info.setText("40 x 8 网格 · 369 节点 · 320 单元")
+        self._update_param_visibility()
         self._render_initial()
+
+    def _update_param_visibility(self) -> None:
+        """按模型/分析类型关联显示参数行（无关参数隐藏，压缩面板高度）."""
+        analysis = self._analysis_combo.currentData()
+        continuum = self._model_combo.currentIndex() == 0
+        dynamic = analysis in ("modal", "harmonic")
+        rules = {
+            self._poisson_spin: continuum,  # 泊松比仅连续体用到
+            self._thickness_spin: continuum,  # 厚度仅 Q4 平面应力
+            self._density_spin: dynamic,  # 密度仅动力学分析
+            self._n_modes_spin: analysis in ("modal", "buckling"),
+            self._fmax_spin: analysis == "harmonic",
+            self._n_freq_spin: analysis == "harmonic",
+            self._alpha_spin: analysis == "harmonic",
+            self._beta_spin: analysis == "harmonic",
+        }
+        for field, visible in rules.items():
+            label = self._params_form.labelForField(field)
+            if label is not None:
+                label.setVisible(visible)
+            field.setVisible(visible)
 
     def _on_solve(self) -> None:
         """按分析类型提交求解任务到进程执行器."""

@@ -9,6 +9,9 @@ QWidget {
     font-size: ${FONT_BODY};
 }
 QMainWindow, QDialog { background-color: ${QSS_BG_APP}; }
+/* 滚动区与其内容透明，保持与页面背景一致 */
+QScrollArea { background: transparent; border: none; }
+QScrollArea > QWidget > QWidget { background: transparent; }
 QLabel:disabled { color: ${QSS_TEXT_DISABLED}; }
 QLabel#secondaryText {
     color: ${QSS_TEXT_SECONDARY};

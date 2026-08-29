@@ -29,15 +29,57 @@ def test_fea_page_panel_width_stable(qtbot) -> None:
     page = FeaPage()
     qtbot.addWidget(page)
     page.resize(1280, 800)
-    panel = page._solve_button.parentWidget().parentWidget()
-    width_before = panel.width()
-    assert panel.minimumWidth() >= 300
+    scroll = page._panel_scroll
+    width_before = scroll.width()
+    assert scroll.minimumWidth() >= 300
     mesh = build_cantilever_mesh()
     materials = [page.current_material]
     sections = [Section(thickness=page._thickness_spin.value())]
     case = build_cantilever_case(mesh)
     page._on_finished(solve_static(mesh, materials, sections, case))
-    assert panel.width() == width_before
+    assert scroll.width() == width_before
+
+
+@pytest.mark.gui
+def test_fea_page_inputs_never_squashed(qtbot) -> None:
+    """小窗口下求解后输入框几何不得被压缩（纵向防变形回归）.
+
+    求解使结果标签增高，若面板无滚动区承载会压缩表单行
+    （输入框高度被压小、行距漂移）。
+    """
+    page = FeaPage()
+    qtbot.addWidget(page)
+    page.resize(740, 480)  # 模拟小窗口/高 DPI 有效高度不足
+    spin = page._young_spin
+    geometry_before = (spin.height(), spin.width())
+
+    mesh = build_cantilever_mesh()
+    sections = [Section(thickness=page._thickness_spin.value())]
+    case = build_cantilever_case(mesh)
+    page._on_finished(solve_static(mesh, [page.current_material], sections, case))
+    assert (spin.height(), spin.width()) == geometry_before
+
+
+@pytest.mark.gui
+def test_fea_page_param_visibility_associated(qtbot) -> None:
+    """参数行按分析类型关联显示：静力隐藏动力学参数，谐响应全部显示."""
+    page = FeaPage()
+    qtbot.addWidget(page)
+    # 静力（默认）：动力学/扫频参数隐藏
+    assert not page._density_spin.isVisibleTo(page._params_form.parentWidget())
+    assert not page._fmax_spin.isVisibleTo(page._params_form.parentWidget())
+    assert page._young_spin.isVisibleTo(page._params_form.parentWidget())
+    # 切到谐响应：密度与扫频参数显示
+    page._analysis_combo.setCurrentIndex(2)
+    assert page._density_spin.isVisibleTo(page._params_form.parentWidget())
+    assert page._fmax_spin.isVisibleTo(page._params_form.parentWidget())
+    # 切到屈曲：模态阶数显示、扫频参数隐藏
+    page._analysis_combo.setCurrentIndex(3)
+    assert page._n_modes_spin.isVisibleTo(page._params_form.parentWidget())
+    assert not page._fmax_spin.isVisibleTo(page._params_form.parentWidget())
+    # 悬臂柱模型：连续体参数（泊松比/厚度）隐藏
+    page._model_combo.setCurrentIndex(1)
+    assert not page._thickness_spin.isVisibleTo(page._params_form.parentWidget())
 
 
 @pytest.mark.gui
