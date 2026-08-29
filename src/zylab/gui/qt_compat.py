@@ -9,15 +9,32 @@ try:
     from PySide6.QtCore import (
         QAbstractTableModel,
         QByteArray,
+        QEvent,
         QModelIndex,
         QObject,
+        QPoint,
+        QPointF,
+        QRectF,
         QSize,
         Qt,
         QTimer,
         Signal,
         Slot,
     )
-    from PySide6.QtGui import QFont, QIcon, QKeyEvent, QPixmap, QTextCursor
+    from PySide6.QtGui import (
+        QBrush,
+        QColor,
+        QContextMenuEvent,
+        QFont,
+        QIcon,
+        QKeyEvent,
+        QMouseEvent,
+        QPainter,
+        QPainterPath,
+        QPen,
+        QPixmap,
+        QTextCursor,
+    )
     from PySide6.QtWidgets import (
         QAbstractItemView,
         QApplication,
@@ -25,6 +42,10 @@ try:
         QDoubleSpinBox,
         QFormLayout,
         QFrame,
+        QGraphicsItem,
+        QGraphicsPathItem,
+        QGraphicsScene,
+        QGraphicsView,
         QGroupBox,
         QHBoxLayout,
         QHeaderView,
@@ -53,8 +74,12 @@ except ImportError:  # pragma: no cover（3.8 环境走此分支）
     from PySide2.QtCore import (  # type: ignore[missing-import]
         QAbstractTableModel,
         QByteArray,
+        QEvent,
         QModelIndex,
         QObject,
+        QPoint,
+        QPointF,
+        QRectF,
         QSize,
         Qt,
         QTimer,
@@ -62,9 +87,16 @@ except ImportError:  # pragma: no cover（3.8 环境走此分支）
         Slot,
     )
     from PySide2.QtGui import (  # type: ignore[missing-import]
+        QBrush,
+        QColor,
+        QContextMenuEvent,
         QFont,
         QIcon,
         QKeyEvent,
+        QMouseEvent,
+        QPainter,
+        QPainterPath,
+        QPen,
         QPixmap,
         QTextCursor,
     )
@@ -75,6 +107,10 @@ except ImportError:  # pragma: no cover（3.8 环境走此分支）
         QDoubleSpinBox,
         QFormLayout,
         QFrame,
+        QGraphicsItem,
+        QGraphicsPathItem,
+        QGraphicsScene,
+        QGraphicsView,
         QGroupBox,
         QHBoxLayout,
         QHeaderView,
@@ -86,6 +122,7 @@ except ImportError:  # pragma: no cover（3.8 环境走此分支）
         QPlainTextEdit,
         QProgressBar,
         QPushButton,
+        QScrollArea,
         QSpinBox,
         QSplitter,
         QStackedWidget,
@@ -104,12 +141,20 @@ __all__ = [
     "QAbstractItemView",
     "QAbstractTableModel",
     "QApplication",
+    "QBrush",
     "QByteArray",
+    "QColor",
     "QComboBox",
+    "QContextMenuEvent",
     "QDoubleSpinBox",
+    "QEvent",
     "QFont",
     "QFormLayout",
     "QFrame",
+    "QGraphicsItem",
+    "QGraphicsPathItem",
+    "QGraphicsScene",
+    "QGraphicsView",
     "QGroupBox",
     "QHBoxLayout",
     "QHeaderView",
@@ -121,11 +166,18 @@ __all__ = [
     "QListWidgetItem",
     "QMainWindow",
     "QModelIndex",
+    "QMouseEvent",
     "QObject",
+    "QPainter",
+    "QPainterPath",
+    "QPen",
     "QPixmap",
     "QPlainTextEdit",
+    "QPoint",
+    "QPointF",
     "QProgressBar",
     "QPushButton",
+    "QRectF",
     "QScrollArea",
     "QSize",
     "QSpinBox",
@@ -142,6 +194,8 @@ __all__ = [
     "Qt",
     "Signal",
     "Slot",
+    "exec_app",
+    "mouse_event_pos",
 ]
 
 
@@ -149,3 +203,9 @@ def exec_app(app: QApplication) -> int:
     """启动事件循环（兼容 PySide2 的 exec_ 与 PySide6 的 exec）."""
     run = app.exec if hasattr(app, "exec") else app.exec_  # type: ignore[union-attr]
     return int(run())
+
+
+def mouse_event_pos(event: QMouseEvent) -> QPoint:
+    """鼠标事件视图坐标（Qt6 的 position / Qt5 的 pos 兼容）."""
+    pos = event.position() if hasattr(event, "position") else event.pos()  # type: ignore[union-attr]
+    return pos.toPoint()
