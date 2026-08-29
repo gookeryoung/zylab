@@ -5,8 +5,12 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
-from zylab.fea import Section, solve_harmonic, solve_modal, solve_static
-from zylab.gui.pages.fea_page import FeaPage, build_cantilever_case, build_cantilever_mesh
+from zylab.fea import Section, solve_buckling, solve_harmonic, solve_modal, solve_static
+from zylab.gui.pages.fea_page import (
+    FeaPage,
+    build_cantilever_case,
+    build_cantilever_mesh,
+)
 
 
 @pytest.mark.gui
@@ -14,7 +18,7 @@ def test_fea_page_builds(qtbot) -> None:
     """分析页应完成布局装配并渲染初始线框."""
     page = FeaPage()
     qtbot.addWidget(page)
-    assert page._model_combo.count() == 1
+    assert page._model_combo.count() == 2
     assert page._solve_button.isEnabled()
     assert page._plot.getPlotItem().listDataItems()  # 初始未变形线框已渲染
 
@@ -138,6 +142,62 @@ def test_fea_page_harmonic_solve_end_to_end(qtbot) -> None:
     solution = blocker.args[0]
     assert solution.n_frequencies == 20
     assert "峰值" in page._result_label.text()
+    page.shutdown()
+
+
+@pytest.mark.gui
+def test_fea_page_model_switch_to_column(qtbot) -> None:
+    """切换到悬臂柱模型：信息标签更新并重绘初始线框."""
+    page = FeaPage()
+    qtbot.addWidget(page)
+    page._model_combo.setCurrentIndex(1)
+    assert "BEAM2" in page._model_info.text()
+    mesh, _materials, sections, case = page._current_model()
+    assert mesh.n_nodes == 21
+    assert sections[0].inertia == 1.0e-4
+    # 柱工况：底部固支 + 顶部压缩（y 负向）
+    assert case.constraints[0].dofs == (0, 1, 2)
+    assert case.loads[0].forces[1] < 0.0
+
+
+@pytest.mark.gui
+def test_fea_page_buckling_renders(qtbot) -> None:
+    """屈曲结果应填充载荷因子表、渲染首阶屈曲模态并支持切换."""
+    page = FeaPage()
+    qtbot.addWidget(page)
+    page._model_combo.setCurrentIndex(1)  # 悬臂柱
+
+    mesh, materials, sections, case = page._current_model()
+    solution = solve_buckling(mesh, materials, sections, case, n_modes=3)
+
+    page._on_finished(solution)
+    assert page._buckling_solution is solution
+    assert page._freq_table.isVisibleTo(page)
+    assert page._freq_table.rowCount() == 3
+    assert "载荷因子" in page._result_label.text()
+    # 一阶因子与欧拉解析解一致（表内数值）
+    euler = np.pi**2 * materials[0].e_modulus * sections[0].inertia / (4.0 * 10.0**2)
+    assert float(page._freq_table.item(0, 1).text()) == pytest.approx(euler, rel=0.01)
+    # 首阶屈曲模态已渲染，可切换
+    assert len(page._plot.getPlotItem().listDataItems()) >= 1
+    page._mode_spin.setValue(2)
+    assert page._mode_spin.value() == 2
+
+
+@pytest.mark.gui
+def test_fea_page_buckling_solve_end_to_end(qtbot) -> None:
+    """端到端：屈曲分析经进程执行器完成并渲染（真实 spawn 子进程）."""
+    page = FeaPage()
+    qtbot.addWidget(page)
+    page._model_combo.setCurrentIndex(1)  # 悬臂柱
+    page._analysis_combo.setCurrentIndex(3)  # 切到屈曲
+    page._on_solve()
+    with qtbot.waitSignal(page._bridge.finished, timeout=120_000) as blocker:
+        pass
+    solution = blocker.args[0]
+    assert solution.n_modes == page._n_modes_spin.value()
+    assert solution.load_factors[0] > 0.0
+    assert page._freq_table.rowCount() == solution.n_modes
     page.shutdown()
 
 

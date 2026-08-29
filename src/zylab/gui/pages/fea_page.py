@@ -12,6 +12,7 @@ import pyqtgraph as pg
 
 from zylab.core.executor import EventKind, ProcessExecutor, TaskEvent, TaskSpec
 from zylab.fea import (
+    BucklingSolution,
     Constraint,
     ElementBlock,
     ElementType,
@@ -102,6 +103,29 @@ def build_cantilever_case(mesh: Mesh) -> StaticCase:
     return StaticCase(constraints=fixed, loads=tip)
 
 
+# 悬臂柱示例：竖直 BEAM2 梁，底部固支，顶部压缩载荷（屈曲基准）
+_COLUMN_HEIGHT = 10.0
+_COLUMN_N_ELEM = 20
+_COLUMN_TIP_LOAD = -1.0  # 顶部单位压缩轴力（临界载荷 = 因子 × 1.0）
+
+
+def build_column_mesh() -> Mesh:
+    """构建竖直悬臂柱 BEAM2 梁网格（底部固支端为节点 0，顶端为最后节点）."""
+    coords = np.array([[0.0, _COLUMN_HEIGHT * i / _COLUMN_N_ELEM] for i in range(_COLUMN_N_ELEM + 1)])
+    conn = np.array([[i, i + 1] for i in range(_COLUMN_N_ELEM)], dtype=np.int64)
+    block = ElementBlock(etype=ElementType.BEAM2, conn=conn, name="柱")
+    return Mesh(coords=coords, blocks=(block,))
+
+
+def build_column_case(mesh: Mesh) -> StaticCase:
+    """构建悬臂柱工况：底部固支，顶部单位压缩轴力（沿 y 负向）."""
+    top = mesh.n_nodes - 1
+    return StaticCase(
+        constraints=(Constraint(node=0, dofs=(0, 1, 2)),),
+        loads=(NodalLoad(node=top, forces=(0.0, _COLUMN_TIP_LOAD, 0.0)),),
+    )
+
+
 class FeaPage(QWidget):
     """FEA 分析页：左侧模型参数与求解控制，右侧变形云图."""
 
@@ -112,6 +136,7 @@ class FeaPage(QWidget):
         self._solution: StaticSolution | None = None
         self._modal_solution: ModalSolution | None = None
         self._harmonic_solution: HarmonicResponse | None = None
+        self._buckling_solution: BucklingSolution | None = None
         self._bridge = _SolveBridge()
 
         self._build_ui()
@@ -159,11 +184,14 @@ class FeaPage(QWidget):
         form = QFormLayout(box)
         self._model_combo = QComboBox()
         self._model_combo.addItem("悬臂梁（Q4 平面应力）")
+        self._model_combo.addItem("悬臂柱（BEAM2 屈曲）")
+        self._model_combo.currentIndexChanged.connect(self._on_model_changed)
         form.addRow("示例", self._model_combo)
         self._analysis_combo = QComboBox()
         self._analysis_combo.addItem("静力", "static")
         self._analysis_combo.addItem("模态", "modal")
         self._analysis_combo.addItem("谐响应", "harmonic")
+        self._analysis_combo.addItem("屈曲", "buckling")
         form.addRow("分析类型", self._analysis_combo)
         self._model_info = QLabel("40 x 8 网格 · 369 节点 · 320 单元", objectName="secondaryText")
         form.addRow(self._model_info)
@@ -257,10 +285,11 @@ class FeaPage(QWidget):
     # ---------------------------------------------------------------- 渲染
 
     def _render_initial(self) -> None:
-        """渲染未变形线框."""
-        mesh = build_cantilever_mesh()
+        """渲染当前模型的未变形线框."""
+        mesh, _materials, _sections, _case = self._current_model()
         edges = mesh_edges(mesh)
         segments = edge_segments(mesh.coords, edges)
+        self._plot.clear()
         self._plot.plot(
             segments[:, :, 0].ravel(),
             segments[:, :, 1].ravel(),
@@ -310,6 +339,7 @@ class FeaPage(QWidget):
 
     def _render_modal(self, solution: ModalSolution) -> None:
         """填充频率表并渲染首阶振型云图."""
+        self._freq_table.setHorizontalHeaderLabels(("阶", "ω (rad/s)", "f (Hz)"))
         self._freq_table.setRowCount(solution.n_modes)
         for i in range(solution.n_modes):
             self._freq_table.setItem(i, 0, QTableWidgetItem(str(i + 1)))
@@ -328,18 +358,27 @@ class FeaPage(QWidget):
         self._render_mode_shape(1)
 
     def _render_mode_shape(self, index: int) -> None:
-        """渲染第 index 阶（1 基）振型云图."""
+        """渲染第 index 阶（1 基）振型/屈曲模态云图（数据源：模态或屈曲解）."""
         self._restore_mesh_view()
-        solution = self._modal_solution
-        if solution is None or not 1 <= index <= solution.n_modes:
+        shape: np.ndarray | None = None
+        label = ""
+        mesh: Mesh | None = None
+        if self._modal_solution is not None and 1 <= index <= self._modal_solution.n_modes:
+            shape = self._modal_solution.mode_shape(index - 1)
+            label = f"第 {index} 阶振型"
+            mesh = self._modal_solution.mesh
+        elif self._buckling_solution is not None and 1 <= index <= self._buckling_solution.n_modes:
+            shape = self._buckling_solution.mode_shape(index - 1)
+            label = f"第 {index} 阶屈曲"
+            mesh = self._buckling_solution.mesh
+        if shape is None or mesh is None:
             return
-        mesh = solution.mesh
         edges = mesh_edges(mesh)
-        shape = solution.mode_shape(index - 1)
-        field = np.linalg.norm(shape, axis=1)
+        translation = shape[:, :2]  # 梁含转角分量，仅取平动
+        field = np.linalg.norm(translation, axis=1)
         scale = self._deform_scale(mesh, field)
 
-        deformed = deformed_coords(mesh, shape, scale)
+        deformed = deformed_coords(mesh, translation, scale)
         segments = edge_segments(deformed, edges)
         self._plot.clear()
         self._plot.plot(
@@ -347,7 +386,7 @@ class FeaPage(QWidget):
             segments[:, :, 1].ravel(),
             connect="pairs",
             pen=pg.mkPen(theme.current_palette().primary, width=2),
-            name=f"第 {index} 阶振型 (x{scale:.0f})",
+            name=f"{label} (x{scale:.0f})",
         )
         colors = [pg.mkColor(int(r * 255), int(g * 255), int(b * 255)) for r, g, b in scalar_colors(field)]
         self._plot.addItem(
@@ -360,6 +399,28 @@ class FeaPage(QWidget):
                 name="|φ|",
             )
         )
+
+    def _render_buckling(self, solution: BucklingSolution) -> None:
+        """填充载荷因子表并渲染首阶屈曲模态."""
+        self._freq_table.setHorizontalHeaderLabels(("阶", "载荷因子 λ", "临界载荷"))
+        self._freq_table.setRowCount(solution.n_modes)
+        reference = abs(_COLUMN_TIP_LOAD)
+        for i in range(solution.n_modes):
+            factor = float(solution.load_factors[i])
+            self._freq_table.setItem(i, 0, QTableWidgetItem(str(i + 1)))
+            self._freq_table.setItem(i, 1, QTableWidgetItem(f"{factor:.6g}"))
+            self._freq_table.setItem(i, 2, QTableWidgetItem(f"{factor * reference:.6g}"))
+        self._freq_table.setVisible(True)
+        self._mode_spin.blockSignals(True)
+        self._mode_spin.setRange(1, solution.n_modes)
+        self._mode_spin.setValue(1)
+        self._mode_spin.blockSignals(False)
+        self._mode_spin.setVisible(True)
+        self._result_label.setText(
+            f"前 {solution.n_modes} 阶 · 一阶载荷因子 λ₁ = {solution.load_factors[0]:.6g}"
+            f"（临界载荷 = λ × 参考载荷 {reference:.6g}）"
+        )
+        self._render_mode_shape(1)
 
     def _restore_mesh_view(self) -> None:
         """恢复云图视图状态（锁纵横比 + 线性轴，清除频响曲线的视图残留）."""
@@ -423,12 +484,26 @@ class FeaPage(QWidget):
         )
 
     def _current_model(self) -> tuple[Mesh, list, list, StaticCase]:
-        """按当前参数构建 (mesh, materials, sections, case)."""
+        """按当前模型选择构建 (mesh, materials, sections, case)."""
+        if self._model_combo.currentIndex() == 1:
+            mesh = build_column_mesh()
+            materials = [self.current_material]
+            sections = [Section(area=1.0, inertia=1.0e-4)]
+            case = build_column_case(mesh)
+            return mesh, materials, sections, case
         mesh = build_cantilever_mesh()
         materials = [self.current_material]
         sections = [Section(thickness=self._thickness_spin.value())]
         case = build_cantilever_case(mesh)
         return mesh, materials, sections, case
+
+    def _on_model_changed(self, index: int) -> None:
+        """切换示例模型：更新信息标签并重绘初始线框."""
+        if index == 1:
+            self._model_info.setText(f"BEAM2 梁 · {_COLUMN_N_ELEM + 1} 节点 · {_COLUMN_N_ELEM} 单元 · 顶部压缩")
+        else:
+            self._model_info.setText("40 x 8 网格 · 369 节点 · 320 单元")
+        self._render_initial()
 
     def _on_solve(self) -> None:
         """按分析类型提交求解任务到进程执行器."""
@@ -447,6 +522,12 @@ class FeaPage(QWidget):
                 target="zylab.fea.harmonic:solve_harmonic",
                 args=(mesh, materials, sections, case, self._sweep_frequencies()),
                 kwargs={"alpha": self._alpha_spin.value(), "beta": self._beta_spin.value()},
+            )
+        elif analysis == "buckling":
+            spec = TaskSpec(
+                target="zylab.fea.buckling:solve_buckling",
+                args=(mesh, materials, sections, case),
+                kwargs={"n_modes": self._n_modes_spin.value()},
             )
         else:
             spec = TaskSpec(
@@ -470,7 +551,7 @@ class FeaPage(QWidget):
         self._status_label.setText(message)
 
     def _on_finished(self, solution: object) -> None:
-        """按结果类型分发渲染（StaticSolution / ModalSolution / HarmonicResponse）."""
+        """按结果类型分发渲染（静力/模态/谐响应/屈曲）."""
         self._solve_button.setEnabled(True)
         self._status_label.setText("求解完成")
         self._set_result_error(False)
@@ -478,18 +559,27 @@ class FeaPage(QWidget):
             self._solution = None
             self._modal_solution = solution
             self._harmonic_solution = None
+            self._buckling_solution = None
             self._render_modal(solution)
         elif isinstance(solution, HarmonicResponse):
             self._solution = None
             self._modal_solution = None
             self._harmonic_solution = solution
+            self._buckling_solution = None
             self._freq_table.setVisible(False)
             self._mode_spin.setVisible(False)
             self._render_harmonic(solution)
+        elif isinstance(solution, BucklingSolution):
+            self._solution = None
+            self._modal_solution = None
+            self._harmonic_solution = None
+            self._buckling_solution = solution
+            self._render_buckling(solution)
         else:
             self._solution = solution
             self._modal_solution = None
             self._harmonic_solution = None
+            self._buckling_solution = None
             self._freq_table.setVisible(False)
             self._mode_spin.setVisible(False)
             self._render_solution(solution)
