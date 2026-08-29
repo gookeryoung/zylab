@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from zylab.fea import Section, solve_static
+from zylab.fea import Section, solve_modal, solve_static
 from zylab.gui.pages.fea_page import FeaPage, build_cantilever_case, build_cantilever_mesh
 
 
@@ -36,6 +36,49 @@ def test_fea_page_renders_solution(qtbot) -> None:
     # 变形线框 + 云图散点应已加入绘图区
     items = page._plot.getPlotItem().listDataItems()
     assert len(items) >= 2
+
+
+@pytest.mark.gui
+def test_fea_page_modal_renders(qtbot) -> None:
+    """模态结果应填充频率表、渲染首阶振型并支持振型切换."""
+    page = FeaPage()
+    qtbot.addWidget(page)
+
+    mesh = build_cantilever_mesh()
+    materials = [page.current_material]
+    sections = [Section(thickness=page._thickness_spin.value())]
+    case = build_cantilever_case(mesh)
+    solution = solve_modal(mesh, materials, sections, case.constraints, n_modes=4)
+
+    page._on_finished(solution)
+    assert page._modal_solution is solution
+    assert page._solution is None
+    assert page._freq_table.isVisibleTo(page)
+    assert page._freq_table.rowCount() == 4
+    assert "基频" in page._result_label.text()
+    # 频率表内容：第 1 阶 ω 数值与解一致
+    assert float(page._freq_table.item(0, 1).text()) == pytest.approx(solution.frequencies[0], rel=1e-3)
+    # 首阶振型云图已渲染
+    assert len(page._plot.getPlotItem().listDataItems()) >= 2
+    # 切换到第 2 阶振型
+    page._mode_spin.setValue(2)
+    assert page._mode_spin.value() == 2
+
+
+@pytest.mark.gui
+def test_fea_page_modal_solve_end_to_end(qtbot) -> None:
+    """端到端：模态分析经进程执行器完成并渲染（真实 spawn 子进程）."""
+    page = FeaPage()
+    qtbot.addWidget(page)
+    page._analysis_combo.setCurrentIndex(1)  # 切到模态
+    page._on_solve()
+    with qtbot.waitSignal(page._bridge.finished, timeout=120_000) as blocker:
+        pass
+    solution = blocker.args[0]
+    assert solution.n_modes == page._n_modes_spin.value()
+    assert solution.frequencies[0] > 0.0
+    assert page._freq_table.rowCount() == solution.n_modes
+    page.shutdown()
 
 
 @pytest.mark.gui
