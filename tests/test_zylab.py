@@ -19,6 +19,6 @@ def test_package_importable() -> None:
 
 def test_main_module_importable() -> None:
     """GUI 入口模块应可导入（不启动事件循环）."""
-    import zylab.main
+    import zylab.cli
 
-    assert callable(zylab.main.main)
+    assert callable(zylab.cli.main)
