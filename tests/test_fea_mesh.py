@@ -51,6 +51,30 @@ class TestMesh:
         mesh = Mesh(np.zeros((3, 3)))
         assert mesh.n_elements == 0
 
+    def test_dofs_per_node_continuum_equals_dim(self) -> None:
+        mesh = Mesh(np.zeros((5, 2)), (_square_quad_block(),))
+        assert mesh.dofs_per_node == 2
+        assert mesh.n_dofs == 10
+
+    def test_dofs_per_node_beam_width(self) -> None:
+        block = ElementBlock(ElementType.BEAM2, np.array([[0, 1], [1, 2]]))
+        mesh = Mesh(np.zeros((3, 2)), (block,))
+        assert mesh.dofs_per_node == 3
+        assert mesh.n_dofs == 9
+
+    def test_dofs_per_node_mixed_beam_quad(self) -> None:
+        # 梁与 Q4 混合网格：宽度取最宽单元族（3）
+        beam = ElementBlock(ElementType.BEAM2, np.array([[0, 1]]))
+        quad = ElementBlock(ElementType.QUAD4, np.array([[1, 2, 3, 4]]))
+        mesh = Mesh(np.zeros((5, 2)), (beam, quad))
+        assert mesh.dofs_per_node == 3
+        assert mesh.n_dofs == 15
+
+    def test_beam_rejected_in_3d(self) -> None:
+        block = ElementBlock(ElementType.BEAM2, np.array([[0, 1]]))
+        with pytest.raises(MeshError, match="不支持"):
+            Mesh(np.zeros((2, 3)), (block,))
+
 
 class TestElementBlock:
     def test_block_validates_node_count(self) -> None:

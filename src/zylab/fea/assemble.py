@@ -1,6 +1,8 @@
 """全局装配：单元刚度散布到 CSR 稀疏矩阵、载荷向量组装.
 
-自由度编号规则：全局 DOF = node * dim + 局部分量（0 基，逐节点连续）。
+自由度编号规则：全局 DOF = node * dofs_per_node + 局部分量（0 基，逐节点连续）。
+每节点自由度数由网格内最宽单元族决定（梁 3、余者 = 网格维数），连续体单元
+只占用前 dim 个分量，梁单元附加转角分量。
 装配采用 COO 三元组收集后转 CSR，避免 Python 端逐项修改稀疏矩阵。
 """
 
@@ -11,19 +13,22 @@ from typing import Sequence
 import numpy as np
 from scipy.sparse import csr_matrix
 
-from .boundary import StaticCase
-from .elements import element_stiffness
+from .boundary import BodyForce, EdgePressure, StaticCase
+from .elements import element_measure, element_stiffness
 from .errors import MeshError
 from .material import LinearElastic, Section
-from .mesh import ElementBlock, Mesh
+from .mesh import ElementBlock, ElementType, Mesh
 
 __all__ = ["assemble_loads", "assemble_stiffness", "element_dofs"]
 
+# 连续体单元族（可施加体力；杆/梁的自重等分布载荷 v1 暂不涉及）
+_CONTINUUM_TYPES = frozenset({ElementType.TRIA3, ElementType.QUAD4, ElementType.TET4, ElementType.HEX8})
+
 
 def element_dofs(mesh: Mesh, conn: np.ndarray) -> np.ndarray:
-    """单元连接表展开为全局自由度编号（长度 = n_node_per_elem * dim）."""
-    dim = mesh.dim
-    return (np.asarray(conn, dtype=np.intp)[:, None] * dim + np.arange(dim)[None, :]).ravel()
+    """单元连接表展开为全局自由度编号（长度 = n_node_per_elem * dofs_per_node）."""
+    width = mesh.dofs_per_node
+    return (np.asarray(conn, dtype=np.intp)[:, None] * width + np.arange(width)[None, :]).ravel()
 
 
 def assemble_stiffness(
@@ -68,23 +73,91 @@ def assemble_stiffness(
     return csr_matrix((value, (row, col)), shape=(mesh.n_dofs, mesh.n_dofs))
 
 
-def assemble_loads(mesh: Mesh, case: StaticCase) -> np.ndarray:
-    """组装全局载荷向量.
+def assemble_loads(
+    mesh: Mesh,
+    case: StaticCase,
+    sections: Sequence[Section] = (),
+) -> np.ndarray:
+    """组装全局载荷向量（节点集中力 + 边压力 + 体力）.
 
     Args:
         mesh: 网格。
         case: 静力工况（节点约束不参与，仅载荷）。
+        sections: 截面表（体力按 2D 单元厚度换算体积时引用；无体力可省略）。
 
     Returns:
         全局载荷向量 ``(n_dofs,)``。
+
+    Raises:
+        MeshError: 体力工况缺少截面表或截面索引越界时抛出。
     """
     case.validate(mesh)
-    dim = mesh.dim
+    width = mesh.dofs_per_node
     force = np.zeros(mesh.n_dofs)
     for load in case.loads:
-        base = load.node * dim
-        force[base : base + dim] += np.asarray(load.forces, dtype=float)
+        base = load.node * width
+        force[base : base + width] += np.asarray(load.forces, dtype=float)
+    for pressure in case.edge_pressures:
+        _apply_edge_pressure(mesh, pressure, force)
+    if case.body_forces:
+        _apply_body_forces(mesh, case.body_forces, sections, force)
     return force
+
+
+def _apply_edge_pressure(mesh: Mesh, pressure: EdgePressure, force: np.ndarray) -> None:
+    """边压力折线逐段化为一致节点力（线性单元 pL/2 分配两端）.
+
+    节点序使材料位于行进方向左侧，行进方向左法向指向材料内部；
+    正压力（压缩）沿该法向，负值为外向拉力。
+    """
+    coords = mesh.coords
+    for here, there in zip(pressure.nodes[:-1], pressure.nodes[1:]):
+        segment = coords[there] - coords[here]
+        length = float(np.linalg.norm(segment))
+        if length <= 0.0:
+            raise MeshError("边压力折线出现重复相邻节点，段长为零")
+        # 行进方向左法向（指向材料内部）
+        normal = np.array([-segment[1], segment[0]]) / length
+        nodal = 0.5 * pressure.pressure * length * normal
+        for node in (here, there):
+            base = node * mesh.dofs_per_node
+            force[base : base + 2] += nodal
+
+
+def _apply_body_forces(
+    mesh: Mesh,
+    bodies: Sequence[BodyForce],
+    sections: Sequence[Section],
+    force: np.ndarray,
+) -> None:
+    """均匀体力化为连续体单元一致节点力（线性单元度量均分）.
+
+    每节点分得 measure/n_node * b（T3/T4/直边 Q4/平行六面体精确，
+    一般六面体为等分近似）。2D 按截面厚度换算体积。
+    """
+    dim = mesh.dim
+    resultant = np.zeros(dim)
+    for body in bodies:
+        resultant += (body.fx, body.fy) if dim == 2 else (body.fx, body.fy, body.fz)
+    for block in mesh.blocks:
+        if block.etype not in _CONTINUUM_TYPES:
+            continue
+        if dim == 2:
+            # 2D 体力按截面厚度换算体积，须提供截面表
+            if not 0 <= block.section < len(sections):
+                raise MeshError(
+                    f"体力装配须提供截面表，单元块 {block.etype.value} 截面索引 {block.section} 越界（共 {len(sections)} 项）"
+                )
+            thickness = sections[block.section].thickness
+        else:
+            thickness = 1.0
+        for conn in block.conn:
+            measure = element_measure(block.etype, mesh.coords[conn])
+            total = measure * thickness
+            share = total / conn.size
+            for node in conn:
+                base = node * mesh.dofs_per_node
+                force[base : base + dim] += share * resultant
 
 
 def _check_tables(

@@ -47,7 +47,8 @@ class StaticSolution:
 
     Attributes:
         mesh: 参与求解的网格。
-        displacements: 节点位移 ``(n_nodes, dim)``。
+        displacements: 节点位移 ``(n_nodes, dofs_per_node)``（连续体网格前 dim 列有效，
+            梁网格第 3 列为转角）。
         reactions: 约束反力，键为约束自由度全局索引，值为反力。
         element_results: 单元应力结果列表（与网格块顺序对应展开）。
         strain_energy: 系统应变能 0.5 u^T K u。
@@ -60,7 +61,7 @@ class StaticSolution:
     strain_energy: float = 0.0
 
     def node_displacement(self, node: int) -> np.ndarray:
-        """取指定节点位移向量 (dim,)."""
+        """取指定节点位移向量（长度 = dofs_per_node）."""
         return self.displacements[node]
 
     def element_stresses(self, etype: ElementType) -> list[ElementResult]:
@@ -94,18 +95,18 @@ def solve_static(
     case.validate(mesh)
     progress(0.3, "装配整体刚度矩阵")
     k_global = assemble_stiffness(mesh, materials, sections)
-    force = assemble_loads(mesh, case)
+    force = assemble_loads(mesh, case, sections)
     fixed_dofs, fixed_values = _expand_constraints(mesh, case.constraints)
     progress(0.6, "求解线性方程组")
     u, reactions = solve_system(k_global, force, fixed_dofs, fixed_values)
 
     reaction_map = {int(dof): float(val) for dof, val in zip(fixed_dofs, reactions)}
     progress(0.9, "恢复单元应力")
-    results = _recover_stresses(mesh, materials, u)
+    results = _recover_stresses(mesh, materials, sections, u)
     energy = 0.5 * float(u @ (k_global @ u))
     solution = StaticSolution(
         mesh=mesh,
-        displacements=u.reshape(mesh.n_nodes, mesh.dim).copy(),
+        displacements=u.reshape(mesh.n_nodes, mesh.dofs_per_node).copy(),
         reactions=reaction_map,
         element_results=results,
         strain_energy=energy,
@@ -116,10 +117,10 @@ def solve_static(
 
 def _expand_constraints(mesh: Mesh, constraints: Sequence[Constraint]) -> tuple[np.ndarray, np.ndarray]:
     """节点局部约束展开为全局自由度索引与约束值（同一自由度取首个约束）."""
-    dim = mesh.dim
+    width = mesh.dofs_per_node
     seen: dict[int, float] = {}
     for constraint in constraints:
-        base = constraint.node * dim
+        base = constraint.node * width
         for dof in constraint.dofs:
             seen.setdefault(base + dof, constraint.value)
     if not seen:
@@ -132,14 +133,16 @@ def _expand_constraints(mesh: Mesh, constraints: Sequence[Constraint]) -> tuple[
 def _recover_stresses(
     mesh: Mesh,
     materials: Sequence[LinearElastic],
+    sections: Sequence[Section],
     u: np.ndarray,
 ) -> tuple[ElementResult, ...]:
-    """逐单元恢复应力（杆为轴向应力，连续体为应力向量）."""
+    """逐单元恢复应力（杆为轴向应力，梁为轴向应力 + 两端弯矩，连续体为应力向量）."""
     results: list[ElementResult] = []
     for block_index, block in enumerate(mesh.blocks):
         material = materials[block.material]
+        section = sections[block.section]
         for elem_index, conn in enumerate(block.conn):
             dofs = element_dofs(mesh, conn)
-            stress = element_stress(block.etype, mesh.coords[conn], material, u[dofs])
+            stress = element_stress(block.etype, mesh.coords[conn], material, u[dofs], section)
             results.append(ElementResult(block=block_index, index=elem_index, stress=stress))
     return tuple(results)

@@ -90,10 +90,11 @@ class LinearElastic:
 
 @dataclass(frozen=True)
 class Section:
-    """截面属性：桁架杆取 ``area``（面积），平面连续体取 ``thickness``（厚度）."""
+    """截面属性：桁架杆取 ``area``（面积），平面连续体取 ``thickness``（厚度），梁取 ``inertia``（惯性矩）."""
 
     area: float = 1.0
     thickness: float = 1.0
+    inertia: float = 1.0
 
     def __post_init__(self) -> None:
         """校验截面参数为正."""
@@ -101,3 +102,5 @@ class Section:
             raise ElementError(f"截面面积须为正，实际 A={self.area}")
         if self.thickness <= 0.0:
             raise ElementError(f"截面厚度须为正，实际 t={self.thickness}")
+        if self.inertia <= 0.0:
+            raise ElementError(f"截面惯性矩须为正，实际 I={self.inertia}")

@@ -17,8 +17,10 @@ from zylab.fea import (
     Section,
     SolverError,
     StressState,
+    element_measure,
     element_stiffness,
     element_stress,
+    element_stress_at,
 )
 from zylab.fea.assemble import assemble_stiffness, element_dofs
 from zylab.fea.mesh import ElementBlock, Mesh
@@ -66,6 +68,87 @@ class TestTruss2:
         coords = np.array([[1.0, 1.0], [1.0, 1.0]])
         with pytest.raises(ElementError, match="长度为零"):
             element_stiffness(ElementType.TRUSS2, coords, LinearElastic(1000.0), UNIT)
+
+
+# ---------------------------------------------------------------------------
+# BEAM2：平面 Euler-Bernoulli 梁
+# ---------------------------------------------------------------------------
+
+
+class TestBeam2:
+    def test_stiffness_symmetric(self) -> None:
+        coords = np.array([[0.0, 0.0], [3.0, 4.0]])
+        ke = element_stiffness(ElementType.BEAM2, coords, LinearElastic(1000.0), Section(area=2.0, inertia=0.5))
+        assert ke.shape == (6, 6)
+        np.testing.assert_allclose(ke, ke.T, atol=1e-9)
+
+    def test_stiffness_aligned_x(self) -> None:
+        # 沿 x 的梁：轴向 EA/L、弯曲 12EI/L³ 分量解耦
+        coords = np.array([[0.0, 0.0], [2.0, 0.0]])
+        e, a, i, length = 1000.0, 2.0, 0.5, 2.0
+        ke = element_stiffness(ElementType.BEAM2, coords, LinearElastic(e), Section(area=a, inertia=i))
+        np.testing.assert_allclose(ke[0, 0], e * a / length)
+        np.testing.assert_allclose(ke[0, 3], -e * a / length)
+        np.testing.assert_allclose(ke[1, 1], 12.0 * e * i / length**3)
+        np.testing.assert_allclose(ke[2, 2], 4.0 * e * i / length)
+        np.testing.assert_allclose(ke[2, 5], 2.0 * e * i / length)
+        # 轴向与弯曲不耦合
+        np.testing.assert_allclose(ke[0, 1], 0.0, atol=1e-12)
+
+    def test_zero_length_raises(self) -> None:
+        coords = np.array([[1.0, 1.0], [1.0, 1.0]])
+        with pytest.raises(ElementError, match="长度为零"):
+            element_stiffness(ElementType.BEAM2, coords, LinearElastic(1000.0), UNIT)
+
+    def test_stress_requires_section(self) -> None:
+        coords = np.array([[0.0, 0.0], [1.0, 0.0]])
+        with pytest.raises(ElementError, match="截面属性"):
+            element_stress(ElementType.BEAM2, coords, LinearElastic(1000.0), np.zeros(6))
+
+    def test_stress_shape(self) -> None:
+        coords = np.array([[0.0, 0.0], [1.0, 0.0]])
+        stress = element_stress(ElementType.BEAM2, coords, LinearElastic(1000.0), np.zeros(6), Section(inertia=0.5))
+        assert stress.shape == (3,)
+        np.testing.assert_allclose(stress, np.zeros(3), atol=1e-15)
+
+
+# ---------------------------------------------------------------------------
+# element_measure：连续体单元度量
+# ---------------------------------------------------------------------------
+
+
+class TestElementMeasure:
+    def test_tria3_area(self) -> None:
+        coords = np.array([[0.0, 0.0], [1.0, 0.0], [0.0, 1.0]])
+        np.testing.assert_allclose(element_measure(ElementType.TRIA3, coords), 0.5)
+
+    def test_quad4_area(self) -> None:
+        coords = np.array([[0.0, 0.0], [2.0, 0.0], [2.0, 1.0], [0.0, 1.0]])
+        np.testing.assert_allclose(element_measure(ElementType.QUAD4, coords), 2.0)
+
+    def test_tet4_volume(self) -> None:
+        coords = np.array([[0.0, 0.0, 0.0], [1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]])
+        np.testing.assert_allclose(element_measure(ElementType.TET4, coords), 1.0 / 6.0)
+
+    def test_hex8_volume(self) -> None:
+        cube = np.array(
+            [
+                [0.0, 0.0, 0.0],
+                [1.0, 0.0, 0.0],
+                [1.0, 1.0, 0.0],
+                [0.0, 1.0, 0.0],
+                [0.0, 0.0, 1.0],
+                [1.0, 0.0, 1.0],
+                [1.0, 1.0, 1.0],
+                [0.0, 1.0, 1.0],
+            ]
+        )
+        np.testing.assert_allclose(element_measure(ElementType.HEX8, cube), 1.0)
+
+    def test_line_element_raises(self) -> None:
+        coords = np.array([[0.0, 0.0], [1.0, 0.0]])
+        with pytest.raises(ElementError, match="不是连续体单元"):
+            element_measure(ElementType.TRUSS2, coords)
 
 
 # ---------------------------------------------------------------------------
@@ -123,6 +206,21 @@ class TestQuad4:
         coords = np.array([[0.0, 0.0], [1.0, 0.0], [2.0, 0.0], [0.5, 0.0]])
         with pytest.raises(ElementError, match="雅可比"):
             element_stiffness(ElementType.QUAD4, coords, E_PLANE, UNIT)
+
+    def test_stress_at_point_linear_field(self) -> None:
+        """任意自然坐标处求值：线性位移场下与高斯点平均一致（应变处处相等）."""
+        coords = np.array([[0.0, 0.0], [2.0, 0.0], [2.2, 1.0], [0.1, 1.2]])
+        u = _linear_field_2d(coords[:, 0], coords[:, 1])
+        expected = _expected_stress_plane(E_PLANE.d_matrix())
+        stress = element_stress_at(ElementType.QUAD4, coords, E_PLANE, u, (-1.0, -1.0))
+        np.testing.assert_allclose(stress, expected, rtol=1e-12)
+        stress_mid = element_stress_at(ElementType.QUAD4, coords, E_PLANE, u, (0.3, -0.5))
+        np.testing.assert_allclose(stress_mid, expected, rtol=1e-12)
+
+    def test_stress_at_point_rejects_other_types(self) -> None:
+        coords = np.array([[0.0, 0.0], [1.0, 0.0], [0.0, 1.0]])
+        with pytest.raises(ElementError, match="暂不支持"):
+            element_stress_at(ElementType.TRIA3, coords, E_PLANE, np.zeros(6), (0.0, 0.0))
 
 
 # ---------------------------------------------------------------------------
@@ -211,6 +309,13 @@ class TestAssemble:
         mesh = Mesh(np.zeros((3, 2)))
         dofs = element_dofs(mesh, np.array([2, 0]))
         np.testing.assert_array_equal(dofs, [4, 5, 0, 1])
+
+    def test_element_dofs_beam_width(self) -> None:
+        # 梁网格每节点 3 DOF，全局编号按宽度 3 展开
+        block = ElementBlock(ElementType.BEAM2, np.array([[0, 1]]))
+        mesh = Mesh(np.zeros((3, 2)), (block,))
+        dofs = element_dofs(mesh, np.array([1, 0]))
+        np.testing.assert_array_equal(dofs, [3, 4, 5, 0, 1, 2])
 
     def test_assemble_single_quad(self) -> None:
         coords = np.array([[0.0, 0.0], [1.0, 0.0], [1.0, 1.0], [0.0, 1.0]])

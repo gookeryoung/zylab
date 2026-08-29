@@ -3,7 +3,8 @@
 设计要点：
 - 坐标统一存 ``(n_nodes, dim)`` float 数组，dim 取 2（平面）或 3（空间）；
 - 单元按 ``ElementBlock`` 分块组织，同一块内类型/材料/截面一致，支持混合网格；
-- 每节点自由度数 = 网格维数（2D 平面单元每节点 2 DOF，3D 实体/杆每节点 3 DOF）。
+- 每节点全局自由度数 = 网格内最宽单元族宽度（连续体 = 网格维数，
+  含平面梁时为 3：ux/uy/θz），见 :func:`element_dofs_per_node`。
 """
 
 from __future__ import annotations
@@ -22,6 +23,7 @@ class ElementType(Enum):
     """单元类型（v1 静力内核支持的单元族）."""
 
     TRUSS2 = "truss2"  # 2 节点空间/平面桁架杆
+    BEAM2 = "beam2"  # 2 节点平面 Euler-Bernoulli 梁（每节点 3 DOF：ux/uy/θz）
     TRIA3 = "tria3"  # 3 节点常应变三角形（CST）
     QUAD4 = "quad4"  # 4 节点等参四边形（全积分）
     TET4 = "tet4"  # 4 节点常应变四面体
@@ -31,6 +33,7 @@ class ElementType(Enum):
 # 各单元类型的节点数（闭合映射，新增单元须同步登记）
 _NODE_COUNTS: dict[ElementType, int] = {
     ElementType.TRUSS2: 2,
+    ElementType.BEAM2: 2,
     ElementType.TRIA3: 3,
     ElementType.QUAD4: 4,
     ElementType.TET4: 4,
@@ -40,11 +43,28 @@ _NODE_COUNTS: dict[ElementType, int] = {
 # 各单元类型允许的网格维数（TRUSS2 平面/空间均可，其余固定）
 _ALLOWED_DIMS: dict[ElementType, frozenset[int]] = {
     ElementType.TRUSS2: frozenset({2, 3}),
+    ElementType.BEAM2: frozenset({2}),
     ElementType.TRIA3: frozenset({2}),
     ElementType.QUAD4: frozenset({2}),
     ElementType.TET4: frozenset({3}),
     ElementType.HEX8: frozenset({3}),
 }
+
+# 各单元类型每节点自由度数（None 表示与网格维数一致）
+_ELEMENT_DOFS: dict[ElementType, int | None] = {
+    ElementType.TRUSS2: None,
+    ElementType.BEAM2: 3,
+    ElementType.TRIA3: None,
+    ElementType.QUAD4: None,
+    ElementType.TET4: None,
+    ElementType.HEX8: None,
+}
+
+
+def element_dofs_per_node(etype: ElementType, dim: int) -> int:
+    """单元类型的每节点自由度数（无转角单元 = 网格维数）."""
+    width = _ELEMENT_DOFS[etype]
+    return dim if width is None else width
 
 
 @dataclass(frozen=True)
@@ -116,8 +136,16 @@ class Mesh:
 
     @property
     def dim(self) -> int:
-        """网格维数（2 或 3），亦为每节点自由度数."""
+        """网格维数（2 或 3）."""
         return int(self.coords.shape[1])
+
+    @property
+    def dofs_per_node(self) -> int:
+        """每节点全局自由度数（含梁等带转角单元时大于网格维数）."""
+        widest = self.dim
+        for block in self.blocks:
+            widest = max(widest, element_dofs_per_node(block.etype, self.dim))
+        return widest
 
     @property
     def n_nodes(self) -> int:
@@ -131,5 +159,5 @@ class Mesh:
 
     @property
     def n_dofs(self) -> int:
-        """自由度总数（每节点 dim 个）."""
-        return self.n_nodes * self.dim
+        """自由度总数（每节点 dofs_per_node 个）."""
+        return self.n_nodes * self.dofs_per_node

@@ -2,13 +2,14 @@
 
 支持单元族：
 - TRUSS2：2 节点杆（平面/空间），每节点 dim 个平动自由度；
+- BEAM2：2 节点平面 Euler-Bernoulli 梁，每节点 3 自由度（ux/uy/θz）；
 - TRIA3：常应变三角形（CST），厚度截面；
 - QUAD4：4 节点等参四边形，2x2 高斯全积分；
 - TET4：常应变四面体；
 - HEX8：8 节点等参六面体，2x2x2 高斯全积分。
 
 应变分量顺序：平面 (εxx, εyy, γxy)，空间 (εxx, εyy, εzz, γxy, γyz, γxz)。
-单元自由度顺序：节点优先，节点内按 x/y/z 分量。
+单元自由度顺序：节点优先，节点内按 x/y/z 分量（梁附转角分量）。
 """
 
 from __future__ import annotations
@@ -19,7 +20,7 @@ from .errors import ElementError
 from .material import LinearElastic, Section
 from .mesh import ElementType
 
-__all__ = ["element_stiffness", "element_stress"]
+__all__ = ["element_measure", "element_stiffness", "element_stress", "element_stress_at"]
 
 _GEOM_TOL = 1.0e-12
 
@@ -57,6 +58,80 @@ def _truss2_axial_stress(coords: np.ndarray, e_modulus: float, u_elem: np.ndarra
     dim = coords.shape[1]
     elongation = float(np.dot(delta / length, u_elem[dim:] - u_elem[:dim]))
     return e_modulus * elongation / length
+
+
+# ---------------------------------------------------------------------------
+# BEAM2：2 节点平面 Euler-Bernoulli 梁（ux/uy/θz）
+# ---------------------------------------------------------------------------
+
+
+def _beam2_stiffness(coords: np.ndarray, e_modulus: float, area: float, inertia: float) -> np.ndarray:
+    """平面梁单元刚度（全局坐标，6x6，自由度序 u1x/u1y/θ1/u2x/u2y/θ2）."""
+    delta = coords[1] - coords[0]
+    length = float(np.linalg.norm(delta))
+    if length <= _GEOM_TOL:
+        raise ElementError("梁单元两节点重合，长度为零")
+    c, s = float(delta[0] / length), float(delta[1] / length)
+    ea, ei = e_modulus * area, e_modulus * inertia
+    axial = ea / length
+    shear = 12.0 * ei / length**3
+    bend = 6.0 * ei / length**2
+    rot = 4.0 * ei / length
+    rot2 = 2.0 * ei / length
+    k_local = np.array(
+        [
+            [axial, 0.0, 0.0, -axial, 0.0, 0.0],
+            [0.0, shear, bend, 0.0, -shear, bend],
+            [0.0, bend, rot, 0.0, -bend, rot2],
+            [-axial, 0.0, 0.0, axial, 0.0, 0.0],
+            [0.0, -shear, -bend, 0.0, shear, -bend],
+            [0.0, bend, rot2, 0.0, -bend, rot],
+        ]
+    )
+    # 坐标变换（局部 -> 全局）：节点块 [c s 0; -s c 0; 0 0 1]
+    t = np.zeros((6, 6))
+    for node in (0, 1):
+        base = 3 * node
+        t[base, base] = c
+        t[base, base + 1] = s
+        t[base + 1, base] = -s
+        t[base + 1, base + 1] = c
+        t[base + 2, base + 2] = 1.0
+    return t.T @ k_local @ t
+
+
+def _beam2_stress(
+    coords: np.ndarray,
+    e_modulus: float,
+    inertia: float,
+    u_elem: np.ndarray,
+) -> np.ndarray:
+    """梁单元内力：轴向应力与两端弯矩.
+
+    Returns:
+        (3,) 向量 = (轴向应力 σ, 端 1 弯矩 M1, 端 2 弯矩 M2)；弯矩逆时针为正。
+    """
+    delta = coords[1] - coords[0]
+    length = float(np.linalg.norm(delta))
+    if length <= _GEOM_TOL:
+        raise ElementError("梁单元两节点重合，长度为零")
+    c, s = float(delta[0] / length), float(delta[1] / length)
+    t = np.zeros((6, 6))
+    for node in (0, 1):
+        base = 3 * node
+        t[base, base] = c
+        t[base, base + 1] = s
+        t[base + 1, base] = -s
+        t[base + 1, base + 1] = c
+        t[base + 2, base + 2] = 1.0
+    u_local = t @ np.asarray(u_elem, dtype=float)
+    axial_stress = e_modulus * (u_local[3] - u_local[0]) / length
+    # 端部弯矩 = EI * v''(端部)，由 Hermite 插值 v'' = 1/L² (-6v1 + 2Lθ1... )，
+    # 等价于局部平衡方程 M1 = EI(4θ1 + 2θ2)/L - 6EI(v2 - v1)/L²
+    ei = e_modulus * inertia
+    curvature1 = (-6.0 * (u_local[4] - u_local[1]) + (4.0 * u_local[2] + 2.0 * u_local[5]) * length) / length**2
+    curvature2 = (-6.0 * (u_local[4] - u_local[1]) + (2.0 * u_local[2] + 4.0 * u_local[5]) * length) / length**2
+    return np.array([axial_stress, ei * curvature1, ei * curvature2])
 
 
 # ---------------------------------------------------------------------------
@@ -275,6 +350,44 @@ def _hex8_stress(coords: np.ndarray, dmat: np.ndarray, u_elem: np.ndarray) -> np
 # ---------------------------------------------------------------------------
 
 
+def element_measure(etype: ElementType, coords: np.ndarray) -> float:
+    """连续体单元度量（2D 为面积，3D 为体积；供体力等效节点载荷）.
+
+    Args:
+        etype: 单元类型（连续体族；杆/梁无度量，抛错）。
+        coords: 单元节点坐标 ``(n_node, dim)``。
+
+    Returns:
+        单元面积或体积。
+
+    Raises:
+        ElementError: 非连续体单元或几何退化时抛出。
+    """
+    if etype is ElementType.TRIA3:
+        _, area = _tria3_b_matrix(coords)
+        return area
+    if etype is ElementType.QUAD4:
+        # 2x2 高斯 |detJ| 求和（直边时等于面积，曲边为积分近似）
+        total = 0.0
+        for xi in (-_GAUSS_ABSCISSA, _GAUSS_ABSCISSA):
+            for eta in (-_GAUSS_ABSCISSA, _GAUSS_ABSCISSA):
+                _, det_j = _quad4_b_matrix(coords, xi, eta)
+                total += det_j
+        return total
+    if etype is ElementType.TET4:
+        _, volume = _tet4_geometry(coords)
+        return volume
+    if etype is ElementType.HEX8:
+        total = 0.0
+        for xi in (-_GAUSS_ABSCISSA, _GAUSS_ABSCISSA):
+            for eta in (-_GAUSS_ABSCISSA, _GAUSS_ABSCISSA):
+                for zeta in (-_GAUSS_ABSCISSA, _GAUSS_ABSCISSA):
+                    _, det_j = _hex8_b_matrix(coords, xi, eta, zeta)
+                    total += det_j
+        return total
+    raise ElementError(f"单元类型 {etype} 不是连续体单元，无面积/体积度量")
+
+
 def element_stiffness(
     etype: ElementType,
     coords: np.ndarray,
@@ -297,6 +410,8 @@ def element_stiffness(
     """
     if etype is ElementType.TRUSS2:
         return _truss2_stiffness(coords, material.e_modulus, section.area)
+    if etype is ElementType.BEAM2:
+        return _beam2_stiffness(coords, material.e_modulus, section.area, section.inertia)
     if etype is ElementType.TRIA3:
         return _tria3_stiffness(coords, material.d_matrix(), section.thickness)
     if etype is ElementType.QUAD4:
@@ -313,6 +428,7 @@ def element_stress(
     coords: np.ndarray,
     material: LinearElastic,
     u_elem: np.ndarray,
+    section: Section | None = None,
 ) -> np.ndarray:
     """按单元类型计算单元应力（常应变单元直接给出，等参单元取高斯点平均）.
 
@@ -320,13 +436,19 @@ def element_stress(
         etype: 单元类型。
         coords: 单元节点坐标 ``(n_node, dim)``。
         material: 线弹性材料。
-        u_elem: 单元节点位移向量（全局坐标系，长度 = n_node*dim）。
+        u_elem: 单元节点位移向量（全局坐标系，长度 = n_node*每节点 DOF 数）。
+        section: 截面属性（梁单元恢复弯矩须提供）。
 
     Returns:
-        应力向量：杆为 (1,)（轴向应力），平面单元为 (3,)，空间单元为 (6,)。
+        应力向量：杆为 (1,)（轴向应力），梁为 (3,)（轴向应力 + 两端弯矩），
+        平面单元为 (3,)，空间单元为 (6,)。
     """
     if etype is ElementType.TRUSS2:
         return np.array([_truss2_axial_stress(coords, material.e_modulus, u_elem)])
+    if etype is ElementType.BEAM2:
+        if section is None:
+            raise ElementError("梁单元应力恢复须提供截面属性（惯性矩）")
+        return _beam2_stress(coords, material.e_modulus, section.inertia, u_elem)
     if etype is ElementType.TRIA3:
         b, _ = _tria3_b_matrix(coords)
         return material.d_matrix() @ (b @ u_elem)
@@ -338,3 +460,34 @@ def element_stress(
     if etype is ElementType.HEX8:
         return _hex8_stress(coords, material.d_matrix(), u_elem)
     raise ElementError(f"不支持的单元类型: {etype}")  # pragma: no cover（枚举闭合）
+
+
+def element_stress_at(
+    etype: ElementType,
+    coords: np.ndarray,
+    material: LinearElastic,
+    u_elem: np.ndarray,
+    location: tuple[float, float],
+) -> np.ndarray:
+    """等参单元内指定自然坐标处的应力（v1 支持 QUAD4）.
+
+    供边界/角点应力恢复使用（:func:`element_stress` 的高斯点平均在
+    应力梯度大的边界角点处系统性低估，角点直接求值无此偏差）。
+
+    Args:
+        etype: 单元类型（v1 仅 QUAD4）。
+        coords: 单元节点坐标 ``(4, 2)``。
+        material: 线弹性材料。
+        u_elem: 单元节点位移向量（长度 8）。
+        location: 自然坐标 ``(xi, eta)``（节点 0 处为 (-1, -1)）。
+
+    Returns:
+        该点应力向量 ``(3,)``（εxx, εyy, γxy 序对应的应力）。
+
+    Raises:
+        ElementError: 单元类型不支持或雅可比退化时抛出。
+    """
+    if etype is not ElementType.QUAD4:
+        raise ElementError(f"单元类型 {etype} 暂不支持指定点应力求值")
+    b, _ = _quad4_b_matrix(coords, location[0], location[1])
+    return material.d_matrix() @ (b @ u_elem)

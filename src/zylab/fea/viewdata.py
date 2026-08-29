@@ -23,6 +23,7 @@ __all__ = [
 # 各单元类型的边（节点局部索引对）：杆为单边，闭合单元取环绕边，实体取棱边
 _EDGE_TABLE: dict[ElementType, tuple[tuple[int, int], ...]] = {
     ElementType.TRUSS2: ((0, 1),),
+    ElementType.BEAM2: ((0, 1),),
     ElementType.TRIA3: ((0, 1), (1, 2), (2, 0)),
     ElementType.QUAD4: ((0, 1), (1, 2), (2, 3), (3, 0)),
     ElementType.TET4: ((0, 1), (0, 2), (0, 3), (1, 2), (1, 3), (2, 3)),
@@ -94,13 +95,15 @@ def deformed_coords(mesh: Mesh, displacements: np.ndarray, scale: float = 1.0) -
 
     Args:
         mesh: 网格。
-        displacements: 节点位移 ``(n_nodes, dim)``。
+        displacements: 节点位移 ``(n_nodes, dofs_per_node)`` 或 ``(n_nodes, dim)``
+            （梁网格取前 dim 列平动分量参与叠加）。
         scale: 位移放大系数（1.0 为真实变形）。
 
     Returns:
         ``(n_nodes, dim)`` 变形坐标。
     """
-    return mesh.coords + scale * np.asarray(displacements, dtype=float)
+    disp = np.asarray(displacements, dtype=float)[:, : mesh.dim]
+    return mesh.coords + scale * disp
 
 
 def displacement_field(solution: StaticSolution, component: int | None = None) -> np.ndarray:
@@ -108,13 +111,13 @@ def displacement_field(solution: StaticSolution, component: int | None = None) -
 
     Args:
         solution: 静力求解结果。
-        component: 位移分量索引；None 取位移模（2D/3D 均适用）。
+        component: 位移分量索引；None 取平动位移模（前 dim 列，忽略转角）。
 
     Returns:
         ``(n_nodes,)`` 标量数组。
     """
     if component is None:
-        return np.linalg.norm(solution.displacements, axis=1)
+        return np.linalg.norm(solution.displacements[:, : solution.mesh.dim], axis=1)
     return solution.displacements[:, component].copy()
 
 
