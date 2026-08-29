@@ -7,7 +7,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Callable, Sequence
 
 import numpy as np
@@ -47,11 +47,27 @@ class NonlinearSolution:
     iterations: tuple[int, ...]
     residual_norm: float
     converged: bool
+    #: 每增量步收敛后的载荷因子序列（含 0 起始，长度 = 步数 + 1）
+    history_factors: np.ndarray = field(default_factory=lambda: np.zeros(1))
+    #: 每增量步收敛后的位移快照 (步数 + 1, n_nodes, dofs_per_node)，首帧为零位移
+    history_displacements: np.ndarray = field(default_factory=lambda: np.zeros((1, 1, 1)))
 
     @property
     def total_iterations(self) -> int:
         """全部增量步 Newton 迭代次数合计."""
         return sum(self.iterations)
+
+    def history_dof(self, node: int, component: int = 0) -> np.ndarray:
+        """指定节点分量随增量步的位移序列（载荷-位移曲线数据源）.
+
+        Args:
+            node: 节点序号。
+            component: 节点内自由度分量（0=x，1=y）。
+
+        Returns:
+            长度 = 增量步数 + 1 的一维数组（含零位移起始）。
+        """
+        return self.history_displacements[:, node, component]
 
 
 def solve_nonlinear_static(  # noqa: PLR0913  求解四要素 + 步进控制参数，语义不可合并
@@ -115,6 +131,9 @@ def solve_nonlinear_static(  # noqa: PLR0913  求解四要素 + 步进控制参�
     u = np.zeros(mesh.n_dofs)
     iterations: list[int] = []
     converged = True
+    # 全过程追踪：载荷因子 + 每步收敛位移快照（载荷-位移曲线数据源）
+    factors: list[float] = [0.0]
+    snapshots: list[np.ndarray] = [np.zeros((mesh.n_nodes, mesh.dofs_per_node))]
     for step in range(1, n_increments + 1):
         factor = step / n_increments
         target = f_ext * factor
@@ -133,6 +152,8 @@ def solve_nonlinear_static(  # noqa: PLR0913  求解四要素 + 步进控制参�
                 f"第 {step}/{n_increments} 步 Newton 迭代 {max_iterations} 次未收敛，可增大增量步数或放宽容差"
             )
         iterations.append(_iteration)
+        factors.append(factor)
+        snapshots.append(u.reshape(mesh.n_nodes, mesh.dofs_per_node).copy())
         progress(step / n_increments, f"增量步 {step}/{n_increments} 完成（{_iteration} 次迭代）")
 
     displacements = u.reshape(mesh.n_nodes, mesh.dofs_per_node)
@@ -143,6 +164,8 @@ def solve_nonlinear_static(  # noqa: PLR0913  求解四要素 + 步进控制参�
         iterations=tuple(iterations),
         residual_norm=residual_norm,
         converged=converged,
+        history_factors=np.asarray(factors),
+        history_displacements=np.stack(snapshots),
     )
 
 

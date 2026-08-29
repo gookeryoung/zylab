@@ -291,6 +291,42 @@ def test_fea_page_nonlinear_renders(qtbot) -> None:
 
 
 @pytest.mark.gui
+def test_fea_page_nonlinear_curve_view(qtbot) -> None:
+    """非线性视图切换：载荷-位移曲线与变形云图互切，其他结果隐藏切换框."""
+    page = FeaPage()
+    qtbot.addWidget(page)
+    page._model_combo.setCurrentIndex(2)
+
+    mesh, materials, sections, case = page._current_model()
+    solution = solve_nonlinear_static(mesh, materials, sections, case, n_increments=4)
+    page._on_finished(solution)
+
+    # 默认变形云图，切换框可见
+    assert page._nonlinear_view_combo.isVisibleTo(page)
+    assert "Newton 迭代" in page._result_label.text()
+
+    # 切到载荷-位移曲线：两条曲线（非线性 + 线性参照）
+    page._nonlinear_view_combo.setCurrentIndex(1)
+    assert "载荷-位移曲线" in page._result_label.text()
+    curves = page._plot.getPlotItem().listDataItems()
+    assert len(curves) == 2
+    factors, uy = curves[1].getData()
+    np.testing.assert_allclose(factors, solution.history_factors)
+    np.testing.assert_allclose(uy, solution.history_dof(1, 1))
+
+    # 切回变形云图
+    page._nonlinear_view_combo.setCurrentIndex(0)
+    assert "Newton 迭代" in page._result_label.text()
+
+    # 非线性之外的结果类型隐藏切换框
+    mesh2 = build_cantilever_mesh()
+    page._on_finished(
+        solve_static(mesh2, [page.current_material], [Section(thickness=1.0)], build_cantilever_case(mesh2))
+    )
+    assert page._nonlinear_view_combo.isHidden()
+
+
+@pytest.mark.gui
 def test_fea_page_nonlinear_solve_end_to_end(qtbot) -> None:
     """端到端：几何非线性经进程执行器完成并渲染（真实 spawn 子进程）."""
     page = FeaPage()

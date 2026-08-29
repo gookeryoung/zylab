@@ -189,6 +189,33 @@ class TestNonlinearSolve:
         assert solution.converged
         assert records == pytest.approx([1.0 / 3.0, 2.0 / 3.0, 1.0])
 
+    def test_history_traces_load_displacement(self) -> None:
+        """全过程追踪：因子含 0 起始等差递增至 1，末帧位移 = 收敛位移."""
+        mesh = _two_bar_mesh(1.0, 1.0)
+        case = StaticCase(
+            constraints=(Constraint(0, (0, 1)), Constraint(2, (0, 1))),
+            loads=(NodalLoad(1, (0.0, -5.0)),),
+        )
+        solution = solve_nonlinear_static(
+            mesh,
+            [LinearElastic(E_MOD)],
+            [Section(area=AREA)],
+            case,
+            n_increments=4,
+        )
+        # 因子序列 [0, .25, .5, .75, 1]
+        np.testing.assert_allclose(solution.history_factors, [0.0, 0.25, 0.5, 0.75, 1.0])
+        # 快照形状 (步数+1, n_nodes, dpn)，首帧零位移
+        assert solution.history_displacements.shape == (5, 3, 2)
+        np.testing.assert_allclose(solution.history_displacements[0], 0.0)
+        # 末帧 = 收敛位移
+        np.testing.assert_allclose(solution.history_displacements[-1], solution.displacements)
+        # 顶点 uy 随载荷单调下移（软化曲线逐点变陡）
+        uy = solution.history_dof(1, 1)
+        assert np.all(np.diff(uy) < 0.0)
+        # 中途帧不等于收敛位移（确为逐步快照而非重复末帧）
+        assert not np.allclose(solution.history_displacements[2], solution.displacements)
+
     def test_not_converged_raises(self) -> None:
         """迭代上限过小且载荷大：报未收敛."""
         mesh = _two_bar_mesh(1.0, 1.0)

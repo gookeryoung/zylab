@@ -314,6 +314,13 @@ class FeaPage(QWidget):
         self._mode_spin.setRange(1, 1)
         self._mode_spin.setVisible(False)
         layout.addWidget(self._mode_spin)
+
+        # 非线性结果：变形云图 / 载荷-位移曲线 视图切换
+        self._nonlinear_view_combo = QComboBox(objectName="nonlinearView")
+        self._nonlinear_view_combo.addItem("变形云图", "deform")
+        self._nonlinear_view_combo.addItem("载荷-位移曲线", "curve")
+        self._nonlinear_view_combo.setVisible(False)
+        layout.addWidget(self._nonlinear_view_combo)
         return box
 
     def _connect(self) -> None:
@@ -322,6 +329,7 @@ class FeaPage(QWidget):
         self._analysis_combo.currentIndexChanged.connect(self._update_param_visibility)
         self._update_param_visibility()
         self._mode_spin.valueChanged.connect(self._render_mode_shape)
+        self._nonlinear_view_combo.currentIndexChanged.connect(self._on_nonlinear_view_changed)
         self._bridge.progress.connect(self._on_progress)
         self._bridge.finished.connect(self._on_finished)
         self._bridge.failed.connect(self._on_failed)
@@ -641,6 +649,7 @@ class FeaPage(QWidget):
         self._status_label.setText("求解完成")
         self._set_result_error(False)
         self._nonlinear_solution = None
+        self._nonlinear_view_combo.setVisible(False)  # 仅非线性结果显示视图切换
         if isinstance(solution, ModalSolution):
             self._solution = None
             self._modal_solution = solution
@@ -682,6 +691,14 @@ class FeaPage(QWidget):
             self._result_label.setText(f"最大位移 |u| = {max_u:.6g}\n应变能 = {solution.strain_energy:.6g}")
 
     def _render_nonlinear(self, solution: NonlinearSolution) -> None:
+        """渲染非线性结果：显示视图切换并默认变形云图."""
+        self._nonlinear_view_combo.setVisible(True)
+        self._nonlinear_view_combo.blockSignals(True)
+        self._nonlinear_view_combo.setCurrentIndex(0)
+        self._nonlinear_view_combo.blockSignals(False)
+        self._render_nonlinear_deform(solution)
+
+    def _render_nonlinear_deform(self, solution: NonlinearSolution) -> None:
         """渲染非线性收敛态变形云图与迭代历程摘要."""
         self._render_deformation(solution.mesh, solution.displacements)
         max_u = float(np.max(np.linalg.norm(solution.displacements, axis=1)))
@@ -689,6 +706,48 @@ class FeaPage(QWidget):
         self._result_label.setText(
             f"最大位移 |u| = {max_u:.6g}\n收敛：{steps} 增量步 · {solution.total_iterations} 次 Newton 迭代"
         )
+
+    def _render_nonlinear_curve(self, solution: NonlinearSolution) -> None:
+        """渲染载荷-位移曲线（观察点竖向位移 vs 载荷因子，含线性参照）."""
+        # 观察点取最大位移节点（桁架顶点/梁端等，不依赖模型拓扑）
+        node = int(np.argmax(np.linalg.norm(solution.displacements, axis=1)))
+        uy = solution.history_dof(node, 1)
+        factors = solution.history_factors
+
+        self._plot.clear()
+        self._plot.setAspectLocked(False)  # 曲线恢复自由纵横比
+        self._plot.showGrid(x=True, y=True, alpha=0.3)
+        self._plot.setLogMode(y=False)
+        self._plot.addLegend(offset=(12, 12))
+        self._plot.setLabel("bottom", "载荷因子 λ")
+        self._plot.setLabel("left", f"节点 {node} uy")
+        # 线性参照（首点斜率直线，凸显浅桁架软化效应）
+        slope = uy[1] / factors[1]
+        self._plot.plot(
+            factors,
+            slope * factors,
+            pen=pg.mkPen(theme.current_palette().text_secondary, width=1, style=pg.QtCore.Qt.DashLine),
+            name="线性参照",
+        )
+        self._plot.plot(
+            factors,
+            uy,
+            pen=pg.mkPen(theme.current_palette().primary, width=2),
+            name="非线性",
+        )
+        self._result_label.setText(
+            f"载荷-位移曲线：{len(factors) - 1} 增量步\n"
+            f"观察点节点 {node} uy = {uy[-1]:.6g}（线性 {slope * factors[-1]:.6g}）"
+        )
+
+    def _on_nonlinear_view_changed(self, index: int) -> None:
+        """切换非线性结果视图（变形云图 / 载荷-位移曲线）."""
+        if self._nonlinear_solution is None:
+            return
+        if self._nonlinear_view_combo.itemData(index) == "curve":
+            self._render_nonlinear_curve(self._nonlinear_solution)
+        else:
+            self._render_nonlinear_deform(self._nonlinear_solution)
 
     def _on_failed(self, message: str) -> None:
         """显示求解失败信息."""
