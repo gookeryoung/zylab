@@ -15,3 +15,10 @@ def test_package_importable() -> None:
     """包应可正常导入."""
     assert hasattr(zylab, "__all__")
     assert "__version__" in zylab.__all__
+
+
+def test_main_module_importable() -> None:
+    """GUI 入口模块应可导入（不启动事件循环）."""
+    import zylab.main
+
+    assert callable(zylab.main.main)

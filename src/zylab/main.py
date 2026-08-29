@@ -5,7 +5,7 @@ from __future__ import annotations
 import sys
 
 try:  # PySide2 支持 Python 3.6-3.10；PySide6 支持 3.8+
-    from PySide2.QtWidgets import QApplication, QLabel
+    from PySide2.QtWidgets import QApplication, QLabel  # type: ignore[missing-import]
 except ImportError:
     from PySide6.QtWidgets import QApplication, QLabel
 

@@ -8,6 +8,7 @@ wheels/
 
 # Virtual environments
 .venv
+.venv38
 
 # 测试与覆盖率
 .coverage

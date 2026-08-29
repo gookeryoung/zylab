@@ -1,6 +1,6 @@
-extend-exclude = ["docs", "examples", "template"]
+extend-exclude = ["docs", "examples", "template", ".venv38"]
 line-length    = 120
-target-version = "py311"
+target-version = "py38"
 
 [lint]
 ignore = [
