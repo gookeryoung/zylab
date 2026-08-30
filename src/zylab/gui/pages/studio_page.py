@@ -383,6 +383,10 @@ class StudioPage(QWidget):
         """运行全部过期节点（右键画布空白「运行全部」入口）."""
         if self._graph is None:
             return
+        if not any(node.needs_run for node in self._graph.nodes()):
+            # 全部最新：无事件派发，直接返回（否则运行态 UI 无恢复触发点）
+            self._status_label.setText("所有节点已是最新")
+            return
         self._runner = WorkflowRunner(self._graph)  # 每次运行自建，避免执行器复用状态
         self._set_running_ui(True)
         self._runner.run_all(self._bridge.dispatch)
@@ -398,6 +402,13 @@ class StudioPage(QWidget):
     def _run_node(self, node_id: str) -> None:
         """级联运行到目标节点（含过期上游）."""
         if self._graph is None or (self._runner is not None and self._runner.running):
+            return
+        targets = {node_id, *self._graph.ancestors(node_id)}
+        if not any(self._graph.node(nid).needs_run for nid in targets):
+            # 目标及其上游全部最新：runner 队列为空不派发事件，运行态 UI 将
+            # 无恢复触发点（取消按钮卡激活），须在此直接返回并呈现既有结果
+            self._status_label.setText("节点已是最新，无需运行")
+            self._show_node_result(node_id)
             return
         self._runner = WorkflowRunner(self._graph)
         self._set_running_ui(True)

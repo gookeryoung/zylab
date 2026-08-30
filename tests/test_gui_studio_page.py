@@ -127,6 +127,33 @@ def test_double_click_runs_to_node(qtbot) -> None:
 
 
 @pytest.mark.gui
+def test_run_node_up_to_date_no_hang(qtbot) -> None:
+    """运行到已最新节点：不进入运行态（修复空队列无事件导致取消按钮卡激活）."""
+    page = StudioPage()
+    qtbot.addWidget(page)
+    # model 源节点实例化时已进程内预览（UP_TO_DATE），运行到它队列恒空
+    page._run_node("model")
+    assert not page._cancel_button.isEnabled()
+    assert "无需运行" in page._status_label.text()
+    assert "模型预览" in page._result_view._summary.text()  # 直接呈现既有结果
+    page.shutdown()
+
+
+@pytest.mark.gui
+def test_run_all_when_all_up_to_date(qtbot) -> None:
+    """全部节点已最新时运行全部：直接提示不进入运行态（真实进程端到端）."""
+    page = StudioPage()
+    qtbot.addWidget(page)
+    _select_template(page, "structural.cantilever_static")
+    page._on_run_all()
+    qtbot.waitUntil(lambda: not page._cancel_button.isEnabled(), timeout=60000)
+    page._on_run_all()  # 二次运行全部：全部已最新
+    assert not page._cancel_button.isEnabled()
+    assert "所有节点已是最新" in page._status_label.text()
+    page.shutdown()
+
+
+@pytest.mark.gui
 def test_cancel_running(qtbot) -> None:
     """取消运行：状态复位且按钮恢复."""
     page = StudioPage()
