@@ -25,6 +25,7 @@ from zylab.core.errors import ProjectFileError
 from zylab.core.executor import EventKind
 from zylab.core.project import Project
 from zylab.studio import (
+    ConductionBundle,
     ModelBundle,
     NodeRunEvent,
     NodeState,
@@ -484,7 +485,7 @@ class StudioPage(QWidget):
         result = self._graph.node(node_id).result
         if result is None:
             return
-        if isinstance(result, ModelBundle):
+        if isinstance(result, (ModelBundle, ConductionBundle)):
             self._result_view.show_mesh(result)
         else:
             self._result_view.show_solution(result, self._reference_load(node_id))

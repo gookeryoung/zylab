@@ -18,6 +18,7 @@ import numpy as np
 
 from zylab.fea import (
     BucklingSolution,
+    ElectroThermalSolution,
     HarmonicResponse,
     ModalSolution,
     NonlinearSolution,
@@ -25,7 +26,7 @@ from zylab.fea import (
     TransientSolution,
 )
 
-from .bundle import ModelBundle
+from .bundle import ConductionBundle, ModelBundle
 from .errors import StudioError
 from .graph import WorkflowGraph
 from .template import Template
@@ -177,9 +178,9 @@ def summarize(outcome: RunOutcome) -> str:
     return "\n".join(lines)
 
 
-def _describe(result: Any) -> str:  # noqa: PLR0911  七类解各一行指标，分支语义不可合并
+def _describe(result: Any) -> str:  # noqa: PLR0911  各类解各一行指标，分支语义不可合并
     """按解类型生成单行指标描述."""
-    if isinstance(result, ModelBundle):
+    if isinstance(result, (ModelBundle, ConductionBundle)):
         mesh = result.mesh
         return f"模型: {mesh.n_nodes} 节点 / {mesh.n_elements} 单元"
     if isinstance(result, StaticSolution):
@@ -205,4 +206,6 @@ def _describe(result: Any) -> str:  # noqa: PLR0911  七类解各一行指标，
         u = result.displacements
         peak = float(np.abs(u).max()) if u.size else 0.0
         return f"瞬态: 峰值位移 {peak:.6g}（{result.n_steps} 步，dt={result.dt:.4g}s）"
+    if isinstance(result, ElectroThermalSolution):
+        return f"电热: 峰值温度 {result.t_max:.6g}，总电功率 {result.total_power:.6g} W"
     return f"完成: {type(result).__name__}"

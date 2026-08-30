@@ -10,11 +10,14 @@ import pytest
 
 from zylab.fea import (
     BucklingSolution,
+    ElectricSolution,
+    ElectroThermalSolution,
     HarmonicResponse,
     Mesh,
     ModalSolution,
     NonlinearSolution,
     StaticSolution,
+    ThermalSolution,
     TransientSolution,
     export_csv,
 )
@@ -120,6 +123,34 @@ def test_nonlinear_history_series(tmp_path: Path) -> None:
     assert rows[0] == ["load_factor", "max_abs_u"]
     assert len(rows) == 3
     assert float(rows[2][1]) == 0.5
+
+
+def test_electrothermal_node_table(tmp_path: Path) -> None:
+    """电热耦合解导出逐节点电压/温度表."""
+    mesh = _mesh()
+    electric = ElectricSolution(
+        mesh=mesh,
+        voltages=np.array([0.0, 1.0]),
+        element_gradients=np.zeros((1, 2)),
+        element_power=np.array([0.5]),
+        total_power=0.5,
+    )
+    thermal = ThermalSolution(
+        mesh=mesh,
+        temperatures=np.array([20.0, 25.0]),
+        element_gradients=np.zeros((1, 2)),
+        element_heat_flux=np.zeros(1),
+        t_min=20.0,
+        t_max=25.0,
+    )
+    solution = ElectroThermalSolution(mesh=mesh, electric=electric, thermal=thermal, total_power=0.5)
+    rows = _read(export_csv(solution, tmp_path / "et.csv"))
+    assert rows[0] == ["node", "voltage", "temperature"]
+    assert len(rows) == 3
+    assert float(rows[1][1]) == 0.0
+    assert float(rows[1][2]) == 20.0
+    assert float(rows[2][1]) == 1.0
+    assert float(rows[2][2]) == 25.0
 
 
 def test_creates_parent_directory(tmp_path: Path) -> None:

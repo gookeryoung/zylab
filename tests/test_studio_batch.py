@@ -138,6 +138,7 @@ class TestSummarizeAndResolve:
             ("structural.cantilever_transient", "瞬态"),
             ("structural.column_buckling", "屈曲"),
             ("structural.truss_nonlinear", "非线性"),
+            ("thermal.joule_plate_2d", "电热"),
         ],
     )
     def test_summarize_solution_types(self, template_id: str, keyword: str) -> None:

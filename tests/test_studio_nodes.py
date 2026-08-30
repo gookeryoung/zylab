@@ -9,6 +9,7 @@ import pytest
 
 from zylab.fea import (
     BucklingSolution,
+    ElectroThermalSolution,
     ElementType,
     HarmonicResponse,
     ModalSolution,
@@ -68,6 +69,39 @@ class TestBuildSources:
         nodes.build_truss({}, {}, report=lambda p, m: events.append((p, m)))
         assert events[0][0] < 1.0
         assert events[-1] == (1.0, "模型就绪")
+
+    def test_joule_plate_structure(self) -> None:
+        """通电加热板：Q4 网格、左右电极电压、底边恒温与三边对流折线."""
+        bundle = nodes.build_joule_plate({}, {"nx": 4, "ny": 2})
+        assert bundle.mesh.n_nodes == 5 * 3
+        assert bundle.mesh.n_elements == 8
+        assert bundle.mesh.blocks[0].etype is ElementType.QUAD4
+        bundle.electric_case.validate(bundle.mesh)
+        bundle.thermal_case.validate(bundle.mesh)
+        coords = bundle.mesh.coords
+        left = np.flatnonzero(coords[:, 0] <= 0.0)
+        right = np.flatnonzero(coords[:, 0] >= 40.0 - 1e-9)
+        bottom = np.flatnonzero(coords[:, 1] <= 0.0)
+        # 左端接地 0、右端电极电压 1.0（默认 voltage）
+        left_given = {v.node: v.value for v in bundle.electric_case.voltages}
+        assert all(left_given[int(n)] == 0.0 for n in left)
+        assert all(left_given[int(n)] == 1.0 for n in right)
+        # 底边恒温 t_base=20，对流折线覆盖左/顶/右三边（角节点不重复）
+        assert {t.node: t.value for t in bundle.thermal_case.temperatures} == {int(n): 20.0 for n in bottom}
+        conv = bundle.thermal_case.convections[0]
+        expected = 3 + 3 + 3  # 左(3) + 顶内部(3) + 右(3)，ny=2/nx=4
+        assert len(conv.nodes) == expected
+        assert len(set(conv.nodes)) == expected
+        assert bundle.materials[0].electric_sigma == pytest.approx(1.0)
+        assert bundle.sections[0].thickness == pytest.approx(1.0)
+
+    def test_joule_plate_pickle_roundtrip(self) -> None:
+        """ConductionBundle 可 pickle（跨进程传输前提）."""
+        bundle = nodes.build_joule_plate({}, {"nx": 2, "ny": 1})
+        restored = pickle.loads(pickle.dumps(bundle))
+        assert restored.mesh.n_nodes == bundle.mesh.n_nodes
+        assert restored.electric_case == bundle.electric_case
+        assert restored.thermal_case == bundle.thermal_case
 
     def test_bundle_pickle_roundtrip(self) -> None:
         """ModelBundle 可 pickle（跨进程传输前提）."""
@@ -143,6 +177,38 @@ class TestRunAnalyses:
         """输入端口载荷类型错误抛 TypeError（防御外部直调）."""
         with pytest.raises(TypeError, match="ModelBundle"):
             nodes.run_static({"model": object()}, {})
+
+    def test_electrothermal(self) -> None:
+        """电-热耦合解：1D 解析互证（底边恒温 + 近绝热三边 → T_max = qH²/2k）."""
+        bundle = nodes.build_joule_plate(
+            {},
+            {
+                "nx": 4,
+                "ny": 2,
+                "length": 2.0,
+                "height": 1.0,
+                "voltage": 1.0,
+                "electric_sigma": 1.0,
+                "thermal_k": 1.0,
+                "thickness": 1.0,
+                "t_base": 0.0,
+                "t_ambient": 0.0,
+                "h_conv": 1e-9,
+            },
+        )
+        solution = nodes.run_electrothermal({"model": bundle}, {})
+        assert isinstance(solution, ElectroThermalSolution)
+        # 电压线性：右端 = V0
+        assert solution.voltages.max() == pytest.approx(1.0, rel=1e-12)
+        # 总电功率 = σtH·V0²/L = 0.5
+        assert solution.total_power == pytest.approx(0.5, rel=1e-9)
+        # Joule 均匀热源 q = σ(V0/L)² = 0.25，底边恒温 + 近绝热 → T_max = qH²/2k
+        assert solution.t_max == pytest.approx(0.25 * 1.0**2 / 2.0, rel=1e-6)
+
+    def test_electrothermal_wrong_input_type(self) -> None:
+        """model 端口载荷类型错误抛 TypeError."""
+        with pytest.raises(TypeError, match="ConductionBundle"):
+            nodes.run_electrothermal({"model": object()}, {})
 
     def test_param_validation_flows_through(self) -> None:
         """节点参数经模块规格校验（非法值抛 ParamError）."""

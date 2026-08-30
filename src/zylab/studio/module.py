@@ -40,6 +40,8 @@ class PortType(Enum):
     TRANSIENT = "transient"  # fea.TransientSolution
     BUCKLING = "buckling"  # fea.BucklingSolution
     NONLINEAR = "nonlinear"  # fea.NonlinearSolution
+    ET_MODEL = "et_model"  # bundle.ConductionBundle（电-热传导模型）
+    ELECTROTHERMAL = "electrothermal"  # fea.ElectroThermalSolution
 
 
 @unique
@@ -297,6 +299,46 @@ BUILTIN_MODULES: tuple[ModuleSpec, ...] = (
         ),
         outputs=(PortSpec("solution", PortType.BUCKLING, "屈曲解"),),
         params=(ParamSpec("n_modes", "模态阶数", ParamType.INT, 5, 1, 50, 1),),
+    ),
+    ModuleSpec(
+        type_id="example.joule_plate_2d",
+        name="通电加热板（Q4 电-热耦合）",
+        category=ModuleCategory.SOURCE,
+        target="zylab.studio.nodes:build_joule_plate",
+        outputs=(PortSpec("model", PortType.ET_MODEL, "传导模型"),),
+        params=(
+            ParamSpec("length", "长度 L", ParamType.FLOAT, 40.0, 0.1, 1.0e4, 1.0, "mm"),
+            ParamSpec("height", "高度 H", ParamType.FLOAT, 10.0, 0.1, 1.0e4, 1.0, "mm"),
+            ParamSpec("nx", "纵向单元数", ParamType.INT, 40, 1, 400, 5),
+            ParamSpec("ny", "横向单元数", ParamType.INT, 10, 1, 400, 1),
+            ParamSpec(
+                "voltage", "电极电压 V₀", ParamType.FLOAT, 1.0, -1.0e6, 1.0e6, 0.1, "V", "右端电极电压，左端接地 0"
+            ),
+            ParamSpec("electric_sigma", "电导率 σ", ParamType.FLOAT, 1.0, 1.0e-9, 1.0e9, 0.1, "S/mm", "稳态电传导系数"),
+            ParamSpec("thermal_k", "导热系数 k", ParamType.FLOAT, 1.0, 1.0e-9, 1.0e6, 0.1, "W/mm·K", "稳态热传导系数"),
+            ParamSpec("thickness", "厚度 t", ParamType.FLOAT, 1.0, 0.01, 100.0, 0.1, "mm"),
+            ParamSpec("t_base", "底边温度", ParamType.FLOAT, 20.0, -1.0e4, 1.0e4, 1.0, "", "底边恒温边界"),
+            ParamSpec(
+                "h_conv",
+                "对流系数 h",
+                ParamType.FLOAT,
+                1.0e-5,
+                1.0e-9,
+                1.0,
+                1.0e-6,
+                "W/mm²·K",
+                "其余三边与环境对流换热",
+            ),
+            ParamSpec("t_ambient", "环境温度", ParamType.FLOAT, 20.0, -1.0e4, 1.0e4, 1.0, ""),
+        ),
+    ),
+    ModuleSpec(
+        type_id="analysis.electrothermal",
+        name="电-热耦合分析",
+        category=ModuleCategory.ANALYSIS,
+        target="zylab.studio.nodes:run_electrothermal",
+        inputs=(PortSpec("model", PortType.ET_MODEL, "传导模型"),),
+        outputs=(PortSpec("solution", PortType.ELECTROTHERMAL, "电热耦合解"),),
     ),
     ModuleSpec(
         type_id="analysis.nonlinear",

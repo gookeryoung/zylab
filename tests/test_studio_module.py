@@ -108,14 +108,15 @@ class TestBuiltinModules:
             assert spec.target.startswith("zylab.studio.nodes:"), spec.type_id
 
     def test_source_has_no_input_and_model_output(self) -> None:
-        """源模块无输入端口且输出 MODEL."""
+        """源模块无输入端口且输出 MODEL（结构）或 ET_MODEL（电-热传导）."""
+        model_ports = {PortType.MODEL, PortType.ET_MODEL}
         for spec in BUILTIN_MODULES:
             if spec.category is ModuleCategory.SOURCE:
                 assert spec.inputs == ()
-                assert spec.output_port("model").port_type is PortType.MODEL
+                assert spec.output_port("model").port_type in model_ports
 
     def test_analysis_takes_model_input(self) -> None:
-        """分析模块输入 MODEL、输出对应解类型."""
+        """分析模块输入 MODEL/ET_MODEL、输出对应解类型."""
         expected = {
             "analysis.static": PortType.STATIC,
             "analysis.modal": PortType.MODAL,
@@ -123,12 +124,22 @@ class TestBuiltinModules:
             "analysis.transient": PortType.TRANSIENT,
             "analysis.buckling": PortType.BUCKLING,
             "analysis.nonlinear": PortType.NONLINEAR,
+            "analysis.electrothermal": PortType.ELECTROTHERMAL,
         }
+        model_ports = {PortType.MODEL, PortType.ET_MODEL}
         for type_id, port_type in expected.items():
             spec = module_spec(type_id)
             assert spec.category is ModuleCategory.ANALYSIS
-            assert spec.input_port("model").port_type is PortType.MODEL
+            assert spec.input_port("model").port_type in model_ports
             assert spec.output_port("solution").port_type is port_type
+
+    def test_electrothermal_ports(self) -> None:
+        """电-热耦合模块端口契约：ET_MODEL 输入、ELECTROTHERMAL 输出."""
+        source = module_spec("example.joule_plate_2d")
+        assert source.output_port("model").port_type is PortType.ET_MODEL
+        analysis = module_spec("analysis.electrothermal")
+        assert analysis.input_port("model").port_type is PortType.ET_MODEL
+        assert analysis.output_port("solution").port_type is PortType.ELECTROTHERMAL
 
     def test_optional_link_ports(self) -> None:
         """屈曲/非线性声明可选 STATIC 链接端口（reference/initial），model 必填."""

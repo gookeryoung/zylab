@@ -18,7 +18,11 @@ import numpy as np
 
 from zylab.fea import (
     BucklingSolution,
+    ConductionMaterial,
     Constraint,
+    Convection,
+    ElectricCase,
+    ElectroThermalSolution,
     ElementBlock,
     ElementType,
     HarmonicResponse,
@@ -26,12 +30,15 @@ from zylab.fea import (
     Mesh,
     ModalSolution,
     NodalLoad,
+    NodalValue,
     NonlinearSolution,
     Section,
     StaticCase,
     StaticSolution,
+    ThermalCase,
     TransientSolution,
     solve_buckling,
+    solve_electrothermal,
     solve_harmonic,
     solve_modal,
     solve_nonlinear_static,
@@ -39,7 +46,7 @@ from zylab.fea import (
     solve_transient,
 )
 
-from .bundle import ModelBundle
+from .bundle import ConductionBundle, ModelBundle
 from .module import module_spec
 
 if TYPE_CHECKING:
@@ -48,8 +55,10 @@ if TYPE_CHECKING:
 __all__ = [
     "build_cantilever",
     "build_column",
+    "build_joule_plate",
     "build_truss",
     "run_buckling",
+    "run_electrothermal",
     "run_harmonic",
     "run_modal",
     "run_nonlinear",
@@ -198,6 +207,57 @@ def build_truss(inputs: NodeInputs, params: NodeParams, report: ReportFn | None 
     return bundle
 
 
+def build_joule_plate(inputs: NodeInputs, params: NodeParams, report: ReportFn | None = None) -> ConductionBundle:
+    """构建通电加热板 Q4 电-热耦合模型（左右电极给定电压，底边恒温，其余三边对流）."""
+    del inputs
+    p = _params("example.joule_plate_2d", params)
+    length, height = float(p["length"]), float(p["height"])
+    nx, ny = int(p["nx"]), int(p["ny"])
+
+    _report(report, 0.2, "生成板网格")
+    xs = np.linspace(0.0, length, nx + 1)
+    ys = np.linspace(0.0, height, ny + 1)
+    grid_x, grid_y = np.meshgrid(xs, ys)
+    coords = np.column_stack((grid_x.ravel(), grid_y.ravel()))
+    conn = []
+    for j in range(ny):
+        for i in range(nx):
+            n00 = j * (nx + 1) + i
+            conn.append((n00, n00 + 1, n00 + nx + 2, n00 + nx + 1))
+    block = ElementBlock(etype=ElementType.QUAD4, conn=np.asarray(conn), name="板")
+    mesh = Mesh(coords=coords, blocks=(block,))
+
+    _report(report, 0.6, "生成电-热边界")
+    left = np.flatnonzero(coords[:, 0] <= 0.0)
+    right = np.flatnonzero(coords[:, 0] >= length - 1e-9)
+    bottom = np.flatnonzero(coords[:, 1] <= 0.0)
+    top = np.flatnonzero(coords[:, 1] >= height - 1e-9)
+    # 对流边界折线：左（底→顶）→ 顶（左→右）→ 右（顶→底），沿边连续且角节点不重复
+    conv_nodes = tuple(int(n) for n in (*left, *top[1:-1], *right[::-1]))
+    bundle = ConductionBundle(
+        mesh=mesh,
+        materials=(
+            ConductionMaterial(
+                electric_sigma=float(p["electric_sigma"]),
+                thermal_k=float(p["thermal_k"]),
+            ),
+        ),
+        sections=(Section(thickness=float(p["thickness"])),),
+        electric_case=ElectricCase(
+            voltages=(
+                *(NodalValue(int(n), 0.0) for n in left),
+                *(NodalValue(int(n), float(p["voltage"])) for n in right),
+            ),
+        ),
+        thermal_case=ThermalCase(
+            temperatures=tuple(NodalValue(int(n), float(p["t_base"])) for n in bottom),
+            convections=(Convection(nodes=conv_nodes, h_coeff=float(p["h_conv"]), t_ambient=float(p["t_ambient"])),),
+        ),
+    )
+    _report(report, 1.0, "模型就绪")
+    return bundle
+
+
 # ------------------------------------------------------------------ 分析节点
 
 
@@ -296,6 +356,24 @@ def run_nonlinear(inputs: NodeInputs, params: NodeParams, report: ReportFn | Non
         tolerance=float(p["tolerance"]),
         max_iterations=int(p["max_iterations"]),
         initial=initial,
+        report=report,
+    )
+
+
+def run_electrothermal(
+    inputs: NodeInputs, params: NodeParams, report: ReportFn | None = None
+) -> ElectroThermalSolution:
+    """电-热耦合分析节点：ET_MODEL -> ElectroThermalSolution（稳态顺序耦合）."""
+    model = inputs["model"]
+    if not isinstance(model, ConductionBundle):
+        raise TypeError(f"输入端口 'model' 应为 ConductionBundle，得到 {type(model).__name__}")
+    _params("analysis.electrothermal", params)  # 校验（当前无参数，防御 schema 漂移）
+    return solve_electrothermal(
+        model.mesh,
+        model.materials,
+        model.sections,
+        model.electric_case,
+        model.thermal_case,
         report=report,
     )
 

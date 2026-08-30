@@ -15,6 +15,7 @@ from typing import Sequence
 import numpy as np
 
 from .buckling import BucklingSolution
+from .electrothermal import ElectroThermalSolution
 from .harmonic import HarmonicResponse
 from .modal import ModalSolution
 from .nonlinear import NonlinearSolution
@@ -45,6 +46,8 @@ def export_csv(solution: object, path: Path) -> Path:
         rows = _transient_rows(solution)
     elif isinstance(solution, NonlinearSolution):
         rows = _nonlinear_rows(solution)
+    elif isinstance(solution, ElectroThermalSolution):
+        rows = _electrothermal_rows(solution)
     else:
         raise ValueError(f"不支持导出的结果类型: {type(solution).__name__}")
     with path.open("w", newline="", encoding="utf-8") as handle:
@@ -106,4 +109,12 @@ def _nonlinear_rows(solution: NonlinearSolution) -> tuple[Sequence[object], ...]
         norms = np.zeros(0)
     for factor, peak in zip(solution.history_factors, norms):
         rows.append([f"{factor:.10g}", f"{peak:.10g}"])
+    return tuple(rows)
+
+
+def _electrothermal_rows(solution: ElectroThermalSolution) -> tuple[Sequence[object], ...]:
+    """电-热耦合：逐节点电压与温度表."""
+    rows: list[Sequence[object]] = [("node", "voltage", "temperature")]
+    for node in range(solution.mesh.n_nodes):
+        rows.append([node, f"{solution.voltages[node]:.10g}", f"{solution.temperatures[node]:.10g}"])
     return tuple(rows)

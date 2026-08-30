@@ -23,15 +23,16 @@ class TestRegisterQuery:
         assert registry.get("structural.cantilever_static").name == "悬臂梁静力分析"
 
     def test_disciplines(self) -> None:
-        """学科分组标识."""
+        """学科分组标识（structural 在前，thermal 为新增电-热学科）."""
         registry = TemplateRegistry.with_builtin()
-        assert registry.disciplines() == ("structural",)
+        assert registry.disciplines() == ("structural", "thermal")
 
     def test_list_filter_by_discipline(self) -> None:
         """按学科过滤."""
         registry = TemplateRegistry.with_builtin()
         assert registry.list(discipline="structural")
-        assert registry.list(discipline="thermal") == []
+        assert registry.list(discipline="thermal")
+        assert registry.list(discipline="fluid") == []
 
     def test_register_duplicate_rejected(self) -> None:
         """同 id 重复注册拒绝；replace=True 覆盖."""

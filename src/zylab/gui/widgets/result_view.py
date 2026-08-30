@@ -14,6 +14,7 @@ import pyqtgraph as pg
 
 from zylab.fea import (
     BucklingSolution,
+    ElectroThermalSolution,
     HarmonicResponse,
     Mesh,
     ModalSolution,
@@ -23,7 +24,7 @@ from zylab.fea import (
     export_csv,
 )
 from zylab.fea.viewdata import deformed_coords, edge_segments, mesh_edges, scalar_colors
-from zylab.studio import ModelBundle
+from zylab.studio import ConductionBundle, ModelBundle
 from zylab.studio.nodes import tip_node
 
 from .. import theme
@@ -54,6 +55,7 @@ class ResultView(QWidget):
         self._buckling: BucklingSolution | None = None
         self._nonlinear: NonlinearSolution | None = None
         self._transient: TransientSolution | None = None
+        self._electrothermal: ElectroThermalSolution | None = None
         self._reference_load = 1.0
         self._solution: object | None = None
 
@@ -109,7 +111,7 @@ class ResultView(QWidget):
 
     # ------------------------------------------------------------------ 公共接口
 
-    def show_mesh(self, bundle: ModelBundle) -> None:
+    def show_mesh(self, bundle: ModelBundle | ConductionBundle) -> None:
         """渲染模型网格预览（未变形线框 + 规模摘要）."""
         self._reset_controls()
         mesh = bundle.mesh
@@ -128,7 +130,7 @@ class ResultView(QWidget):
         self._set_error(False)
 
     def show_solution(self, solution: object, reference_load: float = 1.0) -> None:
-        """按解类型分发渲染（静力/模态/谐响应/瞬态/屈曲/几何非线性）."""
+        """按解类型分发渲染（静力/模态/谐响应/瞬态/屈曲/几何非线性/电-热耦合）."""
         self._reset_controls()
         self._set_error(False)
         if isinstance(solution, ModalSolution):
@@ -146,6 +148,9 @@ class ResultView(QWidget):
         elif isinstance(solution, NonlinearSolution):
             self._nonlinear = solution
             self._render_nonlinear(solution)
+        elif isinstance(solution, ElectroThermalSolution):
+            self._electrothermal = solution
+            self._render_electrothermal(solution)
         elif isinstance(solution, StaticSolution):
             self._render_deformation(solution.mesh, solution.displacements)
             max_u = float(np.max(np.linalg.norm(solution.displacements, axis=1)))
@@ -181,6 +186,7 @@ class ResultView(QWidget):
         self._buckling = None
         self._nonlinear = None
         self._transient = None
+        self._electrothermal = None
         self._solution = None
         self._freq_table.setVisible(False)
         self._mode_spin.setVisible(False)
@@ -410,7 +416,7 @@ class ResultView(QWidget):
         )
 
     def _on_view_changed(self, index: int) -> None:
-        """切换结果视图（非线性：变形云图/载荷-位移曲线；瞬态：末帧云图/位移时程）."""
+        """切换结果视图（非线性/瞬态/电-热耦合的类型关联双视图）."""
         curve = self._view_combo.itemData(index) == "curve"
         if self._nonlinear is not None:
             if curve:
@@ -422,6 +428,43 @@ class ResultView(QWidget):
                 self._render_transient_curve(self._transient)
             else:
                 self._render_transient_deform(self._transient)
+        elif self._electrothermal is not None:
+            # 电-热耦合：0 = 温度云图，1 = 电压云图
+            field = self._electrothermal.temperatures if index == 0 else self._electrothermal.voltages
+            label = "温度 T" if index == 0 else "电压 V"
+            self._render_scalar_field(self._electrothermal.mesh, field, label)
+
+    def _render_scalar_field(self, mesh: Mesh, field: np.ndarray, label: str) -> None:
+        """渲染标量场云图（未变形线框 + 节点场值着色）."""
+        self._restore_mesh_view()
+        edges = mesh_edges(mesh)
+        segments = edge_segments(mesh.coords, edges)
+        self._plot.clear()
+        self._plot.plot(
+            segments[:, :, 0].ravel(),
+            segments[:, :, 1].ravel(),
+            connect="pairs",
+            pen=pg.mkPen(theme.current_palette().border_strong, width=2),
+            name="网格",
+        )
+        colors = [pg.mkColor(int(r * 255), int(g * 255), int(b * 255)) for r, g, b in scalar_colors(field)]
+        self._plot.addItem(
+            pg.ScatterPlotItem(x=mesh.coords[:, 0], y=mesh.coords[:, 1], size=6, brush=colors, pen=None, name=label)
+        )
+
+    def _render_electrothermal(self, solution: ElectroThermalSolution) -> None:
+        """渲染电-热耦合结果：显示视图切换并默认温度云图."""
+        self._view_combo.setItemText(0, "温度云图")
+        self._view_combo.setItemText(1, "电压云图")
+        self._view_combo.blockSignals(True)
+        self._view_combo.setCurrentIndex(0)
+        self._view_combo.blockSignals(False)
+        self._view_combo.setVisible(True)
+        self._render_scalar_field(solution.mesh, solution.temperatures, "温度 T")
+        self._summary.setText(
+            f"峰值温度 T_max = {solution.t_max:.6g}（最低 {solution.t_min:.6g}）\n"
+            f"总电功率 P = {solution.total_power:.6g} W（Joule 热源）"
+        )
 
     def _render_transient(self, solution: TransientSolution) -> None:
         """渲染瞬态结果：显示视图切换并默认末帧变形云图."""

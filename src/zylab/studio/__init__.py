@@ -16,7 +16,7 @@ from __future__ import annotations
 
 from .batch import NodeOutcome, ReportFn, RunOutcome, resolve_target, run_scan, run_workflow, summarize
 from .builtin import BUILTIN_TEMPLATES
-from .bundle import ModelBundle
+from .bundle import ConductionBundle, ModelBundle
 from .errors import (
     LinkError,
     ModuleNotFoundError_,
@@ -44,6 +44,7 @@ from .template import ParamGroup, Template, TemplateNode, load_template, save_te
 __all__ = [
     "BUILTIN_MODULES",
     "BUILTIN_TEMPLATES",
+    "ConductionBundle",
     "LinkError",
     "ModelBundle",
     "ModuleCategory",

@@ -121,6 +121,30 @@ def test_show_transient_solution_and_view_switch(qtbot) -> None:
 
 
 @pytest.mark.gui
+def test_show_electrothermal_solution_and_view_switch(qtbot) -> None:
+    """电-热耦合解：温度/电压云图切换 + 峰值温度与总电功率摘要."""
+    view = ResultView()
+    qtbot.addWidget(view)
+    view.show()
+    bundle = nodes.build_joule_plate({}, {"nx": 4, "ny": 2})
+    view.show_mesh(bundle)
+    assert "模型预览" in view._summary.text()
+    solution = nodes.run_electrothermal({"model": bundle}, {})
+    view.show_solution(solution)
+    assert view._view_combo.isVisible()
+    assert view._view_combo.itemText(0) == "温度云图"
+    assert view._view_combo.itemText(1) == "电压云图"
+    assert "T_max" in view._summary.text()
+    assert "总电功率" in view._summary.text()
+    view._view_combo.setCurrentIndex(1)  # 电压云图
+    assert view._plot.getPlotItem().listDataItems()
+    assert not view._plot.getPlotItem().getAxis("left").logMode
+    view._view_combo.setCurrentIndex(0)  # 切回温度云图
+    assert view._plot.getPlotItem().listDataItems()
+    assert not view._plot.getPlotItem().getAxis("left").logMode
+
+
+@pytest.mark.gui
 def test_show_error_and_clear(qtbot) -> None:
     """错误着色与清空."""
     view = ResultView()
