@@ -14,6 +14,7 @@ from zylab.fea import (
     ModalSolution,
     NonlinearSolution,
     StaticSolution,
+    TransientSolution,
 )
 from zylab.studio import BUILTIN_TEMPLATES, ModelBundle, module_spec, nodes
 from zylab.studio.module import ModuleSpec
@@ -117,6 +118,26 @@ class TestRunAnalyses:
         assert isinstance(solution, NonlinearSolution)
         assert solution.converged
         assert len(solution.history_factors) == 11  # 10 增量步 + 起始 0
+
+    def test_transient(self) -> None:
+        """瞬态解：时程形状与阶跃载荷下绕静力平衡位置振荡衰减."""
+        bundle = _small_cantilever()
+        solution = nodes.run_transient(
+            {"model": bundle},
+            {"duration": 5.0, "n_steps": 50, "alpha": 0.5},
+        )
+        assert isinstance(solution, TransientSolution)
+        assert solution.times.shape == (51,)
+        assert solution.displacements.shape == (27 * 2, 51)
+        assert solution.times[-1] == pytest.approx(5.0)
+        # 阶跃载荷响应绕静力平衡位置振荡：超调后回弹、有阻尼下向静力解收敛
+        static = nodes.run_static({"model": bundle}, {})
+        tip = nodes.tip_node(bundle.mesh)
+        uy_static = static.displacements[tip, 1]  # < 0
+        tip_uy = solution.node_history(tip, 1)
+        assert np.min(tip_uy) < 1.2 * uy_static  # 超调超过 1.2 倍静力挠度
+        assert np.max(tip_uy) > 0.5 * uy_static  # 回弹越过平衡位置上方
+        assert tip_uy[-1] < 0.0  # 末端仍向下
 
     def test_wrong_input_type_rejected(self) -> None:
         """输入端口载荷类型错误抛 TypeError（防御外部直调）."""

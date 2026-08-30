@@ -100,6 +100,27 @@ def test_show_nonlinear_solution_and_view_switch(qtbot) -> None:
 
 
 @pytest.mark.gui
+def test_show_transient_solution_and_view_switch(qtbot) -> None:
+    """瞬态解：视图切换（末帧变形云图 <-> 位移时程曲线）."""
+    view = ResultView()
+    qtbot.addWidget(view)
+    view.show()
+    solution = nodes.run_transient(
+        {"model": _beam_bundle()},
+        {"duration": 4.0, "n_steps": 40, "alpha": 0.5},
+    )
+    view.show_solution(solution)
+    assert view._view_combo.isVisible()
+    assert view._view_combo.itemText(1) == "位移时程曲线"
+    assert "时程" in view._summary.text()
+    view._view_combo.setCurrentIndex(1)  # 时程曲线视图
+    assert "峰值" in view._summary.text()
+    assert not view._plot.getPlotItem().getAxis("left").logMode
+    view._view_combo.setCurrentIndex(0)  # 切回末帧云图
+    assert "时程" in view._summary.text()
+
+
+@pytest.mark.gui
 def test_show_error_and_clear(qtbot) -> None:
     """错误着色与清空."""
     view = ResultView()

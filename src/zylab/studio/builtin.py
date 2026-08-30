@@ -65,6 +65,24 @@ BUILTIN_TEMPLATES: tuple[Template, ...] = tuple(
             },
         },
         {
+            "id": "structural.cantilever_transient",
+            "name": "悬臂梁瞬态动力分析",
+            "discipline": "structural",
+            "description": "端部阶跃载荷的 Newmark 时间积分，输出末帧变形云图与末端观察点位移时程曲线。",
+            "tags": ["振动"],
+            "nodes": [
+                {"id": "model", "type": "example.cantilever_q4"},
+                {"id": "solve", "type": "analysis.transient", "inputs": {"model": "model.model"}},
+            ],
+            "ui": {
+                "param_groups": [
+                    *_BEAM_GROUPS,
+                    {"title": "时程与阻尼", "params": ["solve.duration", "solve.n_steps", "solve.alpha", "solve.beta"]},
+                ],
+                "results": ["solve"],
+            },
+        },
+        {
             "id": "structural.column_buckling",
             "name": "压杆稳定（屈曲）分析",
             "discipline": "structural",

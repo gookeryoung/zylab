@@ -37,6 +37,7 @@ class PortType(Enum):
     STATIC = "static"  # fea.StaticSolution
     MODAL = "modal"  # fea.ModalSolution
     HARMONIC = "harmonic"  # fea.HarmonicResponse
+    TRANSIENT = "transient"  # fea.TransientSolution
     BUCKLING = "buckling"  # fea.BucklingSolution
     NONLINEAR = "nonlinear"  # fea.NonlinearSolution
 
@@ -268,6 +269,20 @@ BUILTIN_MODULES: tuple[ModuleSpec, ...] = (
             ParamSpec("f_max", "扫频上限 ω", ParamType.FLOAT, 3.0, 1.0e-6, 1.0e6, 0.5, "rad/s"),
             ParamSpec("n_freq", "扫频点数", ParamType.INT, 60, 10, 2000, 10),
             ParamSpec("alpha", "阻尼 α", ParamType.FLOAT, 0.1, 0.0, 1.0e6, 0.05, "", "Rayleigh 质量比例系数"),
+            ParamSpec("beta", "阻尼 β", ParamType.FLOAT, 0.0, 0.0, 1.0e3, 0.01, "", "Rayleigh 刚度比例系数"),
+        ),
+    ),
+    ModuleSpec(
+        type_id="analysis.transient",
+        name="瞬态动力分析",
+        category=ModuleCategory.ANALYSIS,
+        target="zylab.studio.nodes:run_transient",
+        inputs=(PortSpec("model", PortType.MODEL, "模型"),),
+        outputs=(PortSpec("solution", PortType.TRANSIENT, "瞬态解"),),
+        params=(
+            ParamSpec("duration", "总时长", ParamType.FLOAT, 10.0, 1.0e-9, 1.0e6, 1.0, "s", "载荷时程总时长"),
+            ParamSpec("n_steps", "积分步数", ParamType.INT, 200, 1, 20000, 50),
+            ParamSpec("alpha", "阻尼 α", ParamType.FLOAT, 0.0, 0.0, 1.0e6, 0.05, "", "Rayleigh 质量比例系数"),
             ParamSpec("beta", "阻尼 β", ParamType.FLOAT, 0.0, 0.0, 1.0e3, 0.01, "", "Rayleigh 刚度比例系数"),
         ),
     ),

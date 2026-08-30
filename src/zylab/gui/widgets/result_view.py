@@ -1,7 +1,8 @@
-"""结果视图：摘要 + 控制条（频率表/振型序号/非线性视图切换）+ 绘图区.
+"""结果视图：摘要 + 控制条（频率表/振型序号/非线性与瞬态视图切换）+ 绘图区.
 
 按结果类型分发渲染（静力/非线性变形云图、模态/屈曲振型、谐响应频响曲线、
-模型网格预览），从原 FeaPage 移植并组件化，供工作台页复用。
+瞬态末帧云图与位移时程、模型网格预览），从原 FeaPage 移植并组件化，
+供工作台页复用。
 """
 
 from __future__ import annotations
@@ -16,6 +17,7 @@ from zylab.fea import (
     ModalSolution,
     NonlinearSolution,
     StaticSolution,
+    TransientSolution,
 )
 from zylab.fea.viewdata import deformed_coords, edge_segments, mesh_edges, scalar_colors
 from zylab.studio import ModelBundle
@@ -45,6 +47,7 @@ class ResultView(QWidget):
         self._modal: ModalSolution | None = None
         self._buckling: BucklingSolution | None = None
         self._nonlinear: NonlinearSolution | None = None
+        self._transient: TransientSolution | None = None
         self._reference_load = 1.0
 
         layout = QVBoxLayout(self)
@@ -105,7 +108,7 @@ class ResultView(QWidget):
         self._set_error(False)
 
     def show_solution(self, solution: object, reference_load: float = 1.0) -> None:
-        """按解类型分发渲染（静力/模态/谐响应/屈曲/几何非线性）."""
+        """按解类型分发渲染（静力/模态/谐响应/瞬态/屈曲/几何非线性）."""
         self._reset_controls()
         self._set_error(False)
         if isinstance(solution, ModalSolution):
@@ -113,6 +116,9 @@ class ResultView(QWidget):
             self._render_modal(solution)
         elif isinstance(solution, HarmonicResponse):
             self._render_harmonic(solution)
+        elif isinstance(solution, TransientSolution):
+            self._transient = solution
+            self._render_transient(solution)
         elif isinstance(solution, BucklingSolution):
             self._buckling = solution
             self._reference_load = reference_load
@@ -151,6 +157,7 @@ class ResultView(QWidget):
         self._modal = None
         self._buckling = None
         self._nonlinear = None
+        self._transient = None
         self._freq_table.setVisible(False)
         self._mode_spin.setVisible(False)
         self._view_combo.setVisible(False)
@@ -311,6 +318,8 @@ class ResultView(QWidget):
 
     def _render_nonlinear(self, solution: NonlinearSolution) -> None:
         """渲染非线性结果：显示视图切换并默认变形云图."""
+        self._view_combo.setItemText(0, "变形云图")
+        self._view_combo.setItemText(1, "载荷-位移曲线")
         self._view_combo.blockSignals(True)
         self._view_combo.setCurrentIndex(0)
         self._view_combo.blockSignals(False)
@@ -351,10 +360,71 @@ class ResultView(QWidget):
         )
 
     def _on_view_changed(self, index: int) -> None:
-        """切换非线性结果视图（变形云图 / 载荷-位移曲线）."""
-        if self._nonlinear is None:
-            return
-        if self._view_combo.itemData(index) == "curve":
-            self._render_nonlinear_curve(self._nonlinear)
-        else:
-            self._render_nonlinear_deform(self._nonlinear)
+        """切换结果视图（非线性：变形云图/载荷-位移曲线；瞬态：末帧云图/位移时程）."""
+        curve = self._view_combo.itemData(index) == "curve"
+        if self._nonlinear is not None:
+            if curve:
+                self._render_nonlinear_curve(self._nonlinear)
+            else:
+                self._render_nonlinear_deform(self._nonlinear)
+        elif self._transient is not None:
+            if curve:
+                self._render_transient_curve(self._transient)
+            else:
+                self._render_transient_deform(self._transient)
+
+    def _render_transient(self, solution: TransientSolution) -> None:
+        """渲染瞬态结果：显示视图切换并默认末帧变形云图."""
+        self._view_combo.setItemText(0, "变形云图（末帧）")
+        self._view_combo.setItemText(1, "位移时程曲线")
+        self._view_combo.blockSignals(True)
+        self._view_combo.setCurrentIndex(0)
+        self._view_combo.blockSignals(False)
+        self._view_combo.setVisible(True)
+        self._render_transient_deform(solution)
+
+    def _render_transient_deform(self, solution: TransientSolution) -> None:
+        """渲染瞬态末帧变形云图与时程摘要."""
+        mesh = solution.mesh
+        final = solution.displacements[:, -1].reshape(mesh.n_nodes, mesh.dofs_per_node)
+        self._render_deformation(mesh, final)
+        max_u = float(np.max(np.abs(final)))
+        self._summary.setText(
+            f"末帧最大位移 |u| = {max_u:.6g}\n时程：{solution.n_steps} 步 · dt = {solution.dt:.4g}"
+            f" · 总时长 = {solution.times[-1]:.6g}"
+        )
+
+    def _render_transient_curve(self, solution: TransientSolution) -> None:
+        """渲染位移时程曲线（末端观察点 uy 随时间变化）并标注峰值."""
+        mesh = solution.mesh
+        node = tip_node(mesh)
+        uy = solution.node_history(node, 1)
+        times = solution.times
+
+        self._plot.clear()
+        self._plot.setAspectLocked(False)
+        self._plot.showGrid(x=True, y=True, alpha=0.3)
+        self._plot.setLogMode(y=False)
+        self._plot.setLabel("bottom", "时间 t")
+        self._plot.setLabel("left", f"节点 {node} uy")
+        self._plot.plot(
+            times,
+            uy,
+            pen=pg.mkPen(theme.current_palette().primary, width=2),
+            name=f"节点 {node} uy",
+        )
+        peak_index = int(np.argmax(np.abs(uy)))
+        self._plot.addItem(
+            pg.ScatterPlotItem(
+                x=[times[peak_index]],
+                y=[uy[peak_index]],
+                size=10,
+                brush=pg.mkBrush(theme.current_palette().error_text),
+                pen=None,
+                name="峰值",
+            )
+        )
+        self._summary.setText(
+            f"峰值 |uy| = {abs(uy[peak_index]):.6g} @ t = {times[peak_index]:.6g}"
+            f"（{solution.n_steps} 步 · dt = {solution.dt:.4g}）"
+        )

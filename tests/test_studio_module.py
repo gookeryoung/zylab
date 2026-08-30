@@ -120,6 +120,7 @@ class TestBuiltinModules:
             "analysis.static": PortType.STATIC,
             "analysis.modal": PortType.MODAL,
             "analysis.harmonic": PortType.HARMONIC,
+            "analysis.transient": PortType.TRANSIENT,
             "analysis.buckling": PortType.BUCKLING,
             "analysis.nonlinear": PortType.NONLINEAR,
         }

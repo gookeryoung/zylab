@@ -30,11 +30,13 @@ from zylab.fea import (
     Section,
     StaticCase,
     StaticSolution,
+    TransientSolution,
     solve_buckling,
     solve_harmonic,
     solve_modal,
     solve_nonlinear_static,
     solve_static,
+    solve_transient,
 )
 
 from .bundle import ModelBundle
@@ -52,6 +54,7 @@ __all__ = [
     "run_modal",
     "run_nonlinear",
     "run_static",
+    "run_transient",
 ]
 
 #: 节点进度回调签名（与 core.executor 注入的 report 对齐）
@@ -230,6 +233,27 @@ def run_harmonic(inputs: NodeInputs, params: NodeParams, report: ReportFn | None
         model.sections,
         model.case,
         frequencies,
+        alpha=float(p["alpha"]),
+        beta=float(p["beta"]),
+        report=report,
+    )
+
+
+def run_transient(inputs: NodeInputs, params: NodeParams, report: ReportFn | None = None) -> TransientSolution:
+    """瞬态动力分析节点：MODEL -> TransientSolution（阶跃载荷时程）.
+
+    工况载荷作为空间分布整体施加，时程因子恒为 1（阶跃）；时间离散为
+    均匀步长 ``duration / n_steps``，阻尼为 Rayleigh 模型。
+    """
+    model = _model_of(inputs)
+    p = _params("analysis.transient", params)
+    return solve_transient(
+        model.mesh,
+        model.materials,
+        model.sections,
+        model.case,
+        duration=float(p["duration"]),
+        n_steps=int(p["n_steps"]),
         alpha=float(p["alpha"]),
         beta=float(p["beta"]),
         report=report,

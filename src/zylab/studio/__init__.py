@@ -3,7 +3,7 @@
 模块划分：
 - :mod:`zylab.studio.module`：模块类型系统（端口/参数 schema/内置模块表）；
 - :mod:`zylab.studio.bundle`：MODEL 端口载荷（模型四要素）；
-- :mod:`zylab.studio.nodes`：节点执行函数（源节点建模 + 五类分析节点）；
+- :mod:`zylab.studio.nodes`：节点执行函数（源节点建模 + 六类分析节点）；
 - :mod:`zylab.studio.template`：模板定义与 JSON 加载/校验；
 - :mod:`zylab.studio.registry`：模板注册表（内置 + 用户目录）；
 - :mod:`zylab.studio.builtin`：内置模板表；
