@@ -66,15 +66,17 @@ class ParamForm(QWidget):
         self._layout.addStretch()
 
     def _add_row(self, form: QFormLayout, graph: WorkflowGraph, node_id: str, key: str) -> None:
-        """添加单个参数行（标签含单位，tooltip 含说明与取值范围）."""
+        """添加单个参数行（单位入框内后缀，tooltip 含说明与取值范围）."""
         node = graph.node(node_id)
         spec = node.spec.param(key)
         spin = self._make_spin(spec)
+        # 单位放框内后缀而非标签：标签过长会把表单最小宽撑出滚动区视口，右侧被裁剪
+        if spec.unit:
+            spin.setSuffix(f" {spec.unit}")
         spin.setValue(node.params[key])
         spin.valueChanged.connect(lambda value, nid=node_id, k=key: self.param_edited.emit(nid, k, value))
-        label = spec.label + (f"（{spec.unit}）" if spec.unit else "")
         spin.setToolTip(f"{node.name} · {spec.label}\n{spec.doc}\n范围 [{spec.minimum}, {spec.maximum}]".strip())
-        form.addRow(label, spin)
+        form.addRow(spec.label, spin)
         self._fields[(node_id, key)] = spin
 
     @staticmethod
@@ -87,6 +89,10 @@ class ParamForm(QWidget):
             spin.setDecimals(6)
         spin.setRange(float(spec.minimum), float(spec.maximum))
         spin.setSingleStep(float(spec.step))
+        # QDoubleSpinBox 的 minimumSizeHint 按最大值全位数（如 999999999.000000）计算，
+        # 大范围 + 6 位小数会把表单最小宽撑到 ~600px，超出滚动区视口后右侧被裁剪
+        # （横向滚动已禁用）；显式最小宽度覆盖该提示，字段仍可随面板伸展。
+        spin.setMinimumWidth(96)
         return spin
 
     def refresh_values(self) -> None:
