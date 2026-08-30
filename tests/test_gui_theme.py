@@ -158,6 +158,17 @@ class TestQssTokens:
         content = Path(urls[0]).read_text(encoding="utf-8")
         assert pal.text_secondary.lstrip("#").lower() in content.lower()
 
+    def test_arrow_svg_isolated_per_process_and_theme(self) -> None:
+        """箭头文件名须含进程号+主题名（xdist 并行写同一文件曾致半截 SVG）."""
+        from zylab.gui.app import _write_arrow_svgs
+
+        light = _write_arrow_svgs(theme.LIGHT)
+        dark = _write_arrow_svgs(theme.DARK)
+        assert light["QSS_ARROW_DOWN"] != dark["QSS_ARROW_DOWN"]
+        # 切换主题后旧主题文件被清理（同进程），新主题文件存在
+        assert not Path(light["QSS_ARROW_DOWN"]).exists()
+        assert Path(dark["QSS_ARROW_DOWN"]).exists()
+
 
 # ---------------------------------------------------------------------------
 # 箭头形状回归（Qt QSS 不支持 border 画三角，曾整体渲染成实心方块）

@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import contextlib
 import logging
+import os
 import sys
 import tempfile
 from pathlib import Path
@@ -34,17 +36,24 @@ _ARROW_DOWN_PATH = "M0 0 L10 0 L5 6 Z"
 def _write_arrow_svgs(pal: theme.Palette) -> dict[str, str]:
     """按主题色生成上/下箭头 SVG 到临时缓存目录，返回 QSS 令牌映射.
 
-    每次加载样式表都重写（主题切换后颜色同步）；目录固定、
-    文件名固定，QSS 中 url() 引用其 POSIX 绝对路径。
+    文件名含进程号 + 主题名：xdist 并行测试/多进程场景下各进程
+    写各自文件，避免并发重写同一文件导致读到半截 SVG（Qt 解析
+    失败即箭头不渲染）。同进程切换主题后清理本进程旧主题文件。
     """
     cache = Path(tempfile.gettempdir()) / "zylab-icons"
     cache.mkdir(parents=True, exist_ok=True)
     color = pal.text_secondary
+    tag = f"{os.getpid()}-{pal.name}"
+    stale: list[Path] = []
     tokens: dict[str, str] = {}
     for name, path_data in (("arrow-up", _ARROW_UP_PATH), ("arrow-down", _ARROW_DOWN_PATH)):
-        target = cache / f"{name}.svg"
+        target = cache / f"{name}-{tag}.svg"
         target.write_text(_ARROW_SVG.format(path=path_data, color=color), encoding="utf-8")
         tokens[f"QSS_{name.upper().replace('-', '_')}"] = target.as_posix()
+        stale.extend(p for p in cache.glob(f"{name}-{os.getpid()}-*.svg") if p != target)
+    for path in stale:  # 清理本进程旧主题残留（失败无害，忽略）
+        with contextlib.suppress(OSError):
+            path.unlink()
     return tokens
 
 
