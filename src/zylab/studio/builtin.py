@@ -241,5 +241,32 @@ BUILTIN_TEMPLATES: tuple[Template, ...] = tuple(
                 "results": ["solve"],
             },
         },
+        {
+            "id": "thermal.joule_hole_2d",
+            "name": "带圆孔多材料电加热板（复杂形状热点）",
+            "discipline": "thermal",
+            "description": "电极/电阻区/电极三区多块网格 + 形心掩码挖去中央圆孔："
+            "电流绕孔集浓、孔缘出现热点；边界自动提取——电极面给定电压、"
+            "底边恒温、其余边界（含孔缘）对流散热。",
+            "tags": ["电-热", "多材料", "复杂形状", "热点"],
+            "nodes": [
+                {"id": "model", "type": "example.joule_hole_2d"},
+                {"id": "solve", "type": "analysis.electrothermal", "inputs": {"model": "model.model"}},
+            ],
+            "ui": {
+                "param_groups": [
+                    {"title": "几何与网格", "params": ["model.length", "model.height", "model.nx", "model.ny"]},
+                    {
+                        "title": "分区与圆孔",
+                        "params": ["model.electrode_len", "model.hole_x", "model.hole_y", "model.hole_r"],
+                    },
+                    {"title": "电极材料", "params": ["model.sigma_conductor", "model.k_conductor"]},
+                    {"title": "电阻区材料", "params": ["model.sigma_resistor", "model.k_resistor"]},
+                    {"title": "厚度与电学边界", "params": ["model.thickness", "model.voltage"]},
+                    {"title": "热边界", "params": ["model.t_base", "model.h_conv", "model.t_ambient"]},
+                ],
+                "results": ["solve"],
+            },
+        },
     )
 )

@@ -139,6 +139,51 @@ class TestBuildSources:
         assert len(restored.mesh.blocks) == len(bundle.mesh.blocks)
         assert restored.materials == bundle.materials
 
+    def test_joule_hole_structure(self) -> None:
+        """带孔板：形心掩码删孔内单元（r=2.4 恰删 2 个），三区材料 0/1/0."""
+        # nx=10, ny=5 → dx=3, dy=2，形心 x∈{1.5,...,28.5}, y∈{1,3,5,7,9}；
+        # 孔心 (15,5) r=2.4：仅形心 (13.5,5)/(16.5,5) 落入孔内
+        bundle = nodes.build_joule_hole({}, {"nx": 10, "ny": 5, "hole_r": 2.4})
+        mesh = bundle.mesh
+        assert mesh.n_elements == 48  # 50 - 2
+        assert [block.conn.shape[0] for block in mesh.blocks] == [10, 28, 10]
+        assert [block.material for block in mesh.blocks] == [0, 1, 0]
+        assert mesh.n_nodes == 66  # 无孤立节点
+        bundle.electric_case.validate(mesh)
+        bundle.thermal_case.validate(mesh)
+
+    def test_joule_hole_orphan_nodes_compacted(self) -> None:
+        """孤立节点压缩：r=3.6 删 6 单元产生 2 个四邻全删的孤立节点被剔除."""
+        # 孔删 i∈{4,5}, j∈{1,2,3} 共 6 单元 → 网格点 (5,2)/(5,3) 的四邻单元全删
+        bundle = nodes.build_joule_hole({}, {"nx": 10, "ny": 5, "hole_r": 3.6})
+        mesh = bundle.mesh
+        assert mesh.n_elements == 44  # 50 - 6
+        assert mesh.n_nodes == 64  # 66 - 2 孤立
+        # 剩余节点全部被引用（连接表最大索引 < 节点数由 Mesh 校验保证）
+        bundle.electric_case.validate(mesh)
+        bundle.thermal_case.validate(mesh)
+
+    def test_joule_hole_convection_covers_hole_edge(self) -> None:
+        """边界边自动分类：存在两端均不在外边界的对流段（孔缘内边界）."""
+        bundle = nodes.build_joule_hole({}, {"nx": 10, "ny": 5, "hole_r": 3.6})
+        coords = bundle.mesh.coords
+        length, height = 30.0, 10.0
+        inner = [
+            conv
+            for conv in bundle.thermal_case.convections
+            if all(1e-6 < coords[n][0] < length - 1e-6 and 1e-6 < coords[n][1] < height - 1e-6 for n in conv.nodes)
+        ]
+        assert inner  # 孔缘对流段存在
+        # 外边界（顶边 + 左右侧边电极面以上部分）其余段也施加对流
+        assert len(bundle.thermal_case.convections) > len(inner)
+
+    def test_joule_hole_pickle_roundtrip(self) -> None:
+        """带孔 ConductionBundle 可 pickle."""
+        bundle = nodes.build_joule_hole({}, {"nx": 8, "ny": 4, "hole_r": 2.0})
+        restored = pickle.loads(pickle.dumps(bundle))
+        assert restored.mesh.n_elements == bundle.mesh.n_elements
+        assert len(restored.thermal_case.convections) == len(bundle.thermal_case.convections)
+
     def test_bundle_pickle_roundtrip(self) -> None:
         """ModelBundle 可 pickle（跨进程传输前提）."""
         bundle = _small_cantilever()
@@ -283,6 +328,44 @@ class TestRunAnalyses:
         # 热点（t_max 节点）落在电阻区内（热源集中在高阻抗区）
         hotspot = int(np.argmax(solution.temperatures))
         assert electrode_len - 1e-9 <= coords[hotspot, 0] <= length - electrode_len + 1e-9
+
+    def test_joule_hole_analytic(self) -> None:
+        """带孔板求解：无孔退化串联解析精确；有孔电流绕流功率下降、热点近孔."""
+        common = {
+            "nx": 10,
+            "ny": 5,
+            "length": 30.0,
+            "height": 10.0,
+            "electrode_len": 5.0,
+            "sigma_conductor": 50.0,
+            "sigma_resistor": 0.5,
+            "k_conductor": 0.4,
+            "k_resistor": 0.015,
+            "voltage": 1.0,
+            "thickness": 1.0,
+            "t_base": 20.0,
+            "t_ambient": 20.0,
+            "h_conv": 1e-9,  # 近绝热隔离顶/侧/孔缘，逼近 1D 导热
+            "hole_x": 15.0,
+            "hole_y": 5.0,
+        }
+        # 1) hole_r=0 无孔：退化为串联板，P = V₀²·t·H/Σ(Lᵢ/σᵢ) 精确
+        #    （电极段长 5 贴齐网格 round(5/3)=2 单元 → 实际电极长 6、电阻区长 18）
+        solid = nodes.run_electrothermal({"model": nodes.build_joule_hole({}, {**common, "hole_r": 0.0})}, {})
+        r_series = 2.0 * 6.0 / 50.0 + 18.0 / 0.5
+        assert solid.total_power == pytest.approx(1.0 * 1.0 * 10.0 / r_series, rel=1e-10)
+        # 2) 有孔：导体截面减小 → 电阻增大 → 功率下降
+        holed = nodes.run_electrothermal({"model": nodes.build_joule_hole({}, {**common, "hole_r": 3.6})}, {})
+        assert holed.total_power < solid.total_power
+        # 3) 电极电压边界：左端全 0、右端全 V₀
+        coords = holed.mesh.coords
+        np.testing.assert_allclose(holed.voltages[coords[:, 0] <= 1e-9], 0.0, atol=1e-14)
+        np.testing.assert_allclose(holed.voltages[coords[:, 0] >= 30.0 - 1e-9], 1.0, rtol=1e-12)
+        # 4) 热点落在孔缘附近（电阻区内、距孔心 2dx 内）
+        hotspot = int(np.argmax(holed.temperatures))
+        hx, hy = coords[hotspot]
+        assert (hx - 15.0) ** 2 + (hy - 5.0) ** 2 <= (3.6 + 6.0) ** 2
+        assert holed.t_max > 20.0
 
     def test_param_validation_flows_through(self) -> None:
         """节点参数经模块规格校验（非法值抛 ParamError）."""

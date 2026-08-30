@@ -390,6 +390,68 @@ BUILTIN_MODULES: tuple[ModuleSpec, ...] = (
         ),
     ),
     ModuleSpec(
+        type_id="example.joule_hole_2d",
+        name="带圆孔多材料电加热板（Q4 电-热耦合）",
+        category=ModuleCategory.SOURCE,
+        target="zylab.studio.nodes:build_joule_hole",
+        outputs=(PortSpec("model", PortType.ET_MODEL, "传导模型"),),
+        params=(
+            ParamSpec("length", "板总长 L", ParamType.FLOAT, 30.0, 0.3, 1.0e4, 1.0, "mm"),
+            ParamSpec("height", "板高 H", ParamType.FLOAT, 10.0, 0.1, 1.0e4, 1.0, "mm"),
+            ParamSpec("nx", "纵向单元数", ParamType.INT, 30, 3, 400, 5),
+            ParamSpec("ny", "横向单元数", ParamType.INT, 10, 1, 400, 1),
+            ParamSpec(
+                "electrode_len",
+                "电极段长 a",
+                ParamType.FLOAT,
+                5.0,
+                0.1,
+                5.0e3,
+                1.0,
+                "mm",
+                "左右电极段长（各一段，中间为电阻区）",
+            ),
+            ParamSpec("hole_x", "圆孔圆心 x", ParamType.FLOAT, 15.0, 0.0, 1.0e4, 1.0, "mm", "板内圆孔位置"),
+            ParamSpec("hole_y", "圆孔圆心 y", ParamType.FLOAT, 5.0, 0.0, 1.0e4, 1.0, "mm"),
+            ParamSpec(
+                "hole_r", "圆孔半径 r", ParamType.FLOAT, 2.0, 0.0, 1.0e3, 0.5, "mm", "0 = 无孔；挖孔后孔缘自动施加对流"
+            ),
+            ParamSpec(
+                "sigma_conductor", "电极电导率 σ_c", ParamType.FLOAT, 50.0, 1.0e-9, 1.0e9, 0.1, "S/mm", "电极区材料"
+            ),
+            ParamSpec(
+                "sigma_resistor",
+                "电阻区电导率 σ_h",
+                ParamType.FLOAT,
+                0.5,
+                1.0e-9,
+                1.0e9,
+                0.1,
+                "S/mm",
+                "电阻区材料（热点源）",
+            ),
+            ParamSpec("k_conductor", "电极导热系数 k_c", ParamType.FLOAT, 0.4, 1.0e-9, 1.0e6, 0.01, "W/mm·K"),
+            ParamSpec("k_resistor", "电阻区导热系数 k_h", ParamType.FLOAT, 0.015, 1.0e-9, 1.0e6, 0.001, "W/mm·K"),
+            ParamSpec(
+                "voltage", "电极电压 V₀", ParamType.FLOAT, 1.0, -1.0e6, 1.0e6, 0.1, "V", "右端电极电压，左端接地 0"
+            ),
+            ParamSpec("thickness", "厚度 t", ParamType.FLOAT, 1.0, 0.01, 100.0, 0.1, "mm"),
+            ParamSpec("t_base", "底边温度", ParamType.FLOAT, 20.0, -1.0e4, 1.0e4, 1.0, "", "底边恒温边界"),
+            ParamSpec(
+                "h_conv",
+                "对流系数 h",
+                ParamType.FLOAT,
+                1.0e-4,
+                1.0e-9,
+                1.0,
+                1.0e-6,
+                "W/mm²·K",
+                "顶边/侧边剩余段与孔缘对流换热",
+            ),
+            ParamSpec("t_ambient", "环境温度", ParamType.FLOAT, 20.0, -1.0e4, 1.0e4, 1.0, ""),
+        ),
+    ),
+    ModuleSpec(
         type_id="analysis.electrothermal",
         name="电-热耦合分析",
         category=ModuleCategory.ANALYSIS,

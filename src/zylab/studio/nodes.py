@@ -55,6 +55,7 @@ if TYPE_CHECKING:
 __all__ = [
     "build_cantilever",
     "build_column",
+    "build_joule_hole",
     "build_joule_plate",
     "build_joule_series",
     "build_truss",
@@ -321,6 +322,111 @@ def build_joule_series(inputs: NodeInputs, params: NodeParams, report: ReportFn 
         thermal_case=ThermalCase(
             temperatures=tuple(NodalValue(int(n), float(p["t_base"])) for n in bottom),
             convections=(Convection(nodes=conv_nodes, h_coeff=float(p["h_conv"]), t_ambient=float(p["t_ambient"])),),
+        ),
+    )
+    _report(report, 1.0, "模型就绪")
+    return bundle
+
+
+def _boundary_edges(blocks_conns: tuple[np.ndarray, ...]) -> list[tuple[int, int]]:
+    """提取网格边界边（恰好属于一个单元的边），用于任意形状边界分类."""
+    counts: dict[tuple[int, int], int] = {}
+    for conn in blocks_conns:
+        for quad in conn:
+            for a, b in zip(quad, np.roll(quad, -1)):
+                key = (int(min(a, b)), int(max(a, b)))
+                counts[key] = counts.get(key, 0) + 1
+    return [edge for edge, count in counts.items() if count == 1]
+
+
+def build_joule_hole(inputs: NodeInputs, params: NodeParams, report: ReportFn | None = None) -> ConductionBundle:
+    """构建带圆孔多材料电加热板 Q4 模型（复杂形状：形心掩码挖孔）.
+
+    矩形板按形心掩码挖去圆孔（孔缘呈阶梯状逼近圆弧），三区材料分区同
+    :func:`build_joule_series`；挖孔后压缩孤立节点（防刚度矩阵奇异），
+    并自动提取边界边分类：左右电极面给定电压、底边恒温、其余边界
+    （顶边/侧边剩余段/孔缘）施加对流。
+    """
+    del inputs
+    p = _params("example.joule_hole_2d", params)
+    length, height = float(p["length"]), float(p["height"])
+    nx, ny = int(p["nx"]), int(p["ny"])
+    hole_r = float(p["hole_r"])
+
+    _report(report, 0.15, "生成板网格并挖孔")
+    xs = np.linspace(0.0, length, nx + 1)
+    ys = np.linspace(0.0, height, ny + 1)
+    dx = length / nx
+    grid_x, grid_y = np.meshgrid(xs, ys)
+    coords = np.column_stack((grid_x.ravel(), grid_y.ravel()))
+    # 单元形心落在圆孔内的单元被剔除（严格小于，形心恰在圆周上保留）
+    hole_x, hole_y = float(p["hole_x"]), float(p["hole_y"])
+    n_electrode = min(max(round(float(p["electrode_len"]) / dx), 1), nx // 2 - 1) if nx >= 3 else 1
+    zone_conns: list[list[tuple[int, ...]]] = [[], [], []]
+    for j in range(ny):
+        for i in range(nx):
+            xc, yc = (i + 0.5) * dx, (j + 0.5) * height / ny
+            if (xc - hole_x) ** 2 + (yc - hole_y) ** 2 < hole_r**2:
+                continue  # 孔内单元剔除
+            n00 = j * (nx + 1) + i
+            quad = (n00, n00 + 1, n00 + nx + 2, n00 + nx + 1)
+            zone = 0 if i < n_electrode else (2 if i >= nx - n_electrode else 1)
+            zone_conns[zone].append(quad)
+
+    _report(report, 0.5, "压缩孤立节点")
+    conn_arrays = tuple(np.asarray(conns, dtype=np.intp) for conns in zone_conns)
+    used = np.unique(np.concatenate(conn_arrays))
+    remap = np.full(coords.shape[0], -1, dtype=np.intp)
+    remap[used] = np.arange(used.size)
+    coords = coords[used]
+    blocks = tuple(
+        ElementBlock(
+            etype=ElementType.QUAD4,
+            conn=remap[conns],
+            material=zone % 2,
+            name=f"区{zone}",
+        )
+        for zone, conns in enumerate(conn_arrays)
+        if conns.size > 0
+    )
+    mesh = Mesh(coords=coords, blocks=blocks)
+
+    _report(report, 0.8, "提取边界并生成电-热工况")
+    tol = min(dx, height / ny) * 1e-9
+    left = np.flatnonzero(coords[:, 0] <= tol)
+    right = np.flatnonzero(coords[:, 0] >= length - tol)
+    bottom = np.flatnonzero(coords[:, 1] <= tol)
+    # 边界边分类：电极面（左右端）与底边恒温面除外，其余边界（含孔缘）施加对流
+    convections = []
+    for a, b in _boundary_edges(tuple(block.conn for block in blocks)):
+        pa, pb = coords[a], coords[b]
+        on_left = pa[0] <= tol and pb[0] <= tol
+        on_right = pa[0] >= length - tol and pb[0] >= length - tol
+        on_bottom = pa[1] <= tol and pb[1] <= tol
+        if not (on_left or on_right or on_bottom):
+            convections.append(Convection(nodes=(a, b), h_coeff=float(p["h_conv"]), t_ambient=float(p["t_ambient"])))
+    bundle = ConductionBundle(
+        mesh=mesh,
+        materials=(
+            ConductionMaterial(
+                electric_sigma=float(p["sigma_conductor"]),
+                thermal_k=float(p["k_conductor"]),
+            ),
+            ConductionMaterial(
+                electric_sigma=float(p["sigma_resistor"]),
+                thermal_k=float(p["k_resistor"]),
+            ),
+        ),
+        sections=(Section(thickness=float(p["thickness"])),),
+        electric_case=ElectricCase(
+            voltages=(
+                *(NodalValue(int(n), 0.0) for n in left),
+                *(NodalValue(int(n), float(p["voltage"])) for n in right),
+            ),
+        ),
+        thermal_case=ThermalCase(
+            temperatures=tuple(NodalValue(int(n), float(p["t_base"])) for n in bottom),
+            convections=tuple(convections),
         ),
     )
     _report(report, 1.0, "模型就绪")
