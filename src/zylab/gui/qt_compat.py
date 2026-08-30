@@ -217,4 +217,5 @@ def exec_app(app: QApplication) -> int:
 def mouse_event_pos(event: QMouseEvent) -> QPoint:
     """鼠标事件视图坐标（Qt6 的 position / Qt5 的 pos 兼容）."""
     pos = event.position() if hasattr(event, "position") else event.pos()  # type: ignore[union-attr]
-    return pos.toPoint()
+    # PySide2 的 pos() 已是 QPoint（无 toPoint），Qt6 的 position() 是 QPointF 须转换
+    return pos.toPoint() if hasattr(pos, "toPoint") else pos  # type: ignore[union-attr]

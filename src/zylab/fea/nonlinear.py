@@ -154,7 +154,7 @@ def solve_nonlinear_static(  # noqa: PLR0913  求解四要素 + 步进控制参�
             f_int = _assemble_internal_forces(element_cache, u)
             residual = (target - f_int)[free]
             residual_norm = float(np.linalg.norm(residual))
-            if residual_norm <= tolerance * max(f_ref * factor, 1.0e-30):
+            if residual_norm <= tolerance * max(float(f_ref * factor), 1.0e-30):
                 break
             k_tangent = _assemble_tangent(element_cache, u)
             delta = _solve_free(k_tangent, residual, free)

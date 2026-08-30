@@ -5,3 +5,9 @@ project-excludes = [".venv/**", ".venv38/**", "template/**", "tests/**", "src/zy
 project-includes = ["**/*.ipynb", "**/*.py*"]
 python-version   = "3.8"
 search-path      = ["."]
+
+[errors]
+# 主开发线 Python 3.10 上限 numpy 2.2 仍无 PEP 696 泛型默认参数（2.3 需 3.11+），
+# strict 对裸 np.ndarray 报 implicit-any-type-argument；降为 warn 保留可见性，
+# 待全量补齐类型参数后恢复 error。
+implicit-any-type-argument = "warn"
