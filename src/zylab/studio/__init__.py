@@ -8,11 +8,13 @@
 - :mod:`zylab.studio.registry`：模板注册表（内置 + 用户目录）；
 - :mod:`zylab.studio.builtin`：内置模板表；
 - :mod:`zylab.studio.graph`：工作流图（节点状态机 + 级联脏传播 + 拓扑执行计划）；
-- :mod:`zylab.studio.runner`：编排执行（拓扑序驱动 ProcessExecutor，缓存命中跳过）。
+- :mod:`zylab.studio.runner`：编排执行（拓扑序驱动 ProcessExecutor，缓存命中跳过）；
+- :mod:`zylab.studio.batch`：批处理执行（进程内拓扑序求解 + 参数覆盖/扫描 + 摘要）。
 """
 
 from __future__ import annotations
 
+from .batch import NodeOutcome, ReportFn, RunOutcome, resolve_target, run_scan, run_workflow, summarize
 from .builtin import BUILTIN_TEMPLATES
 from .bundle import ModelBundle
 from .errors import (
@@ -48,6 +50,7 @@ __all__ = [
     "ModuleNotFoundError_",
     "ModuleSpec",
     "NodeInstance",
+    "NodeOutcome",
     "NodeRunEvent",
     "NodeState",
     "ParamError",
@@ -56,6 +59,8 @@ __all__ = [
     "ParamType",
     "PortSpec",
     "PortType",
+    "ReportFn",
+    "RunOutcome",
     "StudioError",
     "Template",
     "TemplateError",
@@ -67,6 +72,10 @@ __all__ = [
     "all_modules",
     "load_template",
     "module_spec",
+    "resolve_target",
+    "run_scan",
+    "run_workflow",
     "save_template",
+    "summarize",
     "template_from_json",
 ]

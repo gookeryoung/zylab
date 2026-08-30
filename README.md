@@ -40,6 +40,15 @@ import zylab
 print(zylab.__version__)
 ```
 
+命令行（无界面求解模板/工程，支持参数覆盖与扫描）：
+
+```bash
+zylab                       # 启动图形界面
+zylab templates             # 列出可用模板
+zylab run structural.cantilever_static -p model.nx=20
+zylab run demo.zprj --scan "model.tip_load=-50:-100:5"
+```
+
 ## 开发
 
 ```bash
