@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import numpy as np
+import pytest
 
 from zylab.fea import (
     Constraint,
@@ -16,6 +17,9 @@ from zylab.fea import (
     solve_static,
 )
 from zylab.fea.viewdata import (
+    cmap_keys,
+    cmap_label,
+    cmap_lut,
     deformed_coords,
     displacement_field,
     edge_segments,
@@ -138,3 +142,29 @@ def test_scalar_colors_constant_field() -> None:
 def test_scalar_colors_empty() -> None:
     """空数组返回 (0, 3)."""
     assert scalar_colors(np.zeros(0)).shape == (0, 3)
+
+
+def test_cmap_registry_and_lut() -> None:
+    """色带注册表：键序稳定、LUT 首尾对齐控制点、未知键报错."""
+    keys = cmap_keys()
+    assert keys[0] == "jet"  # 默认色带居首
+    assert "viridis" in keys and "grayscale" in keys
+    assert cmap_label("coolwarm") == "冷暖"
+    lut = cmap_lut("viridis", 64)
+    assert lut.shape == (64, 3)
+    np.testing.assert_allclose(lut[0], [0.267, 0.005, 0.329], atol=1e-6)  # 首行 = 最小值色
+    np.testing.assert_allclose(lut[-1], [0.993, 0.906, 0.144], atol=1e-6)  # 末行 = 最大值色
+    with pytest.raises(ValueError, match="未知色带"):
+        cmap_lut("nope")
+
+
+def test_scalar_colors_cmap_variant() -> None:
+    """颜色映射支持指定色带：灰度暗->亮、与 jet 不同."""
+    values = np.array([0.0, 1.0])
+    jet = scalar_colors(values, cmap="jet")
+    gray = scalar_colors(values, cmap="grayscale")
+    assert gray[0, 0] < 0.2  # 最小值暗色
+    assert gray[1, 0] > 0.8  # 最大值亮色
+    assert not np.allclose(jet, gray)
+    with pytest.raises(ValueError, match="未知色带"):
+        scalar_colors(values, cmap="nope")

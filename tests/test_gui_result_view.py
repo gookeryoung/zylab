@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import numpy as np
 import pytest
 
 from zylab.gui.widgets.result_view import ResultView
@@ -187,6 +188,54 @@ def test_export_row_visibility(qtbot) -> None:
     assert view._export_row.isVisible()
     view.clear()
     assert not view._export_row.isVisible()
+
+
+@pytest.mark.gui
+def test_colorbar_visibility_and_cmap_switch(qtbot) -> None:
+    """标尺：云图显示（随场量绑定），曲线隐藏；切换色带重渲染云图."""
+    view = ResultView()
+    qtbot.addWidget(view)
+    view.show()
+    assert not view._colorbar.isVisible()  # 模型预览态无标尺
+    view.show_solution(nodes.run_static({"model": _beam_bundle()}, {}))
+    assert view._colorbar.isVisible()
+    view._cmap_combo.setCurrentIndex(1)  # 切换色带（Viridis）
+    assert view._colorbar.isVisible()  # 云图重渲染后标尺仍在
+    assert "最大位移" in view._summary.text()
+    assert view._cmap == "viridis"
+    view.clear()
+    assert not view._colorbar.isVisible()
+
+
+@pytest.mark.gui
+def test_colorbar_hidden_on_curve_view(qtbot) -> None:
+    """非线性解切到曲线视图时标尺隐藏，切回云图恢复."""
+    view = ResultView()
+    qtbot.addWidget(view)
+    view.show()
+    bundle = nodes.build_truss({}, {})
+    view.show_solution(nodes.run_nonlinear({"model": bundle}, {"n_increments": 4}))
+    assert view._colorbar.isVisible()
+    view._view_combo.setCurrentIndex(1)  # 载荷-位移曲线
+    assert not view._colorbar.isVisible()
+    view._view_combo.setCurrentIndex(0)  # 切回变形云图
+    assert view._colorbar.isVisible()
+
+
+@pytest.mark.gui
+def test_colorbar_field_range(qtbot) -> None:
+    """标尺刻度绑定场值范围：顶=最大、底=最小，空场隐藏."""
+    from zylab.gui.widgets.result_view import ColorBarWidget
+
+    bar = ColorBarWidget()
+    qtbot.addWidget(bar)
+    assert bar.isHidden()
+    bar.set_field(np.array([1.0, 2.0, 3.0]), "jet")
+    assert not bar.isHidden()
+    assert bar._vmin == pytest.approx(1.0)
+    assert bar._vmax == pytest.approx(3.0)
+    bar.set_field(np.zeros(0), "jet")  # 空场 -> 隐藏
+    assert bar.isHidden()
 
 
 @pytest.mark.gui

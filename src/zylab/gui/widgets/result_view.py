@@ -25,19 +25,30 @@ from zylab.fea import (
     TransientSolution,
     export_csv,
 )
-from zylab.fea.viewdata import deformed_coords, edge_segments, mesh_edges, scalar_colors
+from zylab.fea.viewdata import (
+    cmap_keys,
+    cmap_label,
+    cmap_lut,
+    deformed_coords,
+    edge_segments,
+    mesh_edges,
+    scalar_colors,
+)
 from zylab.studio import ConductionBundle, ModelBundle
 from zylab.studio.nodes import tip_node
 
 from .. import theme
 from ..qt_compat import (
+    QColor,
     QComboBox,
     QFileDialog,
     QHBoxLayout,
     QHeaderView,
     QLabel,
+    QPainter,
     QPushButton,
     QSpinBox,
+    Qt,
     QTableWidget,
     QTableWidgetItem,
     QTabWidget,
@@ -45,7 +56,97 @@ from ..qt_compat import (
     QWidget,
 )
 
-__all__ = ["ResultTabs", "ResultView"]
+__all__ = ["ColorBarWidget", "ResultTabs", "ResultView"]
+
+
+class ColorBarWidget(QWidget):
+    """云图标尺（自绘）：竖向色带 + 最大/中值/最小刻度.
+
+    - 顶部为最大值色（与云图一致：标量归一化后经色带采样）；
+    - 无场量时隐藏（clear），布局自动收回空间；
+    - 刻度文字颜色随主题（refresh_theme 触发重绘）。
+    """
+
+    _BAR_W = 14  # 色带条宽度（像素）
+    _PAD = 4  # 内边距
+
+    def __init__(self, parent: QWidget | None = None) -> None:
+        """初始化标尺（初始无场量，隐藏）."""
+        super().__init__(parent)
+        self._vmin = 0.0
+        self._vmax = 1.0
+        self._lut = cmap_lut("jet")
+        self.setFixedWidth(self._BAR_W + 52)
+        self.setVisible(False)
+
+    def set_field(self, values: np.ndarray, cmap: str) -> None:
+        """绑定标量场与色带（云图渲染时同步调用）."""
+        data = np.asarray(values, dtype=float)
+        if data.size == 0:
+            self.clear()
+            return
+        self._vmin = float(np.min(data))
+        self._vmax = float(np.max(data))
+        self._lut = cmap_lut(cmap)
+        self.setVisible(True)
+        self.update()
+
+    def clear(self) -> None:
+        """清除场量（隐藏标尺）."""
+        self.setVisible(False)
+
+    def refresh_theme(self) -> None:
+        """主题切换后重绘刻度文字."""
+        self.update()
+
+    def paintEvent(self, event) -> None:  # Qt 命名约定
+        """绘制竖向色带（64 段）与三档刻度值."""
+        del event
+        pal = theme.current_palette()
+        painter = QPainter(self)
+        painter.setPen(QColor(pal.border))
+        bar_x = self._PAD
+        bar_h = self.height() - 2 * self._PAD
+        if bar_h <= 0:
+            return
+        # 逐段填色：第 0 段在底部（最小值）
+        n = self._lut.shape[0]
+        seg_h = bar_h / n
+        for i in range(n):
+            r, g, b = self._lut[i]
+            painter.setPen(Qt.NoPen)
+            painter.setBrush(QColor(int(r * 255), int(g * 255), int(b * 255)))
+            y_top = self._PAD + bar_h - (i + 1) * seg_h
+            painter.drawRect(int(bar_x), round(y_top), self._BAR_W, int(seg_h) + 1)
+        painter.setPen(QColor(pal.border))
+        painter.setBrush(Qt.NoBrush)
+        painter.drawRect(int(bar_x), self._PAD, self._BAR_W, int(bar_h))
+        # 刻度：最大（顶）/中/最小（底）
+        painter.setPen(QColor(pal.text_secondary))
+        painter.drawText(
+            bar_x + self._BAR_W + self._PAD,
+            self._PAD,
+            self.width() - bar_x - self._BAR_W - self._PAD,
+            14,
+            0,
+            f"{self._vmax:.4g}",
+        )
+        painter.drawText(
+            bar_x + self._BAR_W + self._PAD,
+            int(self.height() / 2 - 7),
+            self.width() - bar_x - self._BAR_W - self._PAD,
+            14,
+            0,
+            f"{(self._vmin + self._vmax) / 2.0:.4g}",
+        )
+        painter.drawText(
+            bar_x + self._BAR_W + self._PAD,
+            self.height() - self._PAD - 14,
+            self.width() - bar_x - self._BAR_W - self._PAD,
+            14,
+            0,
+            f"{self._vmin:.4g}",
+        )
 
 
 class ResultView(QWidget):
@@ -61,6 +162,7 @@ class ResultView(QWidget):
         self._electrothermal: ElectroThermalSolution | None = None
         self._reference_load = 1.0
         self._solution: object | None = None
+        self._cmap = "jet"
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
@@ -73,6 +175,12 @@ class ResultView(QWidget):
         self._export_row = QWidget()
         export_layout = QHBoxLayout(self._export_row)
         export_layout.setContentsMargins(0, 0, 0, 0)
+        export_layout.addWidget(QLabel("色带"))
+        self._cmap_combo = QComboBox(objectName="cmapCombo")
+        for key in cmap_keys():
+            self._cmap_combo.addItem(cmap_label(key), key)
+        self._cmap_combo.currentIndexChanged.connect(self._on_cmap_changed)
+        export_layout.addWidget(self._cmap_combo)
         self._export_csv_btn = QPushButton("导出 CSV")
         self._export_csv_btn.clicked.connect(self._on_export_csv)
         export_layout.addWidget(self._export_csv_btn)
@@ -110,7 +218,14 @@ class ResultView(QWidget):
         self._plot.showGrid(x=True, y=True, alpha=0.3)
         self._plot.setAspectLocked(True)
         self._plot.addLegend(offset=(12, 12))
-        layout.addWidget(self._plot, stretch=1)
+        plot_row = QWidget()
+        plot_layout = QHBoxLayout(plot_row)
+        plot_layout.setContentsMargins(0, 0, 0, 0)
+        plot_layout.setSpacing(theme.SPACING_SM)
+        plot_layout.addWidget(self._plot, stretch=1)
+        self._colorbar = ColorBarWidget()
+        plot_layout.addWidget(self._colorbar)
+        layout.addWidget(plot_row, stretch=1)
 
     # ------------------------------------------------------------------ 公共接口
 
@@ -178,8 +293,9 @@ class ResultView(QWidget):
         self._set_error(False)
 
     def refresh_theme(self) -> None:
-        """主题切换后重刷绘图背景."""
+        """主题切换后重刷绘图背景与标尺刻度."""
         self._plot.setBackground(theme.current_palette().bg_app)
+        self._colorbar.refresh_theme()
 
     # ------------------------------------------------------------------ 内部
 
@@ -195,6 +311,7 @@ class ResultView(QWidget):
         self._mode_spin.setVisible(False)
         self._view_combo.setVisible(False)
         self._export_row.setVisible(False)
+        self._colorbar.clear()
 
     def _on_export_csv(self) -> None:
         """导出当前结果为 CSV（对话框选路径；失败信息显示在摘要）."""
@@ -258,8 +375,9 @@ class ResultView(QWidget):
             pen=pg.mkPen(theme.current_palette().primary, width=3),
             name=f"变形 (x{scale:.0f})",
         )
-        colors = [pg.mkColor(int(r * 255), int(g * 255), int(b * 255)) for r, g, b in scalar_colors(field)]
+        colors = [pg.mkColor(int(r * 255), int(g * 255), int(b * 255)) for r, g, b in scalar_colors(field, self._cmap)]
         self._plot.addItem(pg.ScatterPlotItem(x=deformed[:, 0], y=deformed[:, 1], size=6, brush=colors, pen=None))
+        self._colorbar.set_field(field, self._cmap)
 
     def _render_modal(self, solution: ModalSolution) -> None:
         """填充频率表并渲染首阶振型云图."""
@@ -336,8 +454,9 @@ class ResultView(QWidget):
             pen=pg.mkPen(theme.current_palette().primary, width=3),
             name=f"{label} (x{scale:.0f})",
         )
-        colors = [pg.mkColor(int(r * 255), int(g * 255), int(b * 255)) for r, g, b in scalar_colors(field)]
+        colors = [pg.mkColor(int(r * 255), int(g * 255), int(b * 255)) for r, g, b in scalar_colors(field, self._cmap)]
         self._plot.addItem(pg.ScatterPlotItem(x=deformed[:, 0], y=deformed[:, 1], size=6, brush=colors, pen=None))
+        self._colorbar.set_field(field, self._cmap)
 
     def _render_harmonic(self, solution: HarmonicResponse) -> None:
         """渲染频响曲线（末端观察点 |uy| 随 ω 变化，对数幅值轴）并标注峰值."""
@@ -346,6 +465,7 @@ class ResultView(QWidget):
         dof_y = node * mesh.dofs_per_node + 1  # 观察点竖向分量
         amplitude = np.abs(solution.displacements[dof_y, :])
         omegas = solution.frequencies
+        self._colorbar.clear()  # 曲线视图无场量
 
         self._plot.clear()
         self._plot.setAspectLocked(False)
@@ -398,6 +518,7 @@ class ResultView(QWidget):
         node = int(np.argmax(np.linalg.norm(solution.displacements, axis=1)))
         uy = solution.history_dof(node, 1)
         factors = solution.history_factors
+        self._colorbar.clear()  # 曲线视图无场量
 
         self._plot.clear()
         self._plot.setAspectLocked(False)
@@ -417,6 +538,16 @@ class ResultView(QWidget):
             f"载荷-位移曲线：{len(factors) - 1} 增量步\n"
             f"观察点节点 {node} uy = {uy[-1]:.6g}（线性 {slope * factors[-1]:.6g}）"
         )
+
+    def _on_cmap_changed(self, index: int) -> None:
+        """切换色带：以当前解重渲染云图与标尺（保留类型内视图选择）."""
+        self._cmap = self._cmap_combo.itemData(index)
+        if self._solution is None:
+            return  # 模型预览态无云图，下张云图生效
+        saved = self._view_combo.currentIndex()
+        self.show_solution(self._solution, self._reference_load)
+        if saved > 0 and self._view_combo.count() > saved:
+            self._view_combo.setCurrentIndex(saved)  # 触发 _on_view_changed 恢复原视图
 
     def _on_view_changed(self, index: int) -> None:
         """切换结果视图（非线性/瞬态/电-热耦合的类型关联双视图）."""
@@ -450,10 +581,11 @@ class ResultView(QWidget):
             pen=pg.mkPen(theme.current_palette().border_strong, width=2),
             name="网格",
         )
-        colors = [pg.mkColor(int(r * 255), int(g * 255), int(b * 255)) for r, g, b in scalar_colors(field)]
+        colors = [pg.mkColor(int(r * 255), int(g * 255), int(b * 255)) for r, g, b in scalar_colors(field, self._cmap)]
         self._plot.addItem(
             pg.ScatterPlotItem(x=mesh.coords[:, 0], y=mesh.coords[:, 1], size=6, brush=colors, pen=None, name=label)
         )
+        self._colorbar.set_field(field, self._cmap)
 
     def _render_electrothermal(self, solution: ElectroThermalSolution) -> None:
         """渲染电-热耦合结果：显示视图切换并默认温度云图."""
@@ -496,6 +628,7 @@ class ResultView(QWidget):
         node = tip_node(mesh)
         uy = solution.node_history(node, 1)
         times = solution.times
+        self._colorbar.clear()  # 曲线视图无场量
 
         self._plot.clear()
         self._plot.setAspectLocked(False)

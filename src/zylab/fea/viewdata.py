@@ -12,6 +12,9 @@ from .mesh import ElementType, Mesh
 from .static import StaticSolution
 
 __all__ = [
+    "cmap_keys",
+    "cmap_label",
+    "cmap_lut",
     "deformed_coords",
     "displacement_field",
     "edge_segments",
@@ -51,6 +54,75 @@ _JET_STOPS: tuple[tuple[float, tuple[float, float, float]], ...] = (
     (0.65, (0.9, 0.9, 0.0)),
     (1.0, (0.9, 0.0, 0.0)),
 )
+
+#: 色带注册表（键 -> 控制点）：标尺与云图共用，新增色带只需补表
+_CMAP_STOPS: dict[str, tuple[tuple[float, tuple[float, float, float]], ...]] = {
+    "jet": _JET_STOPS,
+    "viridis": (
+        (0.0, (0.267, 0.005, 0.329)),
+        (0.25, (0.229, 0.322, 0.545)),
+        (0.5, (0.128, 0.567, 0.551)),
+        (0.75, (0.369, 0.789, 0.383)),
+        (1.0, (0.993, 0.906, 0.144)),
+    ),
+    "inferno": (
+        (0.0, (0.001, 0.000, 0.014)),
+        (0.25, (0.341, 0.063, 0.429)),
+        (0.5, (0.735, 0.216, 0.330)),
+        (0.75, (0.978, 0.557, 0.035)),
+        (1.0, (0.988, 0.998, 0.645)),
+    ),
+    "coolwarm": (
+        (0.0, (0.230, 0.499, 0.760)),
+        (0.5, (0.865, 0.865, 0.865)),
+        (1.0, (0.706, 0.076, 0.169)),
+    ),
+    "grayscale": (
+        (0.0, (0.08, 0.08, 0.08)),
+        (1.0, (0.95, 0.95, 0.95)),
+    ),
+}
+
+#: 色带显示名（GUI 下拉文案；键与 _CMAP_STOPS 一一对应）
+_CMAP_LABELS: dict[str, str] = {
+    "jet": "Jet",
+    "viridis": "Viridis",
+    "inferno": "Inferno",
+    "coolwarm": "冷暖",
+    "grayscale": "灰度",
+}
+
+
+def cmap_keys() -> tuple[str, ...]:
+    """全部色带键（注册顺序，GUI 下拉按此排列）."""
+    return tuple(_CMAP_STOPS)
+
+
+def cmap_label(key: str) -> str:
+    """色带显示名；未注册键原样返回."""
+    return _CMAP_LABELS.get(key, key)
+
+
+def cmap_lut(key: str, samples: int = 64) -> np.ndarray:
+    """色带均匀采样颜色表（供标尺逐段填色绘制）.
+
+    Args:
+        key: 色带键（见 :func:`cmap_keys`）。
+        samples: 采样数（>= 2）。
+
+    Returns:
+        ``(samples, 3)`` 浮点 RGB 数组，第 0 行对应最小值色。
+    """
+    if key not in _CMAP_STOPS:
+        raise ValueError(f"未知色带: {key}")
+    n = max(2, int(samples))
+    stops = np.array([s for s, _ in _CMAP_STOPS[key]], dtype=float)
+    colors = np.array([c for _, c in _CMAP_STOPS[key]], dtype=float)
+    t = np.linspace(0.0, 1.0, n)
+    lut = np.empty((n, 3), dtype=float)
+    for channel in range(3):
+        lut[:, channel] = np.interp(t, stops, colors[:, channel])
+    return lut
 
 
 def mesh_edges(mesh: Mesh) -> np.ndarray:
@@ -143,15 +215,18 @@ def nodal_stress_field(solution: StaticSolution, component: int = 0) -> np.ndarr
     return np.divide(totals, counts, out=totals, where=counts > 0)
 
 
-def scalar_colors(values: np.ndarray) -> np.ndarray:
-    """标量场映射 jet 风格 RGB 颜色（供云图着色）.
+def scalar_colors(values: np.ndarray, cmap: str = "jet") -> np.ndarray:
+    """标量场映射指定色带 RGB 颜色（供云图着色）.
 
     Args:
         values: ``(n,)`` 标量数组。
+        cmap: 色带键（见 :func:`cmap_keys`），默认 jet。
 
     Returns:
         ``(n, 3)`` 浮点 RGB 数组，取值 ``[0, 1]``。
     """
+    if cmap not in _CMAP_STOPS:
+        raise ValueError(f"未知色带: {cmap}")
     data = np.asarray(values, dtype=float)
     if data.size == 0:
         return np.zeros((0, 3), dtype=float)
@@ -160,8 +235,8 @@ def scalar_colors(values: np.ndarray) -> np.ndarray:
         t = np.full(data.shape, 0.5)
     else:
         t = (data - vmin) / (vmax - vmin)
-    stops = np.array([s for s, _ in _JET_STOPS], dtype=float)
-    colors = np.array([c for _, c in _JET_STOPS], dtype=float)
+    stops = np.array([s for s, _ in _CMAP_STOPS[cmap]], dtype=float)
+    colors = np.array([c for _, c in _CMAP_STOPS[cmap]], dtype=float)
     rgb = np.empty((data.size, 3), dtype=float)
     for channel in range(3):
         rgb[:, channel] = np.interp(t, stops, colors[:, channel])
