@@ -204,6 +204,7 @@ __all__ = [
     "Signal",
     "Slot",
     "exec_app",
+    "exec_menu",
     "mouse_event_pos",
 ]
 
@@ -219,3 +220,9 @@ def mouse_event_pos(event: QMouseEvent) -> QPoint:
     pos = event.position() if hasattr(event, "position") else event.pos()  # type: ignore[union-attr]
     # PySide2 的 pos() 已是 QPoint（无 toPoint），Qt6 的 position() 是 QPointF 须转换
     return pos.toPoint() if hasattr(pos, "toPoint") else pos  # type: ignore[union-attr]
+
+
+def exec_menu(menu: QMenu, pos: QPoint) -> object:
+    """弹出上下文菜单并返回所选 action（兼容 PySide2 的 exec_ 与 PySide6 的 exec）."""
+    popup = menu.exec if hasattr(menu, "exec") else menu.exec_  # type: ignore[union-attr]
+    return popup(pos)

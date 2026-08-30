@@ -57,6 +57,7 @@ from ..qt_compat import (
     QVBoxLayout,
     QWidget,
     Signal,
+    exec_menu,
 )
 from ..widgets.node_canvas import NodeCanvasWidget
 from ..widgets.param_form import ParamForm
@@ -486,7 +487,7 @@ class StudioPage(QWidget):
         if self._graph is None:
             return
         menu = self._build_node_menu(node_id)
-        chosen = menu.exec(global_pos)
+        chosen = exec_menu(menu, global_pos)
         if chosen is None:
             return
         if chosen.text() == "运行到此节点":
@@ -503,7 +504,7 @@ class StudioPage(QWidget):
         if self._graph is None:
             return
         menu = self._build_background_menu()
-        chosen = menu.exec(global_pos)
+        chosen = exec_menu(menu, global_pos)
         if chosen is None:
             return
         if chosen.text() == "运行全部":
