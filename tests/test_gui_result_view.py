@@ -5,7 +5,7 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
-from zylab.gui.widgets.result_view import ResultView
+from zylab.gui.widgets.result_view import ColorBarWidget, ResultView
 from zylab.studio import nodes
 
 
@@ -324,12 +324,14 @@ def test_anim_hidden_for_static(qtbot) -> None:
 
 @pytest.mark.gui
 def test_colorbar_left_of_plot(qtbot) -> None:
-    """标尺位于绘图区左侧（Workbench 布局）."""
+    """标尺位于绘图区左侧（Workbench 布局）；限高只作用于标尺，绘图区不限高."""
     view = ResultView()
     qtbot.addWidget(view)
     view.show()
     assert view._plot_row.layout().indexOf(view._colorbar) == 0
     assert view._plot_row.layout().indexOf(view._plot) == 1
+    assert view._colorbar.maximumHeight() == ColorBarWidget._MAX_H
+    assert view._plot_row.maximumHeight() == 16777215  # Qt 默认无上限
 
 
 @pytest.mark.gui

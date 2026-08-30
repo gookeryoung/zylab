@@ -73,6 +73,7 @@ class ColorBarWidget(QWidget):
 
     _BAR_W = 14  # 色带条宽度（像素）
     _PAD = 4  # 内边距
+    _MAX_H = 460  # 最大高度（与绘图区同宽列内随高拉伸，超高截断）
 
     def __init__(self, parent: QWidget | None = None) -> None:
         """初始化标尺（初始无场量，隐藏）."""
@@ -82,6 +83,7 @@ class ColorBarWidget(QWidget):
         self._unit = ""
         self._lut = cmap_lut("jet")
         self.setFixedWidth(self._BAR_W + 72)
+        self.setMaximumHeight(self._MAX_H)
         self.setVisible(False)
 
     def set_field(self, values: np.ndarray, cmap: str, unit: str = "") -> None:
@@ -143,9 +145,6 @@ class ColorBarWidget(QWidget):
 
 class ResultView(QWidget):
     """结果视图控件（pyqtgraph 绘图 + 类型关联的控制条）."""
-
-    _PLOT_MAX_H = 460  # 云图区最大高度（避免纵向占比过大）
-    _UNLIMITED_H = 16777215  # Qt 默认无上限（曲线视图恢复占满）
 
     def __init__(self, parent: QWidget | None = None) -> None:
         """初始化结果视图."""
@@ -260,7 +259,6 @@ class ResultView(QWidget):
         self._reset_controls()
         mesh = bundle.mesh
         self._restore_mesh_view()
-        self._plot_row.setMaximumHeight(self._PLOT_MAX_H)
         edges = mesh_edges(mesh)
         segments = edge_segments(mesh.coords, edges)
         self._plot.clear()
@@ -344,7 +342,6 @@ class ResultView(QWidget):
         self._view_combo.setVisible(False)
         self._export_row.setVisible(False)
         self._colorbar.clear()
-        self._plot_row.setMaximumHeight(self._UNLIMITED_H)
 
     def _on_export_csv(self) -> None:
         """导出当前结果为 CSV（对话框选路径；失败信息显示在摘要）."""
@@ -399,7 +396,6 @@ class ResultView(QWidget):
     def _draw_deformed(self, mesh: Mesh, displacements: np.ndarray, scale: float, label: str) -> None:
         """绘制变形线框与节点位移模着色散点（不动标尺/摘要，供单帧与动画复用）."""
         self._restore_mesh_view()
-        self._plot_row.setMaximumHeight(self._PLOT_MAX_H)
         edges = mesh_edges(mesh)
         field = np.linalg.norm(displacements, axis=1)
         deformed = deformed_coords(mesh, displacements, scale)
@@ -559,7 +555,6 @@ class ResultView(QWidget):
         omegas = solution.frequencies
         self._stop_anim()  # 曲线视图无动画帧
         self._colorbar.clear()  # 曲线视图无场量
-        self._plot_row.setMaximumHeight(self._UNLIMITED_H)
 
         self._plot.clear()
         self._plot.setAspectLocked(False)
@@ -623,7 +618,6 @@ class ResultView(QWidget):
         factors = solution.history_factors
         self._stop_anim()  # 曲线视图无动画帧
         self._colorbar.clear()  # 曲线视图无场量
-        self._plot_row.setMaximumHeight(self._UNLIMITED_H)
 
         self._plot.clear()
         self._plot.setAspectLocked(False)
@@ -692,7 +686,6 @@ class ResultView(QWidget):
     def _render_scalar_field(self, mesh: Mesh, field: np.ndarray, label: str, unit: str = "") -> None:
         """渲染标量场云图（未变形线框 + 节点场值着色）."""
         self._restore_mesh_view()
-        self._plot_row.setMaximumHeight(self._PLOT_MAX_H)
         edges = mesh_edges(mesh)
         segments = edge_segments(mesh.coords, edges)
         self._plot.clear()
@@ -760,7 +753,6 @@ class ResultView(QWidget):
         times = solution.times
         self._stop_anim()  # 曲线视图无动画帧
         self._colorbar.clear()  # 曲线视图无场量
-        self._plot_row.setMaximumHeight(self._UNLIMITED_H)
 
         self._plot.clear()
         self._plot.setAspectLocked(False)
