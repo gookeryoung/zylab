@@ -6,25 +6,23 @@ import pytest
 
 from zylab.core.executor import EventKind
 from zylab.gui.pages.studio_page import StudioPage, _StudioBridge
-from zylab.gui.qt_compat import Qt
 from zylab.studio import NodeRunEvent, NodeState
 
 
 def _select_template(page: StudioPage, template_id: str) -> None:
-    """按模板 id 切换模板库选择."""
-    for row in range(page._template_list.count()):
-        if page._template_list.item(row).data(Qt.UserRole) == template_id:
-            page._template_list.setCurrentRow(row)
-            return
-    raise AssertionError(f"模板不存在: {template_id}")
+    """按模板 id 切换模板下拉选择."""
+    index = page._template_combo.findData(template_id)
+    if index < 0:
+        raise AssertionError(f"模板不存在: {template_id}")
+    page._template_combo.setCurrentIndex(index)
 
 
 @pytest.mark.gui
 def test_page_builds_with_first_template(qtbot) -> None:
-    """页面装配：模板库 + 画布卡片 + 参数表单 + 源节点模型预览."""
+    """页面装配：模板下拉 + 画布单元 + 参数表单 + 源节点模型预览."""
     page = StudioPage()
     qtbot.addWidget(page)
-    assert page._template_list.count() >= 6
+    assert page._template_combo.count() >= 6
     assert page._graph is not None
     assert page._canvas.card_rect("model") is not None
     assert page._param_form._fields
@@ -75,13 +73,13 @@ def test_param_edit_marks_dirty(qtbot) -> None:
 
 @pytest.mark.gui
 def test_run_all_static_template(qtbot) -> None:
-    """运行全部：子进程求解完成，结果视图呈现位移摘要（真实进程端到端）."""
+    """运行全部（右键菜单入口）：子进程求解完成，结果视图呈现位移摘要（真实进程端到端）."""
     page = StudioPage()
     qtbot.addWidget(page)
     _select_template(page, "structural.cantilever_static")
     page._on_run_all()
-    assert not page._run_all_button.isEnabled()
-    qtbot.waitUntil(page._run_all_button.isEnabled, timeout=60000)
+    assert page._cancel_button.isEnabled()
+    qtbot.waitUntil(lambda: not page._cancel_button.isEnabled(), timeout=60000)
     assert page._graph.node("solve").state is NodeState.UP_TO_DATE
     assert "最大位移" in page._result_view._summary.text()
     page.shutdown()
@@ -89,18 +87,29 @@ def test_run_all_static_template(qtbot) -> None:
 
 @pytest.mark.gui
 def test_node_click_shows_cached_result(qtbot) -> None:
-    """单击已完成节点呈现其结果."""
+    """单击已完成节点呈现其结果，且参数面板只显示该环节参数."""
     page = StudioPage()
     qtbot.addWidget(page)
     _select_template(page, "structural.cantilever_static")
     page._on_run_all()
     qtbot.waitUntil(lambda: page._graph.node("solve").state is NodeState.UP_TO_DATE, timeout=60000)
-    qtbot.waitUntil(page._run_all_button.isEnabled, timeout=10000)
+    qtbot.waitUntil(lambda: not page._cancel_button.isEnabled(), timeout=10000)
     page._result_view.clear()
     page._on_node_clicked("solve")
     assert "最大位移" in page._result_view._summary.text()
     page._on_node_clicked("model")
     assert "模型预览" in page._result_view._summary.text()
+    # 单选 model：只显示 model 的参数行（solve 行隐藏）
+    model_keys = [
+        ref for _, rows in page._param_form._group_rows for ref, spin in rows if spin.isVisibleTo(page._param_form)
+    ]
+    assert model_keys and all(ref.partition(".")[0] == "model" for ref in model_keys)
+    # 全选：恢复全部行
+    page._canvas.select_all()
+    all_refs = [
+        ref for _, rows in page._param_form._group_rows for ref, spin in rows if spin.isVisibleTo(page._param_form)
+    ]
+    assert len(all_refs) == sum(len(rows) for _, rows in page._param_form._group_rows)
     page.shutdown()
 
 
@@ -112,7 +121,7 @@ def test_double_click_runs_to_node(qtbot) -> None:
     _select_template(page, "structural.truss_nonlinear")
     page._on_node_double_clicked("solve")
     qtbot.waitUntil(lambda: page._graph.node("solve").state is NodeState.UP_TO_DATE, timeout=60000)
-    qtbot.waitUntil(page._run_all_button.isEnabled, timeout=10000)
+    qtbot.waitUntil(lambda: not page._cancel_button.isEnabled(), timeout=10000)
     assert "Newton" in page._result_view._summary.text()
     page.shutdown()
 
@@ -127,7 +136,7 @@ def test_cancel_running(qtbot) -> None:
     page._on_run_all()
     qtbot.waitUntil(page._cancel_button.isEnabled, timeout=10000)
     page._on_cancel()
-    assert page._run_all_button.isEnabled()
+    assert not page._cancel_button.isEnabled()
     assert "已取消" in page._status_label.text()
     page.shutdown()
 
@@ -197,6 +206,7 @@ def test_guards_and_misc(qtbot) -> None:
     page._on_node_clicked("model")
     page._on_node_double_clicked("model")
     page._on_node_context_menu("model", None)
+    page._on_background_context_menu(None)
     page._on_node_progress("model", 0.5, "消息")
     page._on_param_edited("model", "nx", 20)
     page._show_node_result("model")
@@ -209,8 +219,34 @@ def test_guards_and_misc(qtbot) -> None:
 
 
 @pytest.mark.gui
+def test_background_menu_build(qtbot) -> None:
+    """画布空白区上下文菜单：运行全部 / 全选参数."""
+    page = StudioPage()
+    qtbot.addWidget(page)
+    menu = page._build_background_menu()
+    assert [a.text() for a in menu.actions()] == ["运行全部", "全选参数"]
+    page.shutdown()
+
+
+@pytest.mark.gui
+def test_all_selected_shows_all_params(qtbot) -> None:
+    """全选信号联动：参数面板显示全部参数行."""
+    page = StudioPage()
+    qtbot.addWidget(page)
+    _select_template(page, "structural.cantilever_static")
+    page._on_node_clicked("model")  # 先单选收窄
+    page._on_all_selected()  # 模拟全选
+    visible = [
+        ref for _, rows in page._param_form._group_rows for ref, spin in rows if spin.isVisibleTo(page._param_form)
+    ]
+    total = sum(len(rows) for _, rows in page._param_form._group_rows)
+    assert len(visible) == total
+    page.shutdown()
+
+
+@pytest.mark.gui
 def test_template_switch_reverts_while_running(qtbot) -> None:
-    """运行中切换模板回退选择（图保持不变）."""
+    """运行中切换模板回退下拉选择（图保持不变）."""
     page = StudioPage()
     qtbot.addWidget(page)
     active = page._active_row
@@ -222,9 +258,9 @@ def test_template_switch_reverts_while_running(qtbot) -> None:
         running = True
 
     page._runner = _RunningStub()
-    target_row = (active + 1) % page._template_list.count()
-    page._template_list.setCurrentRow(target_row)  # 触发选择 -> 应被回退
-    assert page._template_list.currentRow() == active
+    target_row = (active + 1) % page._template_combo.count()
+    page._template_combo.setCurrentIndex(target_row)  # 触发选择 -> 应被回退
+    assert page._template_combo.currentIndex() == active
     assert page._graph.template.id == template_id
     page._runner = None
     page.shutdown()
@@ -267,10 +303,10 @@ def test_refresh_theme(qtbot) -> None:
 
 @pytest.mark.gui
 def test_save_template_as(qtbot, tmp_path) -> None:
-    """另存为模板：注册 + 写文件 + 列表新增并选中."""
+    """另存为模板：注册 + 写文件 + 下拉新增并选中."""
     page = StudioPage(data_dir=tmp_path)
     qtbot.addWidget(page)
-    before = page._template_list.count()
+    before = page._template_combo.count()
     _select_template(page, "structural.cantilever_static")
     page._graph.set_param("model", "nx", 12)
     template = page._save_template_as("我的悬臂梁")
@@ -278,7 +314,7 @@ def test_save_template_as(qtbot, tmp_path) -> None:
     assert template.id == "user.我的悬臂梁"
     assert template.node("model").params["nx"] == 12  # 当前参数已内嵌
     assert (tmp_path / "templates" / "user.我的悬臂梁.json").exists()
-    assert page._template_list.count() == before + 1
+    assert page._template_combo.count() == before + 1
     # 重名自动加后缀
     again = page._save_template_as("我的悬臂梁")
     assert again is not None and again.id == "user.我的悬臂梁_2"

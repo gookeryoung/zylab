@@ -1,11 +1,12 @@
-"""工作台页：模板库 + 竖向流式画布 + 参数表单 + 结果视图四区整合.
+"""工作台页：Workbench 风格三区整合（工具栏 + 系统画布/结果 + 参数表单 + 底部状态栏）.
 
-交互模型（对标 ANSYS Workbench 单元格语义）：
-- 模板库单击实例化模板 → 画布生成节点图，源节点即时在进程内建模预览；
-- 「运行全部」按拓扑序级联求解（UP_TO_DATE 节点命中缓存自动跳过）；
-- 单击节点查看其结果（模型线框/云图/曲线）；双击节点运行到该节点；
-- 右键节点：运行到此 / 强制重跑 / 查看结果；
-- 参数编辑即级联失效（画布徽标变为待运行），运行中表单禁用；
+交互模型（对标 ANSYS Workbench）：
+- 顶部工具栏：模板下拉选择 + 模板/工程操作图标按钮；
+- 中央系统画布：整个模板为一个组合框（标题栏点击或 Ctrl+A 全选），
+  环节单元单击显示其参数与结果，双击运行到该节点，右键菜单求解
+  （单元：运行到此 / 强制重跑 / 查看结果；空白：运行全部）；
+- 右侧参数表单：单击环节只显示该环节参数，全选显示全部参数；
+- 底部状态栏：状态文本 + 进度条 + 取消按钮（进度条右侧）；
 - 模板另存（用户模板存 data_dir/templates/*.json）、工程保存/打开（.zprj 内嵌模板+参数）。
 """
 
@@ -40,12 +41,10 @@ from zylab.studio import (
 from .. import theme
 from ..icons import nav_icon
 from ..qt_compat import (
+    QComboBox,
     QFrame,
-    QGroupBox,
     QHBoxLayout,
     QLabel,
-    QListWidget,
-    QListWidgetItem,
     QMenu,
     QObject,
     QProgressBar,
@@ -99,7 +98,7 @@ class StudioPage(QWidget):
     """分析工作台页（模板配置化多学科计算工具）."""
 
     def __init__(self, parent: QWidget | None = None, data_dir: Path | None = None) -> None:
-        """初始化工作台页：模板注册表（内置 + 用户目录 + 插件）+ 四区布局."""
+        """初始化工作台页：模板注册表（内置 + 用户目录 + 插件）+ Workbench 布局."""
         super().__init__(parent)
         self._data_dir = Path(data_dir) if data_dir is not None else default_data_dir()
         self._registry = TemplateRegistry.with_builtin()
@@ -112,16 +111,20 @@ class StudioPage(QWidget):
 
         self._build_ui()
         self._connect()
-        self._template_list.setCurrentRow(0)  # 触发首个模板实例化
+        # QComboBox 首项在 blockSignals 填充期间已置 currentIndex=0，
+        # 再 setCurrentIndex(0) 同值不发射信号，须显式实例化首个模板
+        self._on_template_selected(0)
 
     # ------------------------------------------------------------------ UI
 
     def _build_ui(self) -> None:
-        """组装三栏布局（模板库/画布+结果/参数表单）."""
-        splitter = QSplitter(Qt.Horizontal)
-        splitter.addWidget(self._build_library_panel())
-        splitter.setCollapsible(0, False)
+        """组装布局：顶部工具栏 + 中央画布/结果 + 右侧参数 + 底部状态栏."""
+        root = QVBoxLayout(self)
+        root.setContentsMargins(0, 0, 0, 0)
+        root.setSpacing(0)
+        root.addWidget(self._build_toolbar())
 
+        splitter = QSplitter(Qt.Horizontal)
         center = QSplitter(Qt.Vertical)
         self._canvas = NodeCanvasWidget()
         center.addWidget(self._canvas)
@@ -140,16 +143,57 @@ class StudioPage(QWidget):
         self._param_form = ParamForm()
         right.setWidget(self._param_form)
         splitter.addWidget(right)
-        splitter.setCollapsible(2, False)
+        splitter.setCollapsible(1, False)
 
-        splitter.setStretchFactor(0, 0)
-        splitter.setStretchFactor(1, 1)
-        splitter.setStretchFactor(2, 0)
-        splitter.setSizes([240, 760, 320])
+        splitter.setStretchFactor(0, 1)
+        splitter.setStretchFactor(1, 0)
+        splitter.setSizes([900, 320])
+        root.addWidget(splitter, stretch=1)
 
-        root = QVBoxLayout(self)
-        root.setContentsMargins(0, 0, 0, 0)
-        root.addWidget(splitter)
+        root.addWidget(self._build_bottom_bar())
+
+    def _build_toolbar(self) -> QWidget:
+        """顶部工具栏：模板下拉 + 模板/工程操作图标按钮."""
+        bar = QFrame(objectName="toolBar")
+        layout = QHBoxLayout(bar)
+        layout.setContentsMargins(theme.SPACING_MD, theme.SPACING_SM, theme.SPACING_MD, theme.SPACING_SM)
+        layout.setSpacing(theme.SPACING_SM)
+        layout.addWidget(QLabel("模板"))
+        self._template_combo = QComboBox(objectName="templateCombo")
+        self._template_combo.setMinimumWidth(240)
+        self._template_combo.setSizeAdjustPolicy(QComboBox.AdjustToContents)
+        self._reload_template_list()
+        layout.addWidget(self._template_combo, stretch=1)
+        layout.addStretch()
+
+        icon_size = QSize(16, 16)
+        self._save_template_button = self._tool_button("另存为模板")
+        self._save_project_button = self._tool_button("保存工程 (.zprj)")
+        self._open_project_button = self._tool_button("打开工程 (.zprj)")
+        self._refresh_tool_icons()
+        for btn in (self._save_template_button, self._save_project_button, self._open_project_button):
+            btn.setIconSize(icon_size)
+            layout.addWidget(btn)
+        return bar
+
+    def _build_bottom_bar(self) -> QWidget:
+        """底部状态栏：状态文本 + 进度条 + 取消按钮（进度条右侧）."""
+        bar = QFrame(objectName="bottomBar")
+        layout = QHBoxLayout(bar)
+        layout.setContentsMargins(theme.SPACING_MD, theme.SPACING_XS, theme.SPACING_MD, theme.SPACING_XS)
+        layout.setSpacing(theme.SPACING_SM)
+        self._status_label = QLabel("就绪", objectName="secondaryText")
+        self._status_label.setWordWrap(True)
+        layout.addWidget(self._status_label, stretch=1)
+        self._progress = QProgressBar()
+        self._progress.setRange(0, 100)
+        self._progress.setValue(0)
+        self._progress.setFixedWidth(220)
+        layout.addWidget(self._progress)
+        self._cancel_button = QPushButton("取消")
+        self._cancel_button.setEnabled(False)
+        layout.addWidget(self._cancel_button)
+        return bar
 
     @staticmethod
     def _tool_button(tooltip: str) -> QPushButton:
@@ -168,58 +212,9 @@ class StudioPage(QWidget):
         ):
             btn.setIcon(nav_icon(name, pal.text_on_primary))
 
-    def _build_library_panel(self) -> QWidget:
-        """左栏：模板库 + 模板/工程操作 + 运行控制."""
-        panel = QWidget()
-        panel.setMinimumWidth(220)
-        panel.setMaximumWidth(280)
-        layout = QVBoxLayout(panel)
-        layout.setContentsMargins(theme.SPACING_MD, theme.SPACING_MD, theme.SPACING_MD, theme.SPACING_MD)
-        layout.setSpacing(theme.SPACING_MD)
-
-        lib_box = QGroupBox("模板库")
-        lib_layout = QVBoxLayout(lib_box)
-        self._template_list = QListWidget(objectName="templateList")
-        self._reload_template_list()
-        lib_layout.addWidget(self._template_list, stretch=1)
-        tools = QHBoxLayout()
-        tools.setSpacing(theme.SPACING_XS)
-        icon_size = QSize(16, 16)
-        self._save_template_button = self._tool_button("另存为模板")
-        self._save_project_button = self._tool_button("保存工程 (.zprj)")
-        self._open_project_button = self._tool_button("打开工程 (.zprj)")
-        self._refresh_tool_icons()
-        self._save_template_button.setIconSize(icon_size)
-        self._save_project_button.setIconSize(icon_size)
-        self._open_project_button.setIconSize(icon_size)
-        tools.addWidget(self._save_template_button)
-        tools.addWidget(self._save_project_button)
-        tools.addWidget(self._open_project_button)
-        lib_layout.addLayout(tools)
-        layout.addWidget(lib_box, stretch=1)
-
-        run_box = QGroupBox("运行")
-        run_layout = QVBoxLayout(run_box)
-        run_layout.setSpacing(theme.SPACING_SM)
-        self._run_all_button = QPushButton("运行全部")
-        self._run_all_button.setMinimumHeight(36)
-        self._cancel_button = QPushButton("取消")
-        self._cancel_button.setEnabled(False)
-        self._progress = QProgressBar()
-        self._progress.setRange(0, 100)
-        self._status_label = QLabel("就绪", objectName="secondaryText")
-        self._status_label.setWordWrap(True)
-        run_layout.addWidget(self._run_all_button)
-        run_layout.addWidget(self._cancel_button)
-        run_layout.addWidget(self._progress)
-        run_layout.addWidget(self._status_label)
-        layout.addWidget(run_box)
-        return panel
-
     def _connect(self) -> None:
         """连接信号槽."""
-        self._template_list.currentRowChanged.connect(self._on_template_selected)
-        self._run_all_button.clicked.connect(self._on_run_all)
+        self._template_combo.currentIndexChanged.connect(self._on_template_selected)
         self._cancel_button.clicked.connect(self._on_cancel)
         self._save_template_button.clicked.connect(self._on_save_template_as)
         self._save_project_button.clicked.connect(self._on_save_project)
@@ -227,6 +222,8 @@ class StudioPage(QWidget):
         self._canvas.node_clicked.connect(self._on_node_clicked)
         self._canvas.node_double_clicked.connect(self._on_node_double_clicked)
         self._canvas.node_context_menu.connect(self._on_node_context_menu)
+        self._canvas.background_context_menu.connect(self._on_background_context_menu)
+        self._canvas.all_selected.connect(self._on_all_selected)
         self._param_form.param_edited.connect(self._on_param_edited)
         self._bridge.node_started.connect(self._on_node_started)
         self._bridge.node_progress.connect(self._on_node_progress)
@@ -234,20 +231,21 @@ class StudioPage(QWidget):
         self._bridge.node_failed.connect(self._on_node_failed)
 
     def _reload_template_list(self, select_id: str | None = None) -> None:
-        """重建模板列表（注册表变化后）；select_id 非空时选中并触发实例化."""
-        self._template_list.blockSignals(True)
-        self._template_list.clear()
+        """重建模板下拉（注册表变化后）；select_id 非空时选中并触发实例化."""
+        self._template_combo.blockSignals(True)
+        self._template_combo.clear()
         for template in self._registry.list():
-            item = QListWidgetItem(template.name)
-            item.setData(Qt.UserRole, template.id)
-            item.setToolTip(template.description)
-            self._template_list.addItem(item)
-        self._template_list.blockSignals(False)
+            self._template_combo.addItem(template.name, template.id)
+            self._template_combo.setItemData(self._template_combo.count() - 1, template.description, Qt.ToolTipRole)
+        self._template_combo.blockSignals(False)
         if select_id is not None:
-            for row in range(self._template_list.count()):
-                if self._template_list.item(row).data(Qt.UserRole) == select_id:
-                    self._template_list.setCurrentRow(row)
-                    return
+            index = self._template_combo.findData(select_id)
+            if index >= 0:
+                # 同值 setCurrentIndex 不发射信号，blockSignals 后显式触发
+                self._template_combo.blockSignals(True)
+                self._template_combo.setCurrentIndex(index)
+                self._template_combo.blockSignals(False)
+                self._on_template_selected(index)
 
     # ------------------------------------------------------------------ 模板实例化
 
@@ -256,13 +254,13 @@ class StudioPage(QWidget):
         if row < 0:
             return
         if self._runner is not None and self._runner.running:
-            # 运行中禁止切换模板：回退列表选择
-            self._template_list.blockSignals(True)
-            self._template_list.setCurrentRow(self._active_row)
-            self._template_list.blockSignals(False)
+            # 运行中禁止切换模板：回退下拉选择
+            self._template_combo.blockSignals(True)
+            self._template_combo.setCurrentIndex(self._active_row)
+            self._template_combo.blockSignals(False)
             return
         self._active_row = row
-        template = self._registry.get(self._template_list.item(row).data(Qt.UserRole))
+        template = self._registry.get(self._template_combo.itemData(row))
         self._instantiate(template)
 
     def _instantiate(self, template: Template) -> None:
@@ -271,7 +269,7 @@ class StudioPage(QWidget):
         self._graph = WorkflowGraph(template)
         self._canvas.set_graph(self._graph)
         self._param_form.set_graph(self._graph, template.param_groups)
-        self._result_view.clear("尚未求解 —— 点击「运行全部」开始")
+        self._result_view.clear("尚未求解 —— 右键画布选择「运行全部」开始")
         self._status_label.setText(template.description or template.name)
         self._progress.setValue(0)
         self._preview_sources()
@@ -381,7 +379,7 @@ class StudioPage(QWidget):
     # ------------------------------------------------------------------ 运行控制
 
     def _on_run_all(self) -> None:
-        """运行全部过期节点."""
+        """运行全部过期节点（右键画布空白「运行全部」入口）."""
         if self._graph is None:
             return
         self._runner = WorkflowRunner(self._graph)  # 每次运行自建，避免执行器复用状态
@@ -405,9 +403,9 @@ class StudioPage(QWidget):
         self._runner.run_node(node_id, self._bridge.dispatch)
 
     def _set_running_ui(self, running: bool) -> None:
-        """运行态 UI 切换（按钮/表单禁用）."""
-        self._run_all_button.setEnabled(not running)
+        """运行态 UI 切换（取消按钮/模板下拉/表单禁用）."""
         self._cancel_button.setEnabled(running)
+        self._template_combo.setEnabled(not running)
         self._param_form.set_fields_enabled(not running)
         if running:
             self._status_label.setText("运行中…")
@@ -449,8 +447,13 @@ class StudioPage(QWidget):
     # ------------------------------------------------------------------ 节点交互
 
     def _on_node_clicked(self, node_id: str) -> None:
-        """单击选中：已完成的节点显示其结果."""
+        """单击选中：参数面板只显示该环节参数；已完成的节点同时显示其结果."""
+        self._param_form.show_node(node_id)
         self._show_node_result(node_id)
+
+    def _on_all_selected(self) -> None:
+        """全选（Ctrl+A / 组合框标题栏）：参数面板显示全部参数."""
+        self._param_form.show_all()
 
     def _on_node_double_clicked(self, node_id: str) -> None:
         """双击：已有结果查看结果，否则运行到该节点."""
@@ -462,7 +465,7 @@ class StudioPage(QWidget):
             self._run_node(node_id)
 
     def _build_node_menu(self, node_id: str) -> QMenu:
-        """构建节点上下文菜单（查看结果仅已完成时可用）."""
+        """构建单元上下文菜单（查看结果仅已完成时可用）."""
         node = self._graph.node(node_id)
         menu = QMenu(self)
         menu.addAction("运行到此节点")
@@ -471,8 +474,15 @@ class StudioPage(QWidget):
         action_view.setEnabled(node.state is NodeState.UP_TO_DATE)
         return menu
 
+    def _build_background_menu(self) -> QMenu:
+        """构建画布空白区上下文菜单（求解入口）."""
+        menu = QMenu(self)
+        menu.addAction("运行全部")
+        menu.addAction("全选参数")
+        return menu
+
     def _on_node_context_menu(self, node_id: str, global_pos) -> None:
-        """右键菜单：运行到此 / 强制重跑 / 查看结果."""
+        """右键单元：运行到此 / 强制重跑 / 查看结果."""
         if self._graph is None:
             return
         menu = self._build_node_menu(node_id)
@@ -487,6 +497,19 @@ class StudioPage(QWidget):
             self._run_node(node_id)
         elif chosen.text() == "查看结果":
             self._show_node_result(node_id)
+
+    def _on_background_context_menu(self, global_pos) -> None:
+        """右键画布空白：运行全部 / 全选参数."""
+        if self._graph is None:
+            return
+        menu = self._build_background_menu()
+        chosen = menu.exec(global_pos)
+        if chosen is None:
+            return
+        if chosen.text() == "运行全部":
+            self._on_run_all()
+        elif chosen.text() == "全选参数":
+            self._canvas.select_all()  # 经 all_selected 信号联动参数面板
 
     def _show_node_result(self, node_id: str) -> None:
         """在结果视图呈现节点输出（模型线框 / 分析解）."""

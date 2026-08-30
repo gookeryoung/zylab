@@ -32,16 +32,19 @@ class ParamForm(QWidget):
         """初始化空表单."""
         super().__init__(parent)
         self._layout = QVBoxLayout(self)
-        # 四周留出 MD 边距，避免分组框直贴滚动区/窗口右缘（与左栏模板库面板内边距一致）
+        # 四周留出 MD 边距，避免分组框直贴滚动区/窗口右缘（与工具栏面板内边距一致）
         self._layout.setContentsMargins(theme.SPACING_MD, theme.SPACING_MD, theme.SPACING_MD, theme.SPACING_MD)
         self._layout.setSpacing(theme.SPACING_SM)
         self._fields: dict[tuple[str, str], QDoubleSpinBox] = {}
         self._graph: WorkflowGraph | None = None
+        # 分组行表：(QGroupBox, 该组内行引用列表 [("node_id.key", spin)])，用于按选中节点过滤
+        self._group_rows: list[tuple[QGroupBox, list[tuple[str, QDoubleSpinBox]]]] = []
 
     def set_graph(self, graph: WorkflowGraph, groups: tuple[ParamGroup, ...]) -> None:
-        """按图与分组重建表单（清空旧控件）."""
+        """按图与分组重建表单（清空旧控件），默认显示全部参数."""
         self._graph = graph
         self._fields.clear()
+        self._group_rows.clear()
         while self._layout.count():
             item = self._layout.takeAt(0)
             widget = item.widget()
@@ -59,14 +62,18 @@ class ParamForm(QWidget):
             form = QFormLayout(box)
             form.setSpacing(theme.SPACING_SM)
             form.setFieldGrowthPolicy(QFormLayout.AllNonFixedFieldsGrow)
+            rows: list[tuple[str, QDoubleSpinBox]] = []
             for ref in group.params:
                 node_id, _, key = ref.partition(".")
-                self._add_row(form, graph, node_id, key)
+                spin = self._add_row(form, graph, node_id, key)
+                rows.append((ref, spin))
+            self._group_rows.append((box, rows))
             self._layout.addWidget(box)
         self._layout.addStretch()
+        self.show_all()
 
-    def _add_row(self, form: QFormLayout, graph: WorkflowGraph, node_id: str, key: str) -> None:
-        """添加单个参数行（单位入框内后缀，tooltip 含说明与取值范围）."""
+    def _add_row(self, form: QFormLayout, graph: WorkflowGraph, node_id: str, key: str) -> QDoubleSpinBox:
+        """添加单个参数行并返回输入框（单位入框内后缀，tooltip 含说明与取值范围）."""
         node = graph.node(node_id)
         spec = node.spec.param(key)
         spin = self._make_spin(spec)
@@ -78,6 +85,34 @@ class ParamForm(QWidget):
         spin.setToolTip(f"{node.name} · {spec.label}\n{spec.doc}\n范围 [{spec.minimum}, {spec.maximum}]".strip())
         form.addRow(spec.label, spin)
         self._fields[(node_id, key)] = spin
+        return spin
+
+    # ------------------------------------------------------------------ 选择过滤
+
+    def show_node(self, node_id: str) -> None:
+        """仅显示指定节点的参数行（Workbench 单选环节语义）.
+
+        隐藏行经 label + 输入框 setVisible(False)（QFormLayout 自动跳过
+        隐藏行）；全部行被过滤掉的分组整体隐藏。
+        """
+        self._filter_rows(lambda ref: ref.partition(".")[0] == node_id)
+
+    def show_all(self) -> None:
+        """显示全部参数行（全选语义，set_graph 后的默认态）."""
+        self._filter_rows(lambda _ref: True)
+
+    def _filter_rows(self, predicate) -> None:
+        """按谓词过滤行可见性：行引用 "node_id.key" 命中谓词才显示."""
+        for box, rows in self._group_rows:
+            any_visible = False
+            for ref, spin in rows:
+                visible = predicate(ref)
+                any_visible = any_visible or visible
+                spin.setVisible(visible)
+                label = spin.parentWidget().layout().labelForField(spin) if spin.parentWidget() else None
+                if label is not None:
+                    label.setVisible(visible)
+            box.setVisible(any_visible)
 
     @staticmethod
     def _make_spin(spec: ParamSpec) -> QDoubleSpinBox:

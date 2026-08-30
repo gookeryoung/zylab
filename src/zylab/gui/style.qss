@@ -164,10 +164,22 @@ QPushButton#flatBtn:hover {
 }
 QPushButton#flatBtn:disabled { color: ${QSS_TEXT_DISABLED}; }
 
-/* 工具行紧凑按钮（图标 + 短文字） */
+/* 工具行紧凑按钮（纯图标 + tooltip） */
 QPushButton#toolBtn {
     padding: 4px 10px;
     min-height: 0;
+}
+
+/* 工作台顶部工具栏与底部状态栏（与内容区以边框分隔） */
+QFrame#toolBar {
+    background-color: ${QSS_BG_APP};
+    border: none;
+    border-bottom: 1px solid ${QSS_BORDER};
+}
+QFrame#bottomBar {
+    background-color: ${QSS_BG_APP};
+    border: none;
+    border-top: 1px solid ${QSS_BORDER};
 }
 
 /* ------------------------------------------------ 输入控件 */

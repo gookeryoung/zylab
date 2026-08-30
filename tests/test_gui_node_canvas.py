@@ -5,9 +5,9 @@ from __future__ import annotations
 import pytest
 
 from zylab.gui import qt_compat
-from zylab.gui.qt_compat import QContextMenuEvent, QEvent, QMouseEvent, QPointF, Qt
+from zylab.gui.qt_compat import QContextMenuEvent, QEvent, QKeyEvent, QMouseEvent, QPointF, Qt
 from zylab.gui.widgets.node_canvas import NodeCanvasWidget
-from zylab.studio import Template, WorkflowGraph
+from zylab.studio import NodeState, Template, WorkflowGraph
 
 
 def _dbl_click_event(pos, widget=None) -> QMouseEvent:
@@ -57,19 +57,33 @@ def _canvas_with_graph(qtbot) -> tuple[NodeCanvasWidget, WorkflowGraph]:
 
 @pytest.mark.gui
 def test_canvas_builds_cards_and_edges(qtbot) -> None:
-    """组合图装配：3 卡片 + 2 连接线；分层布局 model 在上、static/modal 同层并列."""
+    """组合图装配：3 单元 + 2 连接线 + 1 组合框；横向分层布局 model 在左、static/modal 同列并列."""
     canvas, _graph = _canvas_with_graph(qtbot)
     items = canvas._scene.items()
     cards = [item for item in items if hasattr(item, "node_id")]
     assert len(cards) == 3
-    assert len(items) - len(cards) == 2  # 两条连接线
+    assert len(items) - len(cards) == 3  # 两条连接线 + 一个组合框
     model_rect = canvas.card_rect("model")
     static_rect = canvas.card_rect("static")
     modal_rect = canvas.card_rect("modal")
     assert model_rect is not None and static_rect is not None and modal_rect is not None
-    assert model_rect.top() < static_rect.top()  # model 在上层
-    assert static_rect.top() == modal_rect.top()  # 同层
-    assert static_rect.left() != modal_rect.left()  # 并列
+    assert model_rect.left() < static_rect.left()  # model 在左（0 层）
+    assert static_rect.left() == modal_rect.left()  # 同层同列
+    assert static_rect.top() != modal_rect.top()  # 并列纵向堆叠
+    # 组合框覆盖全部单元
+    frame = canvas.frame_rect()
+    assert frame is not None and frame.contains(model_rect) and frame.contains(modal_rect)
+
+
+@pytest.mark.gui
+def test_state_badge_mapping(qtbot) -> None:
+    """检查徽标映射：问号=待连接、红叉=失败、绿对勾=就绪/已完成."""
+    from zylab.gui.widgets.node_canvas import _state_badge
+
+    assert _state_badge(NodeState.UNFULFILLED)[0] == "question"
+    assert _state_badge(NodeState.FAILED)[0] == "cross"
+    assert _state_badge(NodeState.READY)[0] == "check"
+    assert _state_badge(NodeState.UP_TO_DATE)[0] == "check"
 
 
 @pytest.mark.gui
@@ -192,7 +206,7 @@ def test_paint_all_states(qtbot) -> None:
 
 @pytest.mark.gui
 def test_set_graph_rebuilds_scene(qtbot) -> None:
-    """重复装配：旧卡片清除，新图生效."""
+    """重复装配：旧单元清除，新图生效."""
     canvas, _graph = _canvas_with_graph(qtbot)
     assert canvas.card_rect("modal") is not None
     single = WorkflowGraph(
@@ -211,3 +225,58 @@ def test_set_graph_rebuilds_scene(qtbot) -> None:
     assert canvas.card_rect("modal") is None
     assert canvas.card_rect("solve") is not None
     assert canvas.selected_node_id == ""
+
+
+@pytest.mark.gui
+def test_select_all_programmatic_and_signal(qtbot) -> None:
+    """程序化全选：全部单元高亮 + 标题栏高亮 + 发 all_selected 信号."""
+    canvas, _graph = _canvas_with_graph(qtbot)
+    received: list[bool] = []
+    canvas.all_selected.connect(lambda: received.append(True))
+    canvas.select_all()
+    assert received == [True]
+    assert canvas.selected_all
+    assert canvas.selected_node_id == ""
+    assert all(card.selected for card in canvas._cards.values())
+    assert canvas._frame.selected_all
+    # 单选节点后退出全选态
+    canvas.select_node("model")
+    assert not canvas.selected_all
+    assert canvas._cards["model"].selected
+    assert not canvas._cards["static"].selected
+
+
+@pytest.mark.gui
+def test_ctrl_a_selects_all(qtbot) -> None:
+    """Ctrl+A 触发全选."""
+    canvas, _graph = _canvas_with_graph(qtbot)
+    event = QKeyEvent(QEvent.KeyPress, Qt.Key_A, Qt.ControlModifier)
+    canvas.keyPressEvent(event)
+    assert canvas.selected_all
+
+
+@pytest.mark.gui
+def test_click_header_selects_all(qtbot) -> None:
+    """点击组合框标题栏触发全选（发信号）."""
+    canvas, _graph = _canvas_with_graph(qtbot)
+    received: list[bool] = []
+    canvas.all_selected.connect(lambda: received.append(True))
+    header_center = QPointF(canvas._frame.header_rect().center())
+    pos = canvas.mapFromScene(header_center)
+    qtbot.mouseClick(canvas.viewport(), Qt.LeftButton, pos=pos)
+    assert received == [True]
+    assert canvas.selected_all
+
+
+@pytest.mark.gui
+def test_background_context_menu_emits(qtbot) -> None:
+    """右键空白区域发 background_context_menu 信号（全局坐标）."""
+    canvas, _graph = _canvas_with_graph(qtbot)
+    received: list[object] = []
+    canvas.background_context_menu.connect(received.append)
+    # 场景右下角空白（组合框外）
+    pos = canvas.mapFromScene(canvas.sceneRect().bottomRight() - QPointF(2.0, 2.0))
+    global_pos = canvas.viewport().mapToGlobal(pos)
+    event = QContextMenuEvent(QContextMenuEvent.Mouse, pos, global_pos)
+    canvas.contextMenuEvent(event)
+    assert len(received) == 1
