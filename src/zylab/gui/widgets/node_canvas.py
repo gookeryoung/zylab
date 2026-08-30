@@ -5,7 +5,9 @@
   排列（层 = 最长上游链深度），同层分支纵向堆叠；
 - 检查徽标（单元右侧）：问号 = 输入未连接（数据未提供）、红叉 = 检查失败
   （运行出错）、绿对勾 = 参数已就绪/已完成，运行中为旋转动画；
-- 连接线为单元右边中点到下游单元左边中点的肘形折线（带箭头）；
+- 连接线为单元右边中点到下游单元左边中点的肘形折线（拐角圆角），
+  线条与箭头分开绘制（避免同路径填充互相污染）；下游单元运行中时
+  连线变主色并叠加流动虚线（数据传输动画）；
 - 交互：单击选中单元、双击运行、右键菜单（单元/空白）、Ctrl+A 或点击
   标题栏全选（参数面板显示全部参数）。
 """
@@ -21,7 +23,6 @@ from ..qt_compat import (
     QColor,
     QFont,
     QGraphicsItem,
-    QGraphicsPathItem,
     QGraphicsScene,
     QGraphicsView,
     QKeyEvent,
@@ -47,6 +48,11 @@ _HEADER_H = 34.0  # 标题栏高度
 _FRAME_PAD = 12.0  # 组合框外框与单元区间距
 _BADGE = 20  # 检查徽标边长（像素）
 _SPIN_STEP_DEG = 12  # 每帧旋转角度（33ms 定时器 ≈ 360°/s）
+_ARROW_LEN = 9.0  # 箭头长度（像素）
+_ARROW_HALF = 4.5  # 箭头半宽（像素）
+_RADIUS = 8.0  # 肘形折线拐角圆角半径
+_FLOW_STEP = 0.8  # 流动虚线每帧相位推进（像素，虚线周期 8）
+_FLOW_DASH = (3.0, 5.0)  # 流动虚线（段长, 间隔）
 
 _STATE_LABELS = {
     NodeState.UNFULFILLED: "待连接",
@@ -82,6 +88,12 @@ def _state_color(state: NodeState) -> QColor:
         NodeState.FAILED: pal.danger_text,
     }[state]
     return QColor(color)
+
+
+def _quad_to(path: QPainterPath, ctrl: QPointF, end: QPointF) -> None:
+    """二次贝塞尔拐角（PySide6 为 quadraticTo，PySide2 为 quadTo）."""
+    method = getattr(path, "quadraticTo", None) or path.quadTo  # type: ignore[attr-defined]
+    method(ctrl, end)
 
 
 def _layers(graph: WorkflowGraph) -> dict[str, int]:
@@ -218,6 +230,90 @@ class _NodeCard(QGraphicsItem):
                 painter.drawPixmap(int(bx), int(by), pixmap)
 
 
+class _EdgeItem(QGraphicsItem):
+    """连接线图元：肘形圆角折线（stroke）+ 终点实心箭头（fill，独立路径）.
+
+    下游单元运行中时 ``set_flowing(True)``：连线转主色并叠加流动虚线
+    （dashOffset 随定时器推进，视觉上向下游流动，表示数据传输）。
+    """
+
+    def __init__(self, src_xy: tuple[float, float], dst_xy: tuple[float, float]) -> None:
+        """初始化连线（src/dst 为单元左上角场景坐标）."""
+        super().__init__()
+        self._flowing = False
+        self._phase = 0.0
+        x1 = src_xy[0] + _CELL_W  # 源单元右边
+        y1 = src_xy[1] + _CELL_H / 2.0
+        x2 = dst_xy[0]  # 目标单元左边
+        y2 = dst_xy[1] + _CELL_H / 2.0
+
+        # 折线（止于箭头底部，避免线穿过箭头）；拐角用二次贝塞尔圆角
+        base_x = x2 - _ARROW_LEN
+        self._line = QPainterPath()
+        self._line.moveTo(x1, y1)
+        if abs(y2 - y1) < 0.5:
+            self._line.lineTo(base_x, y1)
+        else:
+            mid_x = (x1 + base_x) / 2.0
+            sign = 1.0 if y2 > y1 else -1.0
+            r = min(_RADIUS, (base_x - x1) / 2.0, abs(y2 - y1) / 2.0)
+            self._line.lineTo(mid_x - r, y1)
+            _quad_to(self._line, QPointF(mid_x, y1), QPointF(mid_x, y1 + sign * r))
+            self._line.lineTo(mid_x, y2 - sign * r)
+            _quad_to(self._line, QPointF(mid_x, y2), QPointF(mid_x + r, y2))
+            self._line.lineTo(base_x, y2)
+
+        # 箭头（实心三角，独立路径：与折线分开绘制避免填充互相污染）
+        self._arrow = QPainterPath()
+        self._arrow.moveTo(base_x, y2 - _ARROW_HALF)
+        self._arrow.lineTo(x2, y2)
+        self._arrow.lineTo(base_x, y2 + _ARROW_HALF)
+        self._arrow.closeSubpath()
+
+        self._bounds = self._line.boundingRect().united(self._arrow.boundingRect()).adjusted(-2.0, -2.0, 2.0, 2.0)
+        self.setZValue(-0.5)  # 单元之下、组合框之上
+
+    @property
+    def flowing(self) -> bool:
+        """是否处于数据流动动画态."""
+        return self._flowing
+
+    def set_flowing(self, flowing: bool) -> None:
+        """切换数据流动动画态（下游单元运行中）."""
+        if self._flowing != flowing:
+            self._flowing = flowing
+            self._phase = 0.0
+            self.update()
+
+    def advance(self) -> None:
+        """推进流动相位（定时器驱动，虚线沿连线向下游移动）."""
+        self._phase = (self._phase + _FLOW_STEP) % sum(_FLOW_DASH)
+        self.update()
+
+    def boundingRect(self) -> QRectF:  # Qt 命名约定
+        """包围盒（折线 + 箭头 + 笔宽余量）."""
+        return self._bounds
+
+    def paint(self, painter: QPainter, option, widget=None) -> None:  # Qt 命名约定
+        """绘制连线：基线（+ 流动态叠加虚线）与箭头."""
+        del option, widget
+        pal = theme.current_palette()
+        color = QColor(pal.primary if self._flowing else pal.border_strong)
+        painter.setBrush(Qt.NoBrush)
+        painter.setPen(QPen(color, 1.5))
+        painter.drawPath(self._line)
+        if self._flowing:
+            # 流动虚线：dashOffset 负向推进 -> 视觉沿路径正向流动
+            pen = QPen(QColor(pal.primary), 2.0)
+            pen.setDashPattern(list(_FLOW_DASH))
+            pen.setDashOffset(-self._phase)
+            painter.setPen(pen)
+            painter.drawPath(self._line)
+        painter.setPen(Qt.NoPen)
+        painter.setBrush(QBrush(color))
+        painter.drawPath(self._arrow)
+
+
 class NodeCanvasWidget(QGraphicsView):
     """Workbench 风格系统画布."""
 
@@ -241,6 +337,7 @@ class NodeCanvasWidget(QGraphicsView):
         self.setAlignment(Qt.AlignHCenter | Qt.AlignTop)
         self.setDragMode(QGraphicsView.NoDrag)
         self._cards: dict[str, _NodeCard] = {}
+        self._edges: list[tuple[_EdgeItem, str]] = []  # (连线, 下游节点 id)
         self._frame: _SystemFrame | None = None
         self._graph: WorkflowGraph | None = None
         self._selected_id = ""
@@ -257,6 +354,7 @@ class NodeCanvasWidget(QGraphicsView):
         self._timer.stop()
         self._scene.clear()
         self._cards.clear()
+        self._edges = []
         self._frame = None
         self._selected_id = ""
         self._selected_all = False
@@ -287,7 +385,7 @@ class NodeCanvasWidget(QGraphicsView):
         # 连接线（置于单元下层）
         for node in graph.nodes():
             for ref in node.inputs.values():
-                self._add_edge(positions[ref.partition(".")[0]], positions[node.id])
+                self._add_edge(positions[ref.partition(".")[0]], positions[node.id], node.id)
 
         for node in graph.nodes():
             x, y = positions[node.id]
@@ -299,35 +397,16 @@ class NodeCanvasWidget(QGraphicsView):
         self._scene.setSceneRect(scene_rect)
         self.refresh_states()
 
-    def _add_edge(self, src_xy: tuple[float, float], dst_xy: tuple[float, float]) -> None:
-        """添加肘形连接线（水平-垂直-水平，源右边中点 -> 目标左边中点，带箭头）."""
-        x1 = src_xy[0] + _CELL_W
-        y1 = src_xy[1] + _CELL_H / 2.0
-        x2 = dst_xy[0]
-        y2 = dst_xy[1] + _CELL_H / 2.0
-        path = QPainterPath()
-        path.moveTo(x1, y1)
-        if abs(y2 - y1) < 0.5:
-            path.lineTo(x2 - 8, y1)
-        else:
-            mid_x = (x1 + x2) / 2.0
-            path.lineTo(mid_x, y1)
-            path.lineTo(mid_x, y2)
-            path.lineTo(x2 - 8, y2)
-        # 箭头小三角
-        path.lineTo(x2 - 8, y2 - 4)
-        path.lineTo(x2, y2)
-        path.lineTo(x2 - 8, y2 + 4)
-        path.closeSubpath()
-        item = QGraphicsPathItem(path)
-        item.setPen(QPen(QColor(theme.current_palette().border_strong), 1.5))
-        item.setBrush(QBrush(QColor(theme.current_palette().border_strong)))
-        self._scene.addItem(item)
+    def _add_edge(self, src_xy: tuple[float, float], dst_xy: tuple[float, float], dst_id: str) -> None:
+        """添加连接线图元（肘形圆角折线 + 箭头，目标运行中时流动）."""
+        edge = _EdgeItem(src_xy, dst_xy)
+        self._scene.addItem(edge)
+        self._edges.append((edge, dst_id))
 
     # ------------------------------------------------------------------ 状态刷新
 
     def refresh_states(self) -> None:
-        """从图同步全部单元状态；有运行中节点时启动旋转动画."""
+        """从图同步全部单元与连线状态；有运行中节点时启动动画定时器."""
         if self._graph is None:
             return
         any_running = False
@@ -337,6 +416,10 @@ class NodeCanvasWidget(QGraphicsView):
                 continue
             card.refresh(node.state, self._detail_of(node))
             any_running = any_running or node.state is NodeState.RUNNING
+        # 下游单元运行中 -> 连线进入流动态（数据传输动画）
+        for edge, dst_id in self._edges:
+            node = self._graph.node(dst_id)
+            edge.set_flowing(node.state is NodeState.RUNNING)
         if any_running and not self._timer.isActive():
             self._timer.start()
         elif not any_running and self._timer.isActive():
@@ -353,7 +436,7 @@ class NodeCanvasWidget(QGraphicsView):
         return label
 
     def _advance_spinner(self) -> None:
-        """推进运行中单元的旋转角并重绘."""
+        """推进运行中单元的旋转角与流动连线的虚线相位."""
         if self._graph is None:
             self._timer.stop()
             return
@@ -363,6 +446,9 @@ class NodeCanvasWidget(QGraphicsView):
                 if card is not None:
                     card.spin_angle = (card.spin_angle + _SPIN_STEP_DEG) % 360
                     card.update()
+        for edge, _dst_id in self._edges:
+            if edge.flowing:
+                edge.advance()
 
     def refresh_theme(self) -> None:
         """主题切换后重刷背景与单元（连线颜色随主题，整体重建）."""

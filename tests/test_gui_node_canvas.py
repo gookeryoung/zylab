@@ -6,7 +6,7 @@ import pytest
 
 from zylab.gui import qt_compat
 from zylab.gui.qt_compat import QContextMenuEvent, QEvent, QKeyEvent, QMouseEvent, QPointF, Qt
-from zylab.gui.widgets.node_canvas import NodeCanvasWidget
+from zylab.gui.widgets.node_canvas import _ARROW_LEN, NodeCanvasWidget
 from zylab.studio import NodeState, Template, WorkflowGraph
 
 
@@ -73,6 +73,44 @@ def test_canvas_builds_cards_and_edges(qtbot) -> None:
     # 组合框覆盖全部单元
     frame = canvas.frame_rect()
     assert frame is not None and frame.contains(model_rect) and frame.contains(modal_rect)
+
+
+@pytest.mark.gui
+def test_edge_geometry_arrow_separate(qtbot) -> None:
+    """连线几何：折线止于箭头底部（不穿过）、箭头为独立闭合三角、拐角圆角."""
+    canvas, _graph = _canvas_with_graph(qtbot)
+    for edge, dst_id in canvas._edges:
+        assert dst_id in ("static", "modal")
+        line_rect = edge._line.boundingRect()
+        arrow_rect = edge._arrow.boundingRect()
+        # 箭头右端即目标单元左边（贴合），折线右端止于箭头底部（不重叠穿越）
+        assert arrow_rect.right() <= line_rect.right() + _ARROW_LEN + 1.0
+        assert canvas.card_rect(dst_id).left() - arrow_rect.right() < 1.0  # 箭头贴目标
+    # 跨行边为肘形折线（多段 + 圆角曲线元素），同行边为两段直线
+    element_counts = [edge._line.elementCount() for edge, _dst in canvas._edges]
+    assert min(element_counts) == 2  # model->static 同高直线
+    assert max(element_counts) > 3  # model->modal 肘形圆角
+    # 箭头路径闭合且面积非零（实心三角）
+    arrow = canvas._edges[0][0]._arrow
+    assert arrow.elementCount() == 4  # 三点 + closeSubpath
+    assert arrow.boundingRect().width() == pytest.approx(_ARROW_LEN)
+
+
+@pytest.mark.gui
+def test_edge_flow_animation(qtbot) -> None:
+    """连线流动动画：下游运行中时进入流动态，相位随定时器推进；结束回落."""
+    canvas, graph = _canvas_with_graph(qtbot)
+    model_to_static = next(e for e, dst in canvas._edges if dst == "static")
+    assert not model_to_static.flowing
+    graph.mark_running("static")
+    canvas.refresh_states()
+    assert model_to_static.flowing
+    phase0 = model_to_static._phase
+    canvas._advance_spinner()
+    assert model_to_static._phase > phase0  # 相位推进（虚线流动）
+    graph.mark_result("static", result=object(), elapsed=0.1)
+    canvas.refresh_states()
+    assert not model_to_static.flowing
 
 
 @pytest.mark.gui
