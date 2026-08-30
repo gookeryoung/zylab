@@ -244,7 +244,9 @@ class ResultView(QWidget):
         self._plot.addLegend(offset=(12, 12))
         self._plot_row = QWidget()
         plot_layout = QHBoxLayout(self._plot_row)
-        plot_layout.setContentsMargins(0, 0, 0, 0)
+        # 绘图行外边距：云图与周边控件/页边保留呼吸空间（原零边距贴边过近）
+        margin = theme.SPACING_SM
+        plot_layout.setContentsMargins(margin, margin, margin, margin)
         plot_layout.setSpacing(theme.SPACING_SM)
         self._colorbar = ColorBarWidget()
         plot_layout.addWidget(self._colorbar)  # 标尺居左（Workbench 布局习惯）
