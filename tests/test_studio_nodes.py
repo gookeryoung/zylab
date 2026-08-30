@@ -103,6 +103,42 @@ class TestBuildSources:
         assert restored.electric_case == bundle.electric_case
         assert restored.thermal_case == bundle.thermal_case
 
+    def test_joule_series_structure(self) -> None:
+        """多材料串联板：三区多块网格（电极/电阻区/电极），材料索引 0/1/0."""
+        bundle = nodes.build_joule_series({}, {"nx": 10, "ny": 2, "electrode_len": 3.0})
+        mesh = bundle.mesh
+        assert mesh.n_nodes == 11 * 3
+        assert mesh.n_elements == 20
+        assert len(mesh.blocks) == 3
+        # dx = 30/10 = 3 → 电极段恰 1 单元宽：左 2、中 8、右 2 每行
+        counts = [block.conn.shape[0] for block in mesh.blocks]
+        assert counts == [2, 16, 2]
+        # 材料索引：电极区引用 0，电阻区引用 1
+        assert [block.material for block in mesh.blocks] == [0, 1, 0]
+        # 三区单元数合计覆盖全域无重叠（节点 DOF 装配不漏）
+        assert sum(counts) == mesh.n_elements
+        bundle.electric_case.validate(mesh)
+        bundle.thermal_case.validate(mesh)
+        assert bundle.materials[0].electric_sigma == pytest.approx(50.0)
+        assert bundle.materials[1].electric_sigma == pytest.approx(0.5)
+        assert bundle.materials[1].thermal_k == pytest.approx(0.015)
+
+    def test_joule_series_electrode_len_snaps_to_grid(self) -> None:
+        """电极段长贴齐网格（非整单元数取整）且各区至少 1 单元."""
+        # electrode_len=4.4, dx=3 → round(4.4/3)=1；过大时被钳制保留电阻区
+        bundle = nodes.build_joule_series({}, {"nx": 4, "ny": 1, "electrode_len": 4.4})
+        counts = [block.conn.shape[0] for block in bundle.mesh.blocks]
+        assert counts == [1, 2, 1]
+        clamped = nodes.build_joule_series({}, {"nx": 4, "ny": 1, "electrode_len": 1.0e3})
+        assert [block.conn.shape[0] for block in clamped.mesh.blocks] == [1, 2, 1]
+
+    def test_joule_series_pickle_roundtrip(self) -> None:
+        """多材料 ConductionBundle 可 pickle."""
+        bundle = nodes.build_joule_series({}, {"nx": 6, "ny": 1})
+        restored = pickle.loads(pickle.dumps(bundle))
+        assert len(restored.mesh.blocks) == len(bundle.mesh.blocks)
+        assert restored.materials == bundle.materials
+
     def test_bundle_pickle_roundtrip(self) -> None:
         """ModelBundle 可 pickle（跨进程传输前提）."""
         bundle = _small_cantilever()
@@ -209,6 +245,44 @@ class TestRunAnalyses:
         """model 端口载荷类型错误抛 TypeError."""
         with pytest.raises(TypeError, match="ConductionBundle"):
             nodes.run_electrothermal({"model": object()}, {})
+
+    def test_joule_series_analytic(self) -> None:
+        """多材料串联 1D 解析互证：P = V₀²·t·H/Σ(Lᵢ/σᵢ) 精确，热点落在电阻区."""
+        length, height, nx, ny = 30.0, 10.0, 30, 4
+        electrode_len = 5.0
+        sigma_c, sigma_h = 50.0, 0.5
+        voltage, thickness = 1.0, 1.0
+        bundle = nodes.build_joule_series(
+            {},
+            {
+                "length": length,
+                "height": height,
+                "nx": nx,
+                "ny": ny,
+                "electrode_len": electrode_len,
+                "sigma_conductor": sigma_c,
+                "sigma_resistor": sigma_h,
+                "k_conductor": 0.4,
+                "k_resistor": 0.015,
+                "voltage": voltage,
+                "thickness": thickness,
+                "t_base": 20.0,
+                "t_ambient": 20.0,
+                "h_conv": 1e-9,  # 近绝热隔离顶/侧边，逼近 1D 竖向导热
+            },
+        )
+        solution = nodes.run_electrothermal({"model": bundle}, {})
+        # 1D 串联电阻：R = Σ(Lᵢ/σᵢ)/(t·H)，电场分区分段线性（区界对齐单元边界 → Galerkin 精确）
+        r_series = 2.0 * electrode_len / sigma_c + (length - 2.0 * electrode_len) / sigma_h
+        assert solution.total_power == pytest.approx(voltage**2 * thickness * height / r_series, rel=1e-10)
+        # 电压分段线性：电阻区压降 = V₀·(L_h/σ_h)/Σ(Lᵢ/σᵢ)（100:1 电导率对比下占绝大部分）
+        coords = bundle.mesh.coords
+        resistor = (coords[:, 0] >= electrode_len - 1e-9) & (coords[:, 0] <= length - electrode_len + 1e-9)
+        v_drop_mid = solution.voltages[resistor].max() - solution.voltages[resistor].min()
+        assert v_drop_mid == pytest.approx(voltage * (length - 2 * electrode_len) / sigma_h / r_series, rel=1e-10)
+        # 热点（t_max 节点）落在电阻区内（热源集中在高阻抗区）
+        hotspot = int(np.argmax(solution.temperatures))
+        assert electrode_len - 1e-9 <= coords[hotspot, 0] <= length - electrode_len + 1e-9
 
     def test_param_validation_flows_through(self) -> None:
         """节点参数经模块规格校验（非法值抛 ParamError）."""

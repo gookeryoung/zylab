@@ -212,5 +212,34 @@ BUILTIN_TEMPLATES: tuple[Template, ...] = tuple(
                 "results": ["solve"],
             },
         },
+        {
+            "id": "thermal.joule_series_2d",
+            "name": "多材料串联电加热板（热点分析）",
+            "discipline": "thermal",
+            "description": "电极/电阻区/电极三区多块网格：电流经高阻抗电阻区集浓产热，"
+            "稳态热点出现在电阻区；演示多材料 ElementBlock 分区建模与电-热耦合。",
+            "tags": ["电-热", "多材料", "热点"],
+            "nodes": [
+                {"id": "model", "type": "example.joule_series_2d"},
+                {"id": "solve", "type": "analysis.electrothermal", "inputs": {"model": "model.model"}},
+            ],
+            "ui": {
+                "param_groups": [
+                    {"title": "几何与网格", "params": ["model.length", "model.height", "model.nx", "model.ny"]},
+                    {"title": "分区", "params": ["model.electrode_len"]},
+                    {
+                        "title": "电极材料",
+                        "params": ["model.sigma_conductor", "model.k_conductor"],
+                    },
+                    {
+                        "title": "电阻区材料",
+                        "params": ["model.sigma_resistor", "model.k_resistor"],
+                    },
+                    {"title": "厚度与电学边界", "params": ["model.thickness", "model.voltage"]},
+                    {"title": "热边界", "params": ["model.t_base", "model.h_conv", "model.t_ambient"]},
+                ],
+                "results": ["solve"],
+            },
+        },
     )
 )

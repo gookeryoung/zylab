@@ -56,6 +56,7 @@ __all__ = [
     "build_cantilever",
     "build_column",
     "build_joule_plate",
+    "build_joule_series",
     "build_truss",
     "run_buckling",
     "run_electrothermal",
@@ -240,6 +241,74 @@ def build_joule_plate(inputs: NodeInputs, params: NodeParams, report: ReportFn |
             ConductionMaterial(
                 electric_sigma=float(p["electric_sigma"]),
                 thermal_k=float(p["thermal_k"]),
+            ),
+        ),
+        sections=(Section(thickness=float(p["thickness"])),),
+        electric_case=ElectricCase(
+            voltages=(
+                *(NodalValue(int(n), 0.0) for n in left),
+                *(NodalValue(int(n), float(p["voltage"])) for n in right),
+            ),
+        ),
+        thermal_case=ThermalCase(
+            temperatures=tuple(NodalValue(int(n), float(p["t_base"])) for n in bottom),
+            convections=(Convection(nodes=conv_nodes, h_coeff=float(p["h_conv"]), t_ambient=float(p["t_ambient"])),),
+        ),
+    )
+    _report(report, 1.0, "模型就绪")
+    return bundle
+
+
+def build_joule_series(inputs: NodeInputs, params: NodeParams, report: ReportFn | None = None) -> ConductionBundle:
+    """构建多材料串联电加热板 Q4 模型（电极/电阻区/电极三区，电流集浓热点）.
+
+    三区各自 ElementBlock 引用独立材料（电极高电导、电阻区高阻抗），
+    热点稳态出现在电阻区；电学边界 = 左右端面给定电压，热边界 = 底边
+    恒温 + 其余三边对流（与 :func:`build_joule_plate` 同布局）。
+    """
+    del inputs
+    p = _params("example.joule_series_2d", params)
+    length, height = float(p["length"]), float(p["height"])
+    nx, ny = int(p["nx"]), int(p["ny"])
+
+    _report(report, 0.2, "生成板网格")
+    xs = np.linspace(0.0, length, nx + 1)
+    ys = np.linspace(0.0, height, ny + 1)
+    grid_x, grid_y = np.meshgrid(xs, ys)
+    coords = np.column_stack((grid_x.ravel(), grid_y.ravel()))
+    # 电极段单元数（贴齐网格，保证区界落在单元边界上；每区至少 1 单元）
+    dx = length / nx
+    n_electrode = min(max(round(float(p["electrode_len"]) / dx), 1), nx // 2 - 1) if nx >= 3 else 1
+    blocks = []
+    for zone, (i_begin, i_end) in enumerate(
+        ((0, n_electrode), (n_electrode, nx - n_electrode), (nx - n_electrode, nx))
+    ):
+        conn = []
+        for j in range(ny):
+            for i in range(i_begin, i_end):
+                n00 = j * (nx + 1) + i
+                conn.append((n00, n00 + 1, n00 + nx + 2, n00 + nx + 1))
+        blocks.append(ElementBlock(etype=ElementType.QUAD4, conn=np.asarray(conn), material=zone % 2, name=f"区{zone}"))
+    mesh = Mesh(coords=coords, blocks=tuple(blocks))
+
+    _report(report, 0.6, "生成电-热边界")
+    left = np.flatnonzero(coords[:, 0] <= 0.0)
+    right = np.flatnonzero(coords[:, 0] >= length - 1e-9)
+    bottom = np.flatnonzero(coords[:, 1] <= 0.0)
+    top = np.flatnonzero(coords[:, 1] >= height - 1e-9)
+    # 对流边界折线：左（底→顶）→ 顶（左→右）→ 右（顶→底），沿边连续且角节点不重复
+    conv_nodes = tuple(int(n) for n in (*left, *top[1:-1], *right[::-1]))
+    bundle = ConductionBundle(
+        mesh=mesh,
+        materials=(
+            # 材料表按块索引被引用：0 = 电极，1 = 电阻区
+            ConductionMaterial(
+                electric_sigma=float(p["sigma_conductor"]),
+                thermal_k=float(p["k_conductor"]),
+            ),
+            ConductionMaterial(
+                electric_sigma=float(p["sigma_resistor"]),
+                thermal_k=float(p["k_resistor"]),
             ),
         ),
         sections=(Section(thickness=float(p["thickness"])),),
