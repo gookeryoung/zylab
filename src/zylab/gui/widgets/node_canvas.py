@@ -289,7 +289,7 @@ class NodeCanvasWidget(QGraphicsView):
 
     def mousePressEvent(self, event) -> None:  # Qt 命名约定
         """单击选中节点."""
-        card = self._card_at(event.pos())
+        card = self._card_at(mouse_event_pos(event))
         if card is not None:
             self.select_node(card.node_id)
             self.node_clicked.emit(card.node_id)

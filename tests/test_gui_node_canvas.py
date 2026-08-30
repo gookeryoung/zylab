@@ -4,9 +4,29 @@ from __future__ import annotations
 
 import pytest
 
+from zylab.gui import qt_compat
 from zylab.gui.qt_compat import QContextMenuEvent, QEvent, QMouseEvent, QPointF, Qt
 from zylab.gui.widgets.node_canvas import NodeCanvasWidget
 from zylab.studio import Template, WorkflowGraph
+
+
+def _dbl_click_event(pos, widget=None) -> QMouseEvent:
+    """构造双击鼠标事件（Qt6 用 local+global+device 新签名，Qt5 旧签名保留）."""
+    if qt_compat.QT_API == "pyside6":
+        from PySide6.QtGui import QPointingDevice
+
+        global_pos = widget.mapToGlobal(pos) if widget is not None else QPointF(pos)
+        return QMouseEvent(
+            QEvent.MouseButtonDblClick,
+            QPointF(pos),
+            QPointF(global_pos),
+            Qt.LeftButton,
+            Qt.LeftButton,
+            Qt.NoModifier,
+            QPointingDevice.primaryPointingDevice(),
+        )
+    return QMouseEvent(QEvent.MouseButtonDblClick, QPointF(pos), Qt.LeftButton, Qt.LeftButton, Qt.NoModifier)
+
 
 _COMBO = {
     "id": "t.combo",
@@ -109,7 +129,7 @@ def test_double_click_emits(qtbot) -> None:
     received: list[str] = []
     canvas.node_double_clicked.connect(received.append)
     center = canvas.mapFromScene(canvas.card_rect("modal").center())
-    event = QMouseEvent(QEvent.MouseButtonDblClick, QPointF(center), Qt.LeftButton, Qt.LeftButton, Qt.NoModifier)
+    event = _dbl_click_event(center, canvas)
     canvas.mouseDoubleClickEvent(event)
     assert received == ["modal"]
 
