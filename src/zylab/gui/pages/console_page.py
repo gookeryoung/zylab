@@ -11,6 +11,7 @@ from zylab.sci import VarInfo, whos
 from .. import theme
 from ..qt_compat import (
     QAbstractTableModel,
+    QColor,
     QHBoxLayout,
     QHeaderView,
     QKeyEvent,
@@ -59,11 +60,16 @@ class VarTableModel(QAbstractTableModel):
         return len(self._HEADERS)
 
     def data(self, index: QModelIndex, role: int = Qt.DisplayRole) -> object:
-        """单元格数据."""
-        if not index.isValid() or role != Qt.DisplayRole:
+        """单元格数据：内置符号行用次级色区分用户变量."""
+        if not index.isValid():
             return None
         info = self._vars[index.row()]
-        return (info.name, info.type_name, info.shape, info.dtype, str(info.nbytes), info.preview)[index.column()]
+        if role == Qt.DisplayRole:
+            return (info.name, info.type_name, info.shape, info.dtype, str(info.nbytes), info.preview)[index.column()]
+        if role == Qt.ForegroundRole:
+            pal = theme.current_palette()
+            return QColor(pal.text_secondary if info.builtin else pal.text_primary)
+        return None
 
     def headerData(self, section: int, orientation: Qt.Orientation, role: int = Qt.DisplayRole) -> object:
         """表头数据."""
@@ -127,7 +133,8 @@ class ReplInput(QPlainTextEdit):
 class ConsolePage(QWidget):
     """控制台页：左侧「交互 / 脚本」选项卡，右侧「变量 / 绘图」选项卡.
 
-    变量浏览器随每条命令执行自动刷新（常态显示）；
+    变量浏览器随每条命令执行自动刷新（常态显示）；启动即列出内置符号
+    （次级色）与用户变量（正文色）；``cls()``/``clc()`` 清空输出区；
     plot 渲染后自动切换右侧到绘图选项卡 —— 左侧脚本与右侧绘图可同屏查看。
     """
 
@@ -141,11 +148,27 @@ class ConsolePage(QWidget):
         """初始化控制台页."""
         super().__init__(parent)
         self._kernel = kernel
+        # cls()/clc() 清屏后跳过该命令自身的回显（事件在 exec 中触发，回显在 exec 后追加）
+        self._skip_next_echo = False
         self._build_ui(kernel, history, bus)
+        # cls()/clc() 触发内核清屏事件 → 清空输出区
+        bus.subscribe(ReplKernel.TOPIC_CONSOLE_CLEAR, self._clear_output)
+        self.refresh_vars()
         self._append_html(
             f'<span style="color:{theme.current_palette().text_secondary}">'
-            f"zylab 控制台就绪 · 右侧选项卡实时查看变量 · plot(x, y) 绘图 · 左侧「脚本」页可编辑运行多行脚本</span>"
+            f"zylab 控制台就绪 · 右侧选项卡实时查看变量（内置符号为灰色） · "
+            f"plot(x, y) 绘图 · cls() 清屏 · help() 查看内置命令</span>"
         )
+
+    def refresh_vars(self) -> None:
+        """按命名空间当前状态刷新变量浏览器（含内置符号标记）."""
+        self._skip_next_echo = False  # 脚本路径的 cls() 标志在此复位
+        self._var_model.set_vars(whos(self._kernel.namespace, self._kernel.builtin_names))
+
+    def _clear_output(self, _payload: object = None) -> None:
+        """清空输出区并跳过清屏命令自身的回显（内核 cls/clc 命令触发）."""
+        self._output.clear()
+        self._skip_next_echo = True
 
     def _build_ui(self, kernel: ReplKernel, history: CommandHistory, bus: EventBus) -> None:
         """组装布局."""
@@ -181,7 +204,7 @@ class ConsolePage(QWidget):
         # plot 渲染后自动切到绘图选项卡（REPL 与脚本共用内核，脚本绘图同样触发）
         self._plot_page.plot_shown.connect(lambda: self._side_tabs.setCurrentIndex(1))
         # 脚本运行后变量表同步刷新（脚本与 REPL 共享命名空间）
-        self._script_page.run_finished.connect(lambda: self._var_model.set_vars(whos(self._kernel.namespace)))
+        self._script_page.run_finished.connect(self.refresh_vars)
 
         splitter.addWidget(self._work_tabs)
         splitter.addWidget(self._side_tabs)
@@ -195,6 +218,11 @@ class ConsolePage(QWidget):
 
     def _on_result(self, result: ExecResult) -> None:
         """渲染执行结果并刷新变量浏览器（常态显示）."""
+        if self._skip_next_echo:
+            # cls()/clc() 刚清屏：跳过该命令回显，保持输出区干净
+            self._skip_next_echo = False
+            self.refresh_vars()
+            return
         pal = theme.current_palette()
         self._append_html(f'<span style="color:{pal.primary}">&gt;&gt;&gt; {html.escape(result.source)}</span>')
         if result.stdout:
@@ -204,7 +232,7 @@ class ConsolePage(QWidget):
         error_text = result.error or (result.stderr if result.stderr else "")
         if error_text:
             self._append_html(f'<pre style="color:{pal.error_text}">{html.escape(error_text.rstrip())}</pre>')
-        self._var_model.set_vars(whos(self._kernel.namespace))
+        self.refresh_vars()
         self._output.moveCursor(QTextCursor.End)
 
     def _append_html(self, fragment: str) -> None:

@@ -48,6 +48,16 @@ _NP_SYMBOLS = (
     "zeros",
 )
 
+# help() 打印的内置命令说明
+_HELP_TEXT = """内置命令:
+  whos()          列出工作区变量（MATLAB 风格表格）
+  plot(x, y)      绘制曲线（自动切换右侧绘图页）
+  run(path)       执行 Python 脚本文件
+  cls() / clc()   清空控制台输出区
+  clear()         清除全部用户变量（保留内置符号与 ans）
+  help()          显示本帮助
+另: np/numpy 模块与 arange/linspace/pi/sin 等常用符号可直接使用, 输入 help(np) 可查其文档."""
+
 
 @dataclass(frozen=True)
 class ExecResult:
@@ -78,16 +88,25 @@ class ReplKernel:
         kernel.execute("x = linspace(0, pi, 100)")
         result = kernel.execute("sin(x) * 2")
         assert result.result_repr is not None
+
+    内置命令（namespace 直呼即用）：``whos()`` 列变量、``plot(x, y)`` 绘图、
+    ``run(path)`` 跑脚本、``cls()``/``clc()`` 清屏（发 ``console.clear`` 事件）、
+    ``clear()`` 清用户变量（保留内置符号）、``help()`` 列内置命令。
     """
+
+    #: 清屏事件主题（GUI 输出区订阅此主题清空显示）
+    TOPIC_CONSOLE_CLEAR = "console.clear"
 
     def __init__(self, bus: EventBus | None = None) -> None:
         """初始化内核并构建命名空间."""
         self.bus = bus or EventBus()
         self.namespace: dict[str, Any] = {}
+        #: 系统内置符号名集合（初始化时快照，clear() 与变量浏览器据此区分用户变量）
+        self.builtin_names: frozenset[str] = frozenset()
         self._init_namespace()
 
     def _init_namespace(self) -> None:
-        """构建 REPL 命名空间：NumPy 符号 + whos/plot/run 命令."""
+        """构建 REPL 命名空间：NumPy 符号 + whos/plot/run/cls/clear/help 命令."""
         import numpy as np
 
         ns = self.namespace
@@ -97,12 +116,36 @@ class ReplKernel:
             ns[name] = getattr(np, name)
 
         def _whos() -> None:
-            """列出当前工作区变量（MATLAB whos 风格表格）."""
-            print(format_whos(whos(ns)))
+            """列出当前工作区变量（MATLAB whos 风格表格，仅用户变量）."""
+            print(format_whos([i for i in whos(ns, self.builtin_names) if not i.builtin]))
+
+        def _cls() -> None:
+            """清空控制台输出区（clc 为别名）."""
+            self.bus.publish(self.TOPIC_CONSOLE_CLEAR)
+
+        def _clear() -> None:
+            """清除全部用户变量（保留内置符号与 ans）."""
+            dropped = [
+                name
+                for name, value in ns.items()
+                if not name.startswith("_") and name not in self.builtin_names and name != "ans"
+            ]
+            for name in dropped:
+                del ns[name]
+            print(f"已清除 {len(dropped)} 个变量: {', '.join(dropped)}" if dropped else "无用户变量")
+
+        def _help() -> None:
+            """打印内置命令帮助."""
+            print(_HELP_TEXT)
 
         ns["whos"] = _whos
         ns["plot"] = make_plot_function(self.bus)
         ns["run"] = self.run_file
+        ns["cls"] = _cls
+        ns["clc"] = _cls
+        ns["clear"] = _clear
+        ns["help"] = _help
+        self.builtin_names = frozenset(ns)
 
     def execute(self, source: str) -> ExecResult:
         """执行代码片段.
@@ -159,8 +202,8 @@ class ReplKernel:
         return self._exec_code(code_obj, source)
 
     def whos(self) -> str:
-        """返回当前工作区变量表格文本."""
-        return format_whos(whos(self.namespace))
+        """返回当前工作区用户变量表格文本（不含内置符号）."""
+        return format_whos([i for i in whos(self.namespace, self.builtin_names) if not i.builtin])
 
     def _exec_code(self, code_obj: Any, source: str) -> ExecResult:
         """在命名空间内执行编译产物，捕获输出/结果/异常."""

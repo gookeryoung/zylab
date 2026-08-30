@@ -7,7 +7,7 @@ import pytest
 from zylab.console import CommandHistory, ReplKernel
 from zylab.core import EventBus
 from zylab.gui.pages.console_page import ConsolePage, ReplInput, VarTableModel
-from zylab.gui.qt_compat import QModelIndex, Qt
+from zylab.gui.qt_compat import QColor, QModelIndex, Qt
 from zylab.sci import VarInfo
 
 
@@ -159,6 +159,45 @@ def test_console_page_whos_refresh(qtbot, kernel: ReplKernel, history: CommandHi
 
 
 @pytest.mark.gui
+def test_console_page_cls_clears_output(qtbot, kernel: ReplKernel, history: CommandHistory, bus: EventBus) -> None:
+    """cls() 应清空输出区（内核事件 → 页面订阅）."""
+    page = ConsolePage(kernel, history, bus)
+    qtbot.addWidget(page)
+    page._input.setPlainText("print('hello')")
+    qtbot.keyClick(page._input, Qt.Key_Return)
+    assert "hello" in page._output.toPlainText()
+    page._input.setPlainText("cls()")
+    qtbot.keyClick(page._input, Qt.Key_Return)
+    assert page._output.toPlainText() == ""
+
+
+@pytest.mark.gui
+def test_console_page_builtin_vars_dimmed(qtbot, kernel: ReplKernel, history: CommandHistory, bus: EventBus) -> None:
+    """内置符号行前景为次级色，用户变量行为正文色."""
+    from zylab.gui import theme
+
+    page = ConsolePage(kernel, history, bus)
+    qtbot.addWidget(page)
+    page._input.setPlainText("my_var = 1")
+    qtbot.keyClick(page._input, Qt.Key_Return)
+    pal = theme.current_palette()
+    np_row = next(
+        r for r in range(page._var_model.rowCount()) if page._var_model.data(page._var_model.index(r, 0)) == "np"
+    )
+    user_row = next(
+        r for r in range(page._var_model.rowCount()) if page._var_model.data(page._var_model.index(r, 0)) == "my_var"
+    )
+    assert (
+        page._var_model.data(page._var_model.index(np_row, 0), Qt.ForegroundRole).name()
+        == QColor(pal.text_secondary).name()
+    )
+    assert (
+        page._var_model.data(page._var_model.index(user_row, 0), Qt.ForegroundRole).name()
+        == QColor(pal.text_primary).name()
+    )
+
+
+@pytest.mark.gui
 def test_console_page_side_tabs(qtbot, kernel: ReplKernel, history: CommandHistory, bus: EventBus) -> None:
     """右侧选项卡应为 变量/绘图 两页，默认停在变量页."""
     page = ConsolePage(kernel, history, bus)
@@ -200,14 +239,18 @@ def test_console_page_script_plot_same_screen(
 
 @pytest.mark.gui
 def test_console_page_vars_always_visible(qtbot, kernel: ReplKernel, history: CommandHistory, bus: EventBus) -> None:
-    """任意命令执行后变量表即时刷新（无需 whos）."""
+    """启动即显示内置符号（builtin 标记），用户命令执行后变量表即时刷新."""
     page = ConsolePage(kernel, history, bus)
     qtbot.addWidget(page)
-    assert page._var_model.rowCount() == 0  # 初始空
+    # 初始即列出内置符号（np/whos/cls 等），且全部标记 builtin
+    rows = [page._var_model.data(page._var_model.index(r, 0)) for r in range(page._var_model.rowCount())]
+    assert "np" in rows and "whos" in rows
+    assert page._var_model._vars[0].builtin
+    # 用户变量出现且 builtin=False
     page._input.setPlainText("a = 1")
     qtbot.keyClick(page._input, Qt.Key_Return)
-    names = [page._var_model.data(page._var_model.index(row, 0)) for row in range(page._var_model.rowCount())]
-    assert "a" in names  # 未调用 whos 即出现在变量表
+    infos = {i.name: i for i in page._var_model._vars}
+    assert "a" in infos and infos["a"].builtin is False  # 未调用 whos 即出现在变量表
 
 
 @pytest.mark.gui

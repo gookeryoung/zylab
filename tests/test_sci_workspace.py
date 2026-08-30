@@ -19,15 +19,18 @@ def test_whos_ndarray() -> None:
     assert info.nbytes == 96
 
 
-def test_whos_skips_private_modules_and_commands() -> None:
-    """下划线开头、模块与内建命令（whos/plot/run）不应出现在列表."""
+def test_whos_marks_builtin_symbols() -> None:
+    """下划线开头项跳过；内置符号不剔除而是标记 builtin=True."""
     import sys
 
     def _noop() -> None:
         pass
 
     ns = {"_hidden": 1, "sys": sys, "whos": _noop, "plot": _noop, "run": _noop, "x": 5}
-    assert [i.name for i in whos(ns)] == ["x"]
+    infos = {i.name: i for i in whos(ns, builtin_names={"sys", "whos", "plot", "run"})}
+    assert set(infos) == {"sys", "whos", "plot", "run", "x"}  # _hidden 跳过
+    assert infos["x"].builtin is False
+    assert all(infos[n].builtin for n in ("sys", "whos", "plot", "run"))
 
 
 def test_whos_scalar_and_sequence() -> None:

@@ -38,7 +38,7 @@ from zylab.studio import (
 )
 
 from .. import theme
-from ..icons import load_icon
+from ..icons import nav_icon
 from ..qt_compat import (
     QFrame,
     QGroupBox,
@@ -152,12 +152,21 @@ class StudioPage(QWidget):
         root.addWidget(splitter)
 
     @staticmethod
-    def _tool_button(text: str, icon_name: str, tooltip: str) -> QPushButton:
-        """构建工具行紧凑按钮（图标 + 短文字 + 完整 tooltip）."""
-        btn = QPushButton(text, objectName="toolBtn")
-        btn.setIcon(load_icon(icon_name))
+    def _tool_button(tooltip: str) -> QPushButton:
+        """构建工具行纯图标按钮（tooltip 承载完整语义，省横向空间）."""
+        btn = QPushButton(objectName="toolBtn")
         btn.setToolTip(tooltip)
         return btn
+
+    def _refresh_tool_icons(self) -> None:
+        """按当前主题重绘工具行图标（单色剪影随按钮文字色着色）."""
+        pal = theme.current_palette()
+        for name, btn in (
+            ("save_as_template", self._save_template_button),
+            ("save_project", self._save_project_button),
+            ("open_project", self._open_project_button),
+        ):
+            btn.setIcon(nav_icon(name, pal.text_on_primary))
 
     def _build_library_panel(self) -> QWidget:
         """左栏：模板库 + 模板/工程操作 + 运行控制."""
@@ -176,9 +185,10 @@ class StudioPage(QWidget):
         tools = QHBoxLayout()
         tools.setSpacing(theme.SPACING_XS)
         icon_size = QSize(16, 16)
-        self._save_template_button = self._tool_button("另存", "save_as_template", "另存为模板")
-        self._save_project_button = self._tool_button("保存", "save_project", "保存工程 (.zprj)")
-        self._open_project_button = self._tool_button("打开", "open_project", "打开工程 (.zprj)")
+        self._save_template_button = self._tool_button("另存为模板")
+        self._save_project_button = self._tool_button("保存工程 (.zprj)")
+        self._open_project_button = self._tool_button("打开工程 (.zprj)")
+        self._refresh_tool_icons()
         self._save_template_button.setIconSize(icon_size)
         self._save_project_button.setIconSize(icon_size)
         self._open_project_button.setIconSize(icon_size)
@@ -512,7 +522,8 @@ class StudioPage(QWidget):
     # ------------------------------------------------------------------ 生命周期
 
     def refresh_theme(self) -> None:
-        """主题切换后重刷画布与结果视图."""
+        """主题切换后重刷工具行图标、画布与结果视图."""
+        self._refresh_tool_icons()
         self._canvas.refresh_theme()
         self._result_view.refresh_theme()
 

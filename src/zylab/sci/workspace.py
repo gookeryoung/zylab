@@ -7,8 +7,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from types import ModuleType
-from typing import Any, Mapping
+from typing import Any, Collection, Mapping
 
 import numpy as np
 
@@ -28,6 +27,8 @@ class VarInfo:
     :param dtype: 元素类型（ndarray 的 dtype，其他为空串）。
     :param nbytes: 占用字节数（ndarray 精确值，其他为估计值）。
     :param preview: 值的短预览（截断到 60 字符）。
+    :param builtin: 是否为系统内置符号（NumPy 符号/np 模块/whos 等命令），
+        GUI 变量浏览器据此用次级色区分用户变量。
     """
 
     name: str
@@ -36,9 +37,10 @@ class VarInfo:
     dtype: str
     nbytes: int
     preview: str
+    builtin: bool = False
 
 
-def _describe(name: str, value: Any) -> VarInfo:
+def _describe(name: str, value: Any, builtin: bool = False) -> VarInfo:
     """构造单个变量的 VarInfo."""
     type_name = type(value).__name__
     shape = ""
@@ -60,7 +62,9 @@ def _describe(name: str, value: Any) -> VarInfo:
     preview = repr(value)
     if len(preview) > _PREVIEW_MAXLEN:
         preview = preview[: _PREVIEW_MAXLEN - 1] + "…"
-    return VarInfo(name=name, type_name=type_name, shape=shape, dtype=dtype, nbytes=nbytes, preview=preview)
+    return VarInfo(
+        name=name, type_name=type_name, shape=shape, dtype=dtype, nbytes=nbytes, preview=preview, builtin=builtin
+    )
 
 
 def _safe_sizeof(obj: Any) -> int:
@@ -73,16 +77,20 @@ def _safe_sizeof(obj: Any) -> int:
         return 0
 
 
-def whos(namespace: Mapping[str, Any]) -> list[VarInfo]:
-    """列出命名空间中的用户变量（跳过 ``_`` 开头、模块与内置项），按名称排序.
+def whos(namespace: Mapping[str, Any], builtin_names: Collection[str] = ()) -> list[VarInfo]:
+    """列出命名空间中的变量（跳过 ``_`` 开头项），按名称排序.
+
+    内置符号（NumPy 符号、np 模块、whos/plot/run 等命令）不剔除，而是标记
+    ``builtin=True`` —— GUI 变量浏览器据此用次级色区分用户变量。
 
     :param namespace: 命名空间映射（如 ``ReplKernel.namespace``）。
+    :param builtin_names: 内置符号名集合（如 ``ReplKernel.builtin_names``）。
     :returns: VarInfo 列表。
     """
     infos = [
-        _describe(name, value)
+        _describe(name, value, builtin=name in builtin_names)
         for name, value in namespace.items()
-        if not name.startswith("_") and not isinstance(value, ModuleType) and name not in ("whos", "plot", "run")
+        if not name.startswith("_")
     ]
     return sorted(infos, key=_var_name)
 

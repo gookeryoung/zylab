@@ -125,6 +125,7 @@ class MainWindow(QMainWindow):
         apply_theme(QApplication.instance(), name)
         save_theme_name(default_data_dir(), name)
         self._refresh_sidebar_icons()
+        self._studio_page.refresh_theme()
         self.statusBar().showMessage(f"主题已切换: {theme.current_palette().display_name}")
 
     def _refresh_sidebar_icons(self) -> None:
