@@ -256,7 +256,7 @@ class ResultView(QWidget):
     # ------------------------------------------------------------------ 公共接口
 
     def show_mesh(self, bundle: ModelBundle | ConductionBundle) -> None:
-        """渲染模型网格预览（未变形线框 + 规模摘要）."""
+        """渲染模型网格预览（未变形线框 + 节点散点 + 规模摘要）."""
         self._reset_controls()
         mesh = bundle.mesh
         self._restore_mesh_view()
@@ -269,6 +269,16 @@ class ResultView(QWidget):
             connect="pairs",
             pen=pg.mkPen(theme.current_palette().border_strong, width=2),
             name="未变形",
+        )
+        # 节点散点（杆系模型一条线时节点分布也清晰可辨）
+        self._plot.addItem(
+            pg.ScatterPlotItem(
+                x=mesh.coords[:, 0],
+                y=mesh.coords[:, 1],
+                size=5,
+                brush=pg.mkBrush(theme.current_palette().primary),
+                pen=None,
+            )
         )
         self._summary.setText(f"模型预览 · {mesh.n_nodes} 节点 · {mesh.n_elements} 单元")
         self._set_error(False)

@@ -16,7 +16,9 @@ def _beam_bundle():
 
 @pytest.mark.gui
 def test_show_mesh_preview(qtbot) -> None:
-    """模型预览：线框 + 规模摘要."""
+    """模型预览：线框 + 节点散点 + 规模摘要."""
+    import pyqtgraph as pg
+
     view = ResultView()
     qtbot.addWidget(view)
     view.show()
@@ -24,6 +26,11 @@ def test_show_mesh_preview(qtbot) -> None:
     assert "模型预览" in view._summary.text()
     assert "27 节点" in view._summary.text()
     assert view._plot.getPlotItem().listDataItems()
+    # 节点散点：杆系模型一条线时节点分布仍清晰可辨
+    scatters = [it for it in view._plot.getPlotItem().items if isinstance(it, pg.ScatterPlotItem)]
+    assert len(scatters) == 1
+    xs, ys = scatters[0].getData()
+    assert len(xs) == 27 and len(ys) == 27
 
 
 @pytest.mark.gui

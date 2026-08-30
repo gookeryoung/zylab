@@ -22,6 +22,7 @@ from ..qt_compat import (
     QBrush,
     QColor,
     QFont,
+    QFontMetrics,
     QGraphicsItem,
     QGraphicsScene,
     QGraphicsView,
@@ -150,12 +151,14 @@ class _SystemFrame(QGraphicsItem):
         painter.setClipRect(header.intersected(rect))  # 圆角仅保留顶部
         painter.drawRect(header)
         painter.setClipping(False)
-        # 标题文字
+        # 标题文字（超宽省略号截断）
         font = QFont(painter.font())
         font.setBold(True)
         painter.setFont(font)
+        title_rect = header.adjusted(12.0, 0.0, -12.0, 0.0)
+        title = QFontMetrics(font).elidedText(self.title, Qt.ElideRight, int(title_rect.width()))
         painter.setPen(QColor(pal.text_on_primary if self.selected_all else pal.text_primary))
-        painter.drawText(header.adjusted(12.0, 0.0, -12.0, 0.0), Qt.AlignVCenter | Qt.AlignLeft, self.title)
+        painter.drawText(title_rect, Qt.AlignVCenter | Qt.AlignLeft, title)
 
 
 class _NodeCard(QGraphicsItem):
@@ -183,6 +186,39 @@ class _NodeCard(QGraphicsItem):
         """单元矩形（本地坐标）."""
         return QRectF(0.0, 0.0, self._rect.width(), self._rect.height())
 
+    @staticmethod
+    def _fitted_font(base: QFont, text: str, max_width: float) -> tuple[QFont, str]:
+        """自适应字体：超宽先逐级缩小字号（下限 8pt），仍超宽则省略号截断."""
+        font = QFont(base)
+        for _ in range(base.pointSize() - 8 + 1):
+            metrics = QFontMetrics(font)
+            if metrics.horizontalAdvance(text) <= max_width:
+                return font, text
+            font.setPointSize(max(8, font.pointSize() - 1))
+            if font.pointSize() <= 8:
+                break
+        metrics = QFontMetrics(font)
+        return font, metrics.elidedText(text, Qt.ElideRight, int(max_width))
+
+    def _draw_status_pill(self, painter: QPainter, text: str, color: QColor, rect: QRectF) -> None:
+        """圆角状态标签：状态色半透明底 + 状态色文字（宽超限时省略号截断）."""
+        if not text:
+            return
+        font = QFont(painter.font())
+        font.setBold(False)
+        metrics = QFontMetrics(font)
+        text = metrics.elidedText(text, Qt.ElideRight, int(rect.width() - 16))
+        text_w = float(metrics.horizontalAdvance(text))
+        pill = QRectF(rect.left(), rect.top(), min(text_w + 14.0, rect.width()), rect.height())
+        bg = QColor(color)
+        bg.setAlpha(36)  # 状态色 14% 透明底（深浅主题通用）
+        painter.setPen(Qt.NoPen)
+        painter.setBrush(QBrush(bg))
+        painter.drawRoundedRect(pill, pill.height() / 2.0, pill.height() / 2.0)
+        painter.setFont(font)
+        painter.setPen(color)
+        painter.drawText(pill.adjusted(7.0, 0.0, -7.0, 0.0), Qt.AlignVCenter | Qt.AlignLeft, text)
+
     def paint(self, painter: QPainter, option, widget=None) -> None:  # Qt 命名约定
         """绘制单元."""
         del option, widget
@@ -194,22 +230,18 @@ class _NodeCard(QGraphicsItem):
         painter.setBrush(QBrush(QColor(pal.bg_muted)))
         painter.drawRoundedRect(rect, 8.0, 8.0)
 
-        # 文字区（徽标右侧）
+        # 文字区（徽标右侧）；名称自适应字号 + 超宽省略号（长节点名不截断丢失）
         text_rect = QRectF(rect.left() + 10, rect.top() + 6, rect.width() - _BADGE - 24, 22)
-        name_font = QFont(painter.font())
-        name_font.setBold(True)
+        base_font = QFont(painter.font())
+        base_font.setBold(True)
+        name_font, name = self._fitted_font(base_font, self._name, text_rect.width())
         painter.setFont(name_font)
         painter.setPen(QColor(pal.text_primary))
-        painter.drawText(text_rect, Qt.AlignVCenter | Qt.AlignLeft, self._name)
-        detail_font = QFont(painter.font())
-        detail_font.setBold(False)
-        painter.setFont(detail_font)
+        painter.drawText(text_rect, Qt.AlignVCenter | Qt.AlignLeft, name)
+        # 状态摘要：圆角标签（状态色底 + 文字）
         color = _state_color(self._state)
-        painter.setPen(color)
-        painter.drawText(
-            QRectF(text_rect.left(), rect.top() + 32, text_rect.width(), 22),
-            Qt.AlignVCenter | Qt.AlignLeft,
-            self._detail,
+        self._draw_status_pill(
+            painter, self._detail, color, QRectF(text_rect.left(), rect.top() + 30, text_rect.width(), 20)
         )
 
         # 检查徽标（右侧居中）：问号/红叉/绿对勾，运行中为旋转弧

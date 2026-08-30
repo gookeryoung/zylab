@@ -68,6 +68,57 @@ def test_param_edit_marks_dirty(qtbot) -> None:
     page._on_param_edited("model", "nx", 20)
     assert page._graph.node("model").state is NodeState.READY
     assert "需重新运行" in page._status_label.text()
+    page._preview_timer.stop()  # 阻断防抖预览（本测试只验证失效语义）
+    page.shutdown()
+
+
+@pytest.mark.gui
+def test_param_edit_refreshes_preview_async(qtbot) -> None:
+    """源节点参数编辑：防抖启动 -> 后台线程重建预览 -> 状态回填与模型页刷新."""
+    page = StudioPage()
+    qtbot.addWidget(page)
+    _select_template(page, "structural.cantilever_static")
+    old_result = page._graph.node("model").result
+    page._on_param_edited("model", "nx", 24)
+    assert page._preview_timer.isActive()  # 源节点参数变化触发防抖
+    page._preview_timer.stop()
+    page._refresh_preview_async()
+    assert page._graph.node("model").state is NodeState.RUNNING  # 画布转圈态
+    assert "更新模型中" in page._status_label.text()
+    qtbot.waitUntil(lambda: "模型已更新" in page._status_label.text(), timeout=5000)
+    node = page._graph.node("model")
+    assert node.state is NodeState.UP_TO_DATE
+    assert node.result is not old_result  # 模型已按新参数重建
+    view = page._result_view.view_for("model", node.name, activate=False)
+    assert f"{node.result.mesh.n_nodes} 节点" in view._summary.text()
+    page.shutdown()
+
+
+@pytest.mark.gui
+def test_param_edit_non_source_no_preview(qtbot) -> None:
+    """非源节点（求解环节）参数编辑不触发模型预览防抖."""
+    page = StudioPage()
+    qtbot.addWidget(page)
+    _select_template(page, "structural.truss_nonlinear")
+    # 求解环节自身参数（非源节点，不触发模型预览防抖）
+    page._on_param_edited("solve", "n_increments", 8)
+    assert not page._preview_timer.isActive()
+    page.shutdown()
+
+
+@pytest.mark.gui
+def test_preview_result_discarded_when_stale(qtbot) -> None:
+    """模板切换使预览序号失效：在途回调结果丢弃（画布不被旧结果污染）."""
+    page = StudioPage()
+    qtbot.addWidget(page)
+    _select_template(page, "structural.cantilever_static")
+    old_result = page._graph.node("model").result
+    page._on_preview_done(page._preview_seq - 1, {"model": object()}, {})  # 过期序号回调
+    assert page._graph.node("model").result is old_result  # 旧结果未被覆盖
+    # 正常路径不受影响：当前序号回调生效
+    fresh = {"model": old_result}
+    page._on_preview_done(page._preview_seq, fresh, {})
+    assert page._graph.node("model").state is NodeState.UP_TO_DATE
     page.shutdown()
 
 

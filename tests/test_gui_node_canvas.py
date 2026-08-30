@@ -6,7 +6,7 @@ import pytest
 
 from zylab.gui import qt_compat
 from zylab.gui.qt_compat import QContextMenuEvent, QEvent, QKeyEvent, QMouseEvent, QPointF, Qt
-from zylab.gui.widgets.node_canvas import _ARROW_LEN, NodeCanvasWidget
+from zylab.gui.widgets.node_canvas import _ARROW_LEN, NodeCanvasWidget, _NodeCard
 from zylab.studio import NodeState, Template, WorkflowGraph
 
 
@@ -53,6 +53,36 @@ def _canvas_with_graph(qtbot) -> tuple[NodeCanvasWidget, WorkflowGraph]:
     canvas.set_graph(graph)
     canvas.show()
     return canvas, graph
+
+
+@pytest.mark.gui
+def test_node_card_fitted_font(qtbot) -> None:
+    """长节点名自适应：短名保持原字号，超长名逐级缩小或省略号截断."""
+    from zylab.gui.qt_compat import QFont, QFontMetrics
+
+    base = QFont()
+    base.setPointSize(12)
+    font, text = _NodeCard._fitted_font(base, "求解", 1000.0)
+    assert text == "求解"
+    assert font.pointSize() == 12  # 短名不缩字号
+    font2, text2 = _NodeCard._fitted_font(base, "通用加热板电热耦合分析超长环节名称测试", 40.0)
+    assert font2.pointSize() <= 12
+    assert QFontMetrics(font2).horizontalAdvance(text2) <= 40.0  # 最终必不超宽
+
+
+@pytest.mark.gui
+def test_node_card_paint_with_pill(qtbot) -> None:
+    """单元渲染冒烟：长名 + 圆角状态标签（READY/UP_TO_DATE pill）离屏绘制无异常."""
+    from zylab.gui.qt_compat import QPainter, QPixmap
+
+    canvas, _graph = _canvas_with_graph(qtbot)
+    canvas._cards["model"].refresh(NodeState.UP_TO_DATE, "已完成 · 0.5s")
+    canvas._cards["static"].refresh(NodeState.READY, "待运行 · 静力分析")
+    pixmap = QPixmap(600, 400)
+    painter = QPainter(pixmap)
+    canvas.render(painter)  # 触发全部图元 paint（含 pill 与自适应字号路径）
+    painter.end()
+    assert not pixmap.isNull()
 
 
 @pytest.mark.gui

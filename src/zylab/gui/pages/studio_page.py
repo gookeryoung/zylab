@@ -15,6 +15,7 @@ from __future__ import annotations
 import importlib
 import logging
 import re
+import threading
 from pathlib import Path
 from typing import Callable
 
@@ -95,6 +96,12 @@ class _StudioBridge(QObject):
             self.node_failed.emit(event.node_id, str(event.payload))
 
 
+class _PreviewBridge(QObject):
+    """模型预览线程桥：后台建模线程 -> Qt 信号（跨线程自动队列到主线程）."""
+
+    done = Signal(int, dict, dict)  # (序号, {节点: 结果}, {节点: 错误})
+
+
 class StudioPage(QWidget):
     """分析工作台页（模板配置化多学科计算工具）."""
 
@@ -109,6 +116,12 @@ class StudioPage(QWidget):
         self._runner: WorkflowRunner | None = None
         self._active_row = -1
         self._bridge = _StudioBridge()
+        self._preview_bridge = _PreviewBridge()
+        self._preview_seq = 0  # 预览任务序号（过期结果丢弃）
+        self._preview_timer = QTimer(self)  # 参数编辑防抖
+        self._preview_timer.setSingleShot(True)
+        self._preview_timer.setInterval(300)
+        self._preview_timer.timeout.connect(self._refresh_preview_async)
 
         self._build_ui()
         self._connect()
@@ -230,6 +243,7 @@ class StudioPage(QWidget):
         self._bridge.node_progress.connect(self._on_node_progress)
         self._bridge.node_result.connect(self._on_node_result)
         self._bridge.node_failed.connect(self._on_node_failed)
+        self._preview_bridge.done.connect(self._on_preview_done)
 
     def _reload_template_list(self, select_id: str | None = None) -> None:
         """重建模板下拉（注册表变化后）；select_id 非空时选中并触发实例化."""
@@ -267,6 +281,8 @@ class StudioPage(QWidget):
     def _instantiate(self, template: Template) -> None:
         """实例化模板：建图 + 画布/表单装配 + 源节点进程内建模预览."""
         self._shutdown_runner()
+        self._preview_timer.stop()  # 丢弃上一模板的待刷新预览
+        self._preview_seq += 1  # 在途预览线程结果作废
         self._graph = WorkflowGraph(template)
         self._canvas.set_graph(self._graph)
         self._param_form.set_graph(self._graph, template.param_groups)
@@ -553,12 +569,57 @@ class StudioPage(QWidget):
         return 1.0
 
     def _on_param_edited(self, node_id: str, key: str, value: object) -> None:
-        """参数编辑：写入图（级联失效）并刷新画布."""
+        """参数编辑：写入图（级联失效）并刷新画布；源节点防抖后重建模型预览."""
         if self._graph is None:
             return
         self._graph.set_param(node_id, key, value)
         self._canvas.refresh_states()
+        if not self._graph.node(node_id).spec.inputs:
+            self._preview_timer.start()  # 模型几何/网格参数变化 -> 云图预览联动
         self._status_label.setText("参数已修改，需重新运行")
+
+    def _refresh_preview_async(self) -> None:
+        """后台线程重建过期源节点的模型预览（画布转圈 + 状态提示，不阻塞 UI）."""
+        if self._graph is None or (self._runner is not None and self._runner.running):
+            return
+        sources = [n for n in self._graph.nodes() if not n.spec.inputs and n.needs_run]
+        if not sources:
+            return
+        self._preview_seq += 1
+        seq = self._preview_seq
+        for node in sources:
+            self._graph.mark_running(node.id)  # 画布单元转圈动画
+        self._canvas.refresh_states()
+        self._status_label.setText("更新模型中…")
+        # 任务快照（线程内只读，不触碰 Qt 与图状态）
+        jobs = {n.id: (n.spec.target, dict(n.params)) for n in sources}
+
+        def work() -> None:
+            results: dict[str, object] = {}
+            errors: dict[str, str] = {}
+            for nid, (target, params) in jobs.items():
+                try:
+                    results[nid] = _resolve_target(target)({}, params)
+                except Exception as exc:  # 建模失败：结果页错误呈现 + 画布 FAILED
+                    errors[nid] = f"{type(exc).__name__}: {exc}"
+            self._preview_bridge.done.emit(seq, results, errors)
+
+        threading.Thread(target=work, daemon=True).start()
+
+    def _on_preview_done(self, seq: int, results: dict, errors: dict) -> None:
+        """预览线程完成：过期序号丢弃；结果写回图并刷新模型预览页."""
+        if seq != self._preview_seq or self._graph is None:
+            return  # 已有更新的参数编辑（或模板已切换），本轮结果作废
+        for node_id, result in results.items():
+            node = self._graph.node(node_id)
+            self._graph.mark_result(node_id, result, 0.0)
+            self._result_view.view_for(node_id, node.name, activate=False).show_mesh(result)
+        for node_id, message in errors.items():
+            node = self._graph.node(node_id)
+            self._graph.mark_failed(node_id, message)
+            self._result_view.view_for(node_id, node.name, activate=False).show_error(message)
+        self._canvas.refresh_states()
+        self._status_label.setText("模型已更新，需重新运行" if results else "模型更新失败")
 
     # ------------------------------------------------------------------ 生命周期
 
