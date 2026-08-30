@@ -329,14 +329,24 @@ def build_joule_series(inputs: NodeInputs, params: NodeParams, report: ReportFn 
 
 
 def _boundary_edges(blocks_conns: tuple[np.ndarray, ...]) -> list[tuple[int, int]]:
-    """提取网格边界边（恰好属于一个单元的边），用于任意形状边界分类."""
-    counts: dict[tuple[int, int], int] = {}
+    """提取网格边界边（恰好属于一个单元的边），用于任意形状边界分类.
+
+    全量边编码为单整数后 ``np.unique`` 计数（向量化，大网格下远快于逐边字典）。
+    """
+    if not blocks_conns:
+        return []
+    lo_parts: list[np.ndarray] = []
+    hi_parts: list[np.ndarray] = []
     for conn in blocks_conns:
-        for quad in conn:
-            for a, b in zip(quad, np.roll(quad, -1)):
-                key = (int(min(a, b)), int(max(a, b)))
-                counts[key] = counts.get(key, 0) + 1
-    return [edge for edge, count in counts.items() if count == 1]
+        following = np.roll(conn, -1, axis=1)
+        lo_parts.append(np.minimum(conn, following).ravel())
+        hi_parts.append(np.maximum(conn, following).ravel())
+    lo = np.concatenate(lo_parts)
+    hi = np.concatenate(hi_parts)
+    stride = int(hi.max()) + 1  # 编码基数（节点索引上界 + 1，保证单整数编码唯一）
+    codes = lo.astype(np.int64) * stride + hi
+    uniq, counts = np.unique(codes, return_counts=True)
+    return [(int(code // stride), int(code % stride)) for code in uniq[counts == 1]]
 
 
 def build_joule_hole(inputs: NodeInputs, params: NodeParams, report: ReportFn | None = None) -> ConductionBundle:

@@ -16,8 +16,8 @@ from .conduction import (
     ConductionMaterial,
     NodalSource,
     NodalValue,
+    _batch_gradients,
     assemble_conduction,
-    element_scalar_gradient,
 )
 from .errors import MeshError
 from .material import Section
@@ -145,20 +145,19 @@ def solve_thermal(  # noqa: PLR0913  模型四要素 + 工况/附加热载荷/�
 
     progress(0.9, "恢复热流")
     gradients: list[np.ndarray] = []
-    fluxes: list[float] = []
+    fluxes: list[np.ndarray] = []
     for block in mesh.blocks:
         material = materials[block.material]
-        for conn in block.conn:
-            grad = element_scalar_gradient(block.etype, mesh.coords[conn], t[conn])
-            gradients.append(grad)
-            fluxes.append(material.thermal_k * float(np.linalg.norm(grad)))
+        grads = _batch_gradients(block.etype, mesh.coords[block.conn], t[block.conn])
+        gradients.append(grads)
+        fluxes.append(material.thermal_k * np.linalg.norm(grads, axis=1))
     convection_heat = _convection_total(mesh, case, t)
     progress(1.0, "温度场求解完成")
     return ThermalSolution(
         mesh=mesh,
         temperatures=t,
-        element_gradients=np.asarray(gradients).reshape(-1, 2),
-        element_heat_flux=np.asarray(fluxes),
+        element_gradients=np.concatenate(gradients) if gradients else np.empty((0, 2)),
+        element_heat_flux=np.concatenate(fluxes) if fluxes else np.empty(0),
         t_min=float(t.min()),
         t_max=float(t.max()),
         convection_heat=convection_heat,

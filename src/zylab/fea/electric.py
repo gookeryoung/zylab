@@ -16,10 +16,10 @@ from .conduction import (
     ConductionMaterial,
     NodalSource,
     NodalValue,
+    _batch_gradients,
+    _batch_measures,
     assemble_conduction,
-    element_scalar_gradient,
 )
-from .elements import element_measure
 from .errors import MeshError
 from .material import Section
 from .mesh import Mesh
@@ -106,23 +106,24 @@ def solve_electric(
 
     progress(0.9, "恢复电场与耗散功率")
     gradients: list[np.ndarray] = []
-    powers: list[float] = []
+    powers: list[np.ndarray] = []
     for block in mesh.blocks:
         material = materials[block.material]
         thickness = sections[block.section].thickness
-        for conn in block.conn:
-            grad = element_scalar_gradient(block.etype, mesh.coords[conn], v[conn])
-            gradients.append(grad)
-            # 单元耗散功率 = σ|∇V|² × 体积（2D 度量 × 厚度）
-            measure = element_measure(block.etype, mesh.coords[conn])
-            powers.append(material.electric_sigma * float(grad @ grad) * measure * thickness)
-    total = float(sum(powers))
+        coords_b = mesh.coords[block.conn]
+        grads = _batch_gradients(block.etype, coords_b, v[block.conn])
+        # 单元耗散功率 = σ|∇V|² × 体积（2D 度量 × 厚度），块内向量化
+        measures = _batch_measures(block.etype, coords_b)
+        gradients.append(grads)
+        powers.append(material.electric_sigma * np.einsum("ni,ni->n", grads, grads) * measures * thickness)
+    element_power = np.concatenate(powers) if powers else np.empty(0)
+    total = float(element_power.sum())
     progress(1.0, "电场求解完成")
     return ElectricSolution(
         mesh=mesh,
         voltages=v,
-        element_gradients=np.asarray(gradients).reshape(-1, 2),
-        element_power=np.asarray(powers),
+        element_gradients=np.concatenate(gradients) if gradients else np.empty((0, 2)),
+        element_power=element_power,
         total_power=total,
     )
 

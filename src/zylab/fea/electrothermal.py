@@ -12,7 +12,7 @@ from typing import Callable, Sequence
 
 import numpy as np
 
-from .conduction import ConductionMaterial, element_field_load
+from .conduction import ConductionMaterial, _batch_field_load
 from .electric import ElectricCase, ElectricSolution, solve_electric
 from .material import Section
 from .mesh import Mesh
@@ -89,11 +89,11 @@ def solve_electrothermal(  # noqa: PLR0913  模型四要素 + 电/热双工况�
     for block in mesh.blocks:
         material = materials[block.material]
         thickness = sections[block.section].thickness
-        for conn in block.conn:
-            load = element_field_load(
-                block.etype, mesh.coords[conn], material.electric_sigma, electric.voltages[conn], thickness
-            )
-            joule[conn] += load
+        # np.add.at 无缓冲累加：跨单元共享节点正确求和（fancy 索引 += 会覆盖）
+        load = _batch_field_load(
+            block.etype, mesh.coords[block.conn], material.electric_sigma, electric.voltages[block.conn], thickness
+        )
+        np.add.at(joule, block.conn.ravel(), load.ravel())
 
     progress(0.7, "求解稳态温度场")
     thermal = solve_thermal(mesh, materials, sections, thermal_case, extra_heat=joule)

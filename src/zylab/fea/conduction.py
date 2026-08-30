@@ -30,6 +30,33 @@ __all__ = [
 #: 2 点高斯积分位置（与结构单元一致）
 _GAUSS_ABSCISSA = 1.0 / np.sqrt(3.0)
 
+
+def _quad4_gauss_points() -> tuple[tuple[np.ndarray, np.ndarray], ...]:
+    """QUAD4 四高斯点 ``(N, dN)`` 常量表（xi 外层、eta 内层，与逐单元实现同序）."""
+    points = []
+    for xi in (-_GAUSS_ABSCISSA, _GAUSS_ABSCISSA):
+        for eta in (-_GAUSS_ABSCISSA, _GAUSS_ABSCISSA):
+            n_shape = 0.25 * np.array(
+                [
+                    (1.0 - xi) * (1.0 - eta),
+                    (1.0 + xi) * (1.0 - eta),
+                    (1.0 + xi) * (1.0 + eta),
+                    (1.0 - xi) * (1.0 + eta),
+                ]
+            )
+            d_n = 0.25 * np.array(
+                [
+                    [-(1.0 - eta), (1.0 - eta), (1.0 + eta), -(1.0 + eta)],
+                    [-(1.0 - xi), -(1.0 + xi), (1.0 + xi), (1.0 - xi)],
+                ]
+            )
+            points.append((n_shape, d_n))
+    return tuple(points)
+
+
+#: QUAD4 四高斯点形函数/导数常量（批量内核复用）
+_QUAD4_GAUSS = _quad4_gauss_points()
+
 _GEOM_TOL = 1.0e-12
 
 #: 支持标量场传导的单元族（v1 限 2D 连续体）
@@ -232,13 +259,98 @@ def element_field_load(
     raise ElementError(f"标量场传导暂不支持该单元类型: {etype}")
 
 
+def _quad4_gauss_data(coords: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+    """批量 QUAD4 高斯点数据.
+
+    :param coords: 单元节点坐标 ``(n, 4, 2)``。
+    :return: ``(G, det)`` —— 四高斯点梯度矩阵 ``G (4, n, 2, 4)`` 与 ``|detJ| (4, n)``。
+    """
+    n = coords.shape[0]
+    g_all = np.empty((4, n, 2, 4))
+    det_all = np.empty((4, n))
+    for point, (_shape, d_n) in enumerate(_QUAD4_GAUSS):
+        jacob = np.einsum("ij,njk->nik", d_n, coords)
+        det = np.linalg.det(jacob)
+        if np.any(np.abs(det) <= _GEOM_TOL):
+            raise ElementError("QUAD4 单元雅可比行列式接近零（单元退化或节点序错误）")
+        g_all[point] = np.einsum("nij,jk->nik", np.linalg.inv(jacob), d_n)
+        det_all[point] = np.abs(det)
+    return g_all, det_all
+
+
+def _tria3_batch_data(coords: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+    """批量 TRIA3 梯度矩阵与面积.
+
+    :param coords: 单元节点坐标 ``(n, 3, 2)``。
+    :return: ``(G, area)`` —— 常梯度矩阵 ``G (n, 2, 3)`` 与面积 ``(n,)``。
+    """
+    x, y = coords[:, :, 0], coords[:, :, 1]
+    area = 0.5 * np.abs((x[:, 1] - x[:, 0]) * (y[:, 2] - y[:, 0]) - (x[:, 2] - x[:, 0]) * (y[:, 1] - y[:, 0]))
+    if np.any(area <= _GEOM_TOL):
+        raise ElementError("TRIA3 单元退化为直线（面积接近零）")
+    g = (
+        np.stack(
+            (
+                np.stack((y[:, 1] - y[:, 2], y[:, 2] - y[:, 0], y[:, 0] - y[:, 1]), axis=1),
+                np.stack((x[:, 2] - x[:, 1], x[:, 0] - x[:, 2], x[:, 1] - x[:, 0]), axis=1),
+            ),
+            axis=1,
+        )
+        / (2.0 * area)[:, None, None]
+    )
+    return g, area
+
+
+def _batch_conductance(etype: ElementType, coords: np.ndarray, coefficient: float, thickness: float) -> np.ndarray:
+    """批量单元传导矩阵（与 :func:`element_conductance` 同数值，块内向量化）."""
+    if etype is ElementType.TRIA3:
+        g, area = _tria3_batch_data(coords)
+        return coefficient * thickness * area[:, None, None] * np.einsum("nia,nja->nij", g, g)
+    g_all, det_all = _quad4_gauss_data(coords)
+    return coefficient * thickness * np.einsum("pn,pnki,pnkj->nij", det_all, g_all, g_all)
+
+
+def _batch_gradients(etype: ElementType, coords: np.ndarray, values: np.ndarray) -> np.ndarray:
+    """批量单元标量梯度（TRIA3 常梯度精确，QUAD4 高斯点平均）."""
+    if etype is ElementType.TRIA3:
+        g, _ = _tria3_batch_data(coords)
+        return np.einsum("nij,nj->ni", g, values)
+    g_all, _ = _quad4_gauss_data(coords)
+    return np.einsum("pnki,ni->pnk", g_all, values).mean(axis=0)
+
+
+def _batch_field_load(
+    etype: ElementType, coords: np.ndarray, coefficient: float, values: np.ndarray, thickness: float
+) -> np.ndarray:
+    """批量场能一致节点载荷（与 :func:`element_field_load` 同数值）."""
+    if etype is ElementType.TRIA3:
+        g, area = _tria3_batch_data(coords)
+        grad = np.einsum("nij,nj->ni", g, values)
+        q = coefficient * np.einsum("ni,ni->n", grad, grad)
+        return q[:, None] * thickness * area[:, None] / 3.0 * np.ones((coords.shape[0], 3))
+    g_all, det_all = _quad4_gauss_data(coords)
+    load = np.zeros((coords.shape[0], 4))
+    for point, (n_shape, _d_n) in enumerate(_QUAD4_GAUSS):
+        grad = np.einsum("nki,ni->nk", g_all[point], values)
+        q = coefficient * np.einsum("ni,ni->n", grad, grad)
+        load += det_all[point][:, None] * thickness * q[:, None] * n_shape[None, :]
+    return load
+
+
+def _batch_measures(etype: ElementType, coords: np.ndarray) -> np.ndarray:
+    """批量连续体单元度量（TRIA3 面积；QUAD4 高斯 |detJ| 求和）."""
+    if etype is ElementType.TRIA3:
+        return _tria3_batch_data(coords)[1]
+    return _quad4_gauss_data(coords)[1].sum(axis=0)
+
+
 def assemble_conduction(
     mesh: Mesh,
     materials: Sequence[ConductionMaterial],
     sections: Sequence[Section],
     field: str,
 ) -> csr_matrix:
-    """装配全局标量场传导矩阵（CSR，每节点 1 DOF）.
+    """装配全局标量场传导矩阵（CSR，每节点 1 DOF，块内向量化）.
 
     Args:
         mesh: 网格（v1 限 2D 连续体 TRIA3/QUAD4）。
@@ -269,14 +381,12 @@ def assemble_conduction(
         material = materials[block.material]
         thickness = sections[block.section].thickness
         coefficient = material.electric_sigma if field == "electric" else material.thermal_k
-        for conn in block.conn:
-            dofs = conn.astype(np.intp)
-            ke = element_conductance(block.etype, mesh.coords[conn], coefficient, thickness)
-            n_dof_elem = dofs.size
-            rows.append(np.repeat(dofs, n_dof_elem))
-            cols.append(np.tile(dofs, n_dof_elem))
-            values.append(ke.ravel())
-    row = np.concatenate(rows)
-    col = np.concatenate(cols)
-    value = np.concatenate(values)
+        ke = _batch_conductance(block.etype, mesh.coords[block.conn], coefficient, thickness)
+        n_dof_elem = ke.shape[1]
+        rows.append(np.repeat(block.conn, n_dof_elem, axis=1).ravel())
+        cols.append(np.tile(block.conn, (1, n_dof_elem)).ravel())
+        values.append(ke.reshape(-1))
+    row = np.concatenate(rows) if rows else np.empty(0, dtype=np.intp)
+    col = np.concatenate(cols) if cols else np.empty(0, dtype=np.intp)
+    value = np.concatenate(values) if values else np.empty(0)
     return csr_matrix((value, (row, col)), shape=(mesh.n_nodes, mesh.n_nodes))
