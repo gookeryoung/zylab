@@ -32,7 +32,8 @@ class ParamForm(QWidget):
         """初始化空表单."""
         super().__init__(parent)
         self._layout = QVBoxLayout(self)
-        self._layout.setContentsMargins(0, 0, 0, 0)
+        # 四周留出 MD 边距，避免分组框直贴滚动区/窗口右缘（与左栏模板库面板内边距一致）
+        self._layout.setContentsMargins(theme.SPACING_MD, theme.SPACING_MD, theme.SPACING_MD, theme.SPACING_MD)
         self._layout.setSpacing(theme.SPACING_SM)
         self._fields: dict[tuple[str, str], QDoubleSpinBox] = {}
         self._graph: WorkflowGraph | None = None

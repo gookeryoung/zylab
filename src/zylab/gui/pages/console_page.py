@@ -189,7 +189,8 @@ class ConsolePage(QWidget):
         splitter.setStretchFactor(1, 2)
 
         layout = QHBoxLayout(self)
-        layout.setContentsMargins(0, 0, 0, 0)
+        # 右侧留出 MD 边距，避免变量/绘图选项卡直贴窗口右缘
+        layout.setContentsMargins(0, 0, theme.SPACING_MD, 0)
         layout.addWidget(splitter)
 
     def _on_result(self, result: ExecResult) -> None:
