@@ -30,7 +30,7 @@ license         = "MIT"
 name            = "zylab"
 readme          = "README.md"
 requires-python = ">=3.8"
-version         = "0.1.1"
+version         = "0.1.2"
 
 [project.optional-dependencies]
 dev = [
