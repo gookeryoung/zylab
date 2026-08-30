@@ -61,7 +61,7 @@ from ..qt_compat import (
 )
 from ..widgets.node_canvas import NodeCanvasWidget
 from ..widgets.param_form import ParamForm
-from ..widgets.result_view import ResultView
+from ..widgets.result_view import ResultTabs
 
 __all__ = ["StudioPage"]
 
@@ -129,7 +129,7 @@ class StudioPage(QWidget):
         center = QSplitter(Qt.Vertical)
         self._canvas = NodeCanvasWidget()
         center.addWidget(self._canvas)
-        self._result_view = ResultView()
+        self._result_view = ResultTabs()
         center.addWidget(self._result_view)
         center.setStretchFactor(0, 3)
         center.setStretchFactor(1, 2)
@@ -279,17 +279,21 @@ class StudioPage(QWidget):
         """源节点进程内即时建模（纯数值、毫秒级），画布与结果视图立即呈现."""
         if self._graph is None:
             return
+        first = True  # 仅激活首个源节点结果页，其余建页不抢焦点
         for node in self._graph.nodes():
             if node.spec.inputs:
                 continue
+            view = self._result_view.view_for(node.id, node.name, activate=first)
             try:
                 result = _resolve_target(node.spec.target)({}, node.params)
-            except Exception as exc:  # 预览失败不阻断：标记 FAILED 由画布呈现
+            except Exception as exc:  # 预览失败不阻断：结果页错误呈现 + 画布 FAILED
                 logger.warning("模型预览失败: %s", exc)
                 self._graph.mark_failed(node.id, f"{type(exc).__name__}: {exc}")
+                view.show_error(f"{type(exc).__name__}: {exc}")
                 continue
             self._graph.mark_result(node.id, result, 0.0)
-            self._result_view.show_mesh(result)
+            view.show_mesh(result)
+            first = False
         self._canvas.refresh_states()
 
     # ------------------------------------------------------------------ 模板与工程
@@ -442,10 +446,11 @@ class StudioPage(QWidget):
             self._show_node_result(node_id)
         QTimer.singleShot(0, self._sync_idle_ui)
 
-    def _on_node_failed(self, _node_id: str, message: str) -> None:
-        """节点失败：画布标记 + 结果视图显示错误."""
+    def _on_node_failed(self, node_id: str, message: str) -> None:
+        """节点失败：画布标记 + 该节点结果页显示错误."""
         self._canvas.refresh_states()
-        self._result_view.show_error(message)
+        if self._graph is not None:
+            self._result_view.show_error(node_id, self._graph.node(node_id).name, message)
         self._status_label.setText("运行失败")
         QTimer.singleShot(0, self._sync_idle_ui)
 
@@ -524,16 +529,17 @@ class StudioPage(QWidget):
             self._canvas.select_all()  # 经 all_selected 信号联动参数面板
 
     def _show_node_result(self, node_id: str) -> None:
-        """在结果视图呈现节点输出（模型线框 / 分析解）."""
+        """在结果视图呈现节点输出（模型线框 / 分析解，独立结果页）."""
         if self._graph is None:
             return
-        result = self._graph.node(node_id).result
-        if result is None:
+        node = self._graph.node(node_id)
+        if node.result is None:
             return
-        if isinstance(result, (ModelBundle, ConductionBundle)):
-            self._result_view.show_mesh(result)
+        view = self._result_view.view_for(node_id, node.name)
+        if isinstance(node.result, (ModelBundle, ConductionBundle)):
+            view.show_mesh(node.result)
         else:
-            self._result_view.show_solution(result, self._reference_load(node_id))
+            view.show_solution(node.result, self._reference_load(node_id))
 
     def _reference_load(self, node_id: str) -> float:
         """屈曲临界载荷的参考载荷（上游模型工况的节点力模长合计）."""

@@ -130,6 +130,32 @@ QTabWidget#consoleSideTabs > QTabBar::tab:hover:!selected {
     background-color: ${QSS_SELECTION_BG};
 }
 
+/* ------------------------------------------------ 结果页多 TAB（分析页，Workbench 风格） */
+QTabWidget#resultTabs::pane {
+    border: 1px solid ${QSS_BORDER};
+    border-radius: ${RADIUS_SM};
+    top: -1px;
+    background-color: ${QSS_BG_APP};
+}
+QTabWidget#resultTabs > QTabBar::tab {
+    background-color: ${QSS_BG_MUTED};
+    color: ${QSS_TEXT_SECONDARY};
+    padding: 3px 12px;
+    margin-right: 2px;
+    border-top-left-radius: ${RADIUS_SM};
+    border-top-right-radius: ${RADIUS_SM};
+    border: 1px solid ${QSS_BORDER};
+    border-bottom: none;
+}
+QTabWidget#resultTabs > QTabBar::tab:selected {
+    background-color: ${QSS_BG_APP};
+    color: ${QSS_PRIMARY};
+    border-bottom: 2px solid ${QSS_PRIMARY};
+}
+QTabWidget#resultTabs > QTabBar::tab:hover:!selected {
+    background-color: ${QSS_SELECTION_BG};
+}
+
 /* ------------------------------------------------ 按钮 */
 QPushButton {
     background-color: ${QSS_PRIMARY};

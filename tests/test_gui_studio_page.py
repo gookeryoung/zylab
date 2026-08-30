@@ -26,9 +26,9 @@ def test_page_builds_with_first_template(qtbot) -> None:
     assert page._graph is not None
     assert page._canvas.card_rect("model") is not None
     assert page._param_form._fields
-    # 源节点进程内预览：已完成 + 模型线框
+    # 源节点进程内预览：已完成 + 模型线框（独立结果页）
     assert page._graph.node("model").state is NodeState.UP_TO_DATE
-    assert "模型预览" in page._result_view._summary.text()
+    assert "模型预览" in page._result_view.current_view()._summary.text()
     page.shutdown()
 
 
@@ -81,7 +81,7 @@ def test_run_all_static_template(qtbot) -> None:
     assert page._cancel_button.isEnabled()
     qtbot.waitUntil(lambda: not page._cancel_button.isEnabled(), timeout=60000)
     assert page._graph.node("solve").state is NodeState.UP_TO_DATE
-    assert "最大位移" in page._result_view._summary.text()
+    assert "最大位移" in page._result_view.current_view()._summary.text()
     page.shutdown()
 
 
@@ -96,9 +96,9 @@ def test_node_click_shows_cached_result(qtbot) -> None:
     qtbot.waitUntil(lambda: not page._cancel_button.isEnabled(), timeout=10000)
     page._result_view.clear()
     page._on_node_clicked("solve")
-    assert "最大位移" in page._result_view._summary.text()
+    assert "最大位移" in page._result_view.current_view()._summary.text()
     page._on_node_clicked("model")
-    assert "模型预览" in page._result_view._summary.text()
+    assert "模型预览" in page._result_view.current_view()._summary.text()
     # 单选 model：只显示 model 的参数行（solve 行隐藏）
     model_keys = [
         ref for _, rows in page._param_form._group_rows for ref, spin in rows if spin.isVisibleTo(page._param_form)
@@ -122,7 +122,7 @@ def test_double_click_runs_to_node(qtbot) -> None:
     page._on_node_double_clicked("solve")
     qtbot.waitUntil(lambda: page._graph.node("solve").state is NodeState.UP_TO_DATE, timeout=60000)
     qtbot.waitUntil(lambda: not page._cancel_button.isEnabled(), timeout=10000)
-    assert "Newton" in page._result_view._summary.text()
+    assert "Newton" in page._result_view.current_view()._summary.text()
     page.shutdown()
 
 
@@ -135,7 +135,7 @@ def test_run_node_up_to_date_no_hang(qtbot) -> None:
     page._run_node("model")
     assert not page._cancel_button.isEnabled()
     assert "无需运行" in page._status_label.text()
-    assert "模型预览" in page._result_view._summary.text()  # 直接呈现既有结果
+    assert "模型预览" in page._result_view.current_view()._summary.text()  # 直接呈现既有结果
     page.shutdown()
 
 
@@ -187,7 +187,7 @@ def test_double_click_up_to_date_shows_result(qtbot) -> None:
     qtbot.addWidget(page)
     page._result_view.clear()  # model 预览已就绪；先清空再双击查看
     page._on_node_double_clicked("model")
-    assert "模型预览" in page._result_view._summary.text()
+    assert "模型预览" in page._result_view.current_view()._summary.text()
     page.shutdown()
 
 
@@ -309,12 +309,36 @@ def test_preview_failure_marks_failed(qtbot, monkeypatch) -> None:
 
 
 @pytest.mark.gui
+def test_result_tabs_per_node(qtbot) -> None:
+    """多 TAB 结果页：每个有结果的节点独立一页（页名 = 节点名），可关闭回占位."""
+    page = StudioPage()
+    qtbot.addWidget(page)
+    _select_template(page, "structural.cantilever_static")
+    page._on_run_all()
+    qtbot.waitUntil(lambda: not page._cancel_button.isEnabled(), timeout=60000)
+    # model 预览页 + solve 结果页；当前页 = solve（结果到达即激活）
+    assert page._result_view._tab.count() == 2
+    titles = [page._result_view._tab.tabText(i) for i in range(page._result_view._tab.count())]
+    assert titles == [page._graph.node("model").name, page._graph.node("solve").name]
+    assert page._result_view.current_view() is page._result_view.view_for("solve", "任意")
+    # 切换到 model 页
+    page._result_view.view_for("model", "任意").show_mesh(page._graph.node("model").result)
+    assert page._result_view.current_view() is page._result_view.view_for("model", "任意")
+    # 关闭两页后回到占位页（current_view 为 None）
+    page._result_view._on_close_requested(0)
+    page._result_view._on_close_requested(0)
+    assert page._result_view.current_view() is None
+    assert page._result_view._tab.count() == 1  # 占位页
+    page.shutdown()
+
+
+@pytest.mark.gui
 def test_node_failed_shows_error(qtbot) -> None:
     """节点失败事件：结果视图错误着色 + 状态标签."""
     page = StudioPage()
     qtbot.addWidget(page)
     page._on_node_failed("solve", "SolverError: 矩阵奇异")
-    assert page._result_view._summary.objectName() == "errorText"
+    assert page._result_view.current_view()._summary.objectName() == "errorText"
     assert "失败" in page._status_label.text()
     page.shutdown()
 

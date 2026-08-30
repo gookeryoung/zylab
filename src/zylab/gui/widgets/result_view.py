@@ -1,8 +1,10 @@
-"""结果视图：摘要 + 控制条（频率表/振型序号/非线性与瞬态视图切换）+ 绘图区.
+"""结果视图：多 TAB 容器 + 摘要/控制条/绘图区（Workbench 风格）.
 
-按结果类型分发渲染（静力/非线性变形云图、模态/屈曲振型、谐响应频响曲线、
-瞬态末帧云图与位移时程、模型网格预览），从原 FeaPage 移植并组件化，
-供工作台页复用。
+- :class:`ResultTabs`：每个环节节点的结果独立一页（页名 = 节点名），
+  可单独关闭，全部关闭/模板切换回到占位页（紧凑多结果同屏对比）；
+- :class:`ResultView`：单页结果视图，按结果类型分发渲染（静力/非线性
+  变形云图、模态/屈曲振型、谐响应频响曲线、瞬态末帧云图与位移时程、
+  模型网格预览），从原 FeaPage 移植并组件化。
 """
 
 from __future__ import annotations
@@ -38,11 +40,12 @@ from ..qt_compat import (
     QSpinBox,
     QTableWidget,
     QTableWidgetItem,
+    QTabWidget,
     QVBoxLayout,
     QWidget,
 )
 
-__all__ = ["ResultView"]
+__all__ = ["ResultTabs", "ResultView"]
 
 
 class ResultView(QWidget):
@@ -521,3 +524,89 @@ class ResultView(QWidget):
             f"峰值 |uy| = {abs(uy[peak_index]):.6g} @ t = {times[peak_index]:.6g}"
             f"（{solution.n_steps} 步 · dt = {solution.dt:.4g}）"
         )
+
+
+class ResultTabs(QWidget):
+    """多 TAB 结果容器（Workbench 风格）：每个环节节点的结果独立一页.
+
+    - 页名 = 节点名；结果到达即建页并激活，节点重跑刷新原页（node_id 索引）；
+    - 页可单独关闭；全部关闭或模板切换（clear）回到占位页；
+    - 占位页不可关闭（提示运行入口）。
+    """
+
+    def __init__(self, parent: QWidget | None = None) -> None:
+        """初始化容器：紧凑 TAB 条 + 占位页."""
+        super().__init__(parent)
+        self._views: dict[str, ResultView] = {}
+        self._placeholder: ResultView | None = None
+
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(0, 0, 0, 0)
+        self._tab = QTabWidget(objectName="resultTabs")
+        self._tab.setTabsClosable(True)
+        self._tab.tabCloseRequested.connect(self._on_close_requested)
+        layout.addWidget(self._tab)
+        self._show_placeholder("尚未求解 —— 右键画布选择「运行全部」开始")
+
+    # ------------------------------------------------------------------ 公共接口
+
+    def view_for(self, node_id: str, title: str, activate: bool = True) -> ResultView:
+        """取节点结果页（不存在则建页）；``activate=False`` 供预览批量建页不抢焦点."""
+        view = self._views.get(node_id)
+        if view is None:
+            view = ResultView()
+            self._views[node_id] = view
+            self._tab.addTab(view, title)
+            if self._placeholder is not None:  # 首个结果页顶替占位页
+                self._tab.removeTab(self._tab.indexOf(self._placeholder))
+                self._placeholder.deleteLater()
+                self._placeholder = None
+        if activate:
+            self._tab.setCurrentWidget(view)
+        return view
+
+    def current_view(self) -> ResultView | None:
+        """当前激活的结果页（占位页或无页时返回 None）."""
+        widget = self._tab.currentWidget()
+        return next((v for v in self._views.values() if v is widget), None)
+
+    def show_error(self, node_id: str, title: str, message: str) -> None:
+        """在节点页显示失败信息（无页则建页）."""
+        self.view_for(node_id, title).show_error(message)
+
+    def clear(self, message: str = "尚未求解") -> None:
+        """清空全部结果页并回到占位页（模板切换时）."""
+        self._views.clear()
+        while self._tab.count():
+            widget = self._tab.widget(0)
+            self._tab.removeTab(0)
+            widget.deleteLater()
+        self._show_placeholder(message)
+
+    def refresh_theme(self) -> None:
+        """主题切换后重刷全部结果页绘图背景."""
+        for index in range(self._tab.count()):
+            widget = self._tab.widget(index)
+            if isinstance(widget, ResultView):
+                widget.refresh_theme()
+
+    # ------------------------------------------------------------------ 内部
+
+    def _show_placeholder(self, message: str) -> None:
+        """显示占位页（仅提示文案，不可关闭）."""
+        self._placeholder = ResultView()
+        self._placeholder.clear(message)
+        self._tab.addTab(self._placeholder, "结果")
+
+    def _on_close_requested(self, index: int) -> None:
+        """关闭单个结果页；占位页忽略，全部关闭后回到占位页."""
+        widget = self._tab.widget(index)
+        if widget is self._placeholder:
+            return
+        self._tab.removeTab(index)
+        widget.deleteLater()
+        for node_id, view in list(self._views.items()):
+            if view is widget:
+                del self._views[node_id]
+        if self._tab.count() == 0:
+            self._show_placeholder("尚未求解 —— 右键画布选择「运行全部」开始")
