@@ -150,3 +150,88 @@ def test_refresh_theme_no_crash(qtbot) -> None:
     qtbot.addWidget(view)
     view.show()
     view.refresh_theme()
+
+
+@pytest.mark.gui
+def test_export_row_visibility(qtbot) -> None:
+    """导出行：有解时可见，清空后隐藏."""
+    view = ResultView()
+    qtbot.addWidget(view)
+    view.show()
+    assert not view._export_row.isVisible()
+    view.show_solution(nodes.run_static({"model": _beam_bundle()}, {}))
+    assert view._export_row.isVisible()
+    view.clear()
+    assert not view._export_row.isVisible()
+
+
+@pytest.mark.gui
+def test_export_csv_writes_file(qtbot, monkeypatch: pytest.MonkeyPatch, tmp_path) -> None:
+    """导出 CSV：对话框路径落盘，摘要提示文件名."""
+    path = tmp_path / "out.csv"
+    monkeypatch.setattr(
+        "zylab.gui.widgets.result_view.QFileDialog.getSaveFileName",
+        lambda *_a, **_kw: (str(path), ""),
+    )
+    view = ResultView()
+    qtbot.addWidget(view)
+    view.show()
+    view.show_solution(nodes.run_static({"model": _beam_bundle()}, {}))
+    view._on_export_csv()
+    assert path.exists()
+    assert "结果已导出" in view._summary.text()
+
+
+@pytest.mark.gui
+def test_export_csv_failure_shows_message(qtbot, monkeypatch: pytest.MonkeyPatch, tmp_path) -> None:
+    """导出失败：异常信息显示在摘要."""
+    path = tmp_path / "bad.csv"
+
+    def _raise(*_args: object, **_kwargs: object) -> None:
+        raise ValueError("不支持导出的结果类型")
+
+    monkeypatch.setattr(
+        "zylab.gui.widgets.result_view.QFileDialog.getSaveFileName",
+        lambda *_a, **_kw: (str(path), ""),
+    )
+    monkeypatch.setattr("zylab.gui.widgets.result_view.export_csv", _raise)
+    view = ResultView()
+    qtbot.addWidget(view)
+    view.show()
+    view.show_solution(nodes.run_static({"model": _beam_bundle()}, {}))
+    view._on_export_csv()
+    assert "导出失败" in view._summary.text()
+    assert not path.exists()
+
+
+@pytest.mark.gui
+def test_export_csv_dialog_cancelled(qtbot, monkeypatch: pytest.MonkeyPatch) -> None:
+    """对话框取消（空路径）：不导出不改摘要."""
+    monkeypatch.setattr(
+        "zylab.gui.widgets.result_view.QFileDialog.getSaveFileName",
+        lambda *_a, **_kw: ("", ""),
+    )
+    view = ResultView()
+    qtbot.addWidget(view)
+    view.show()
+    view.show_solution(nodes.run_static({"model": _beam_bundle()}, {}))
+    view._on_export_csv()
+    assert "最大位移" in view._summary.text()  # 摘要未被覆盖
+
+
+@pytest.mark.gui
+def test_export_png_writes_file(qtbot, monkeypatch: pytest.MonkeyPatch, tmp_path) -> None:
+    """导出 PNG：绘图区截图落盘，摘要提示文件名."""
+    path = tmp_path / "shot.png"
+    monkeypatch.setattr(
+        "zylab.gui.widgets.result_view.QFileDialog.getSaveFileName",
+        lambda *_a, **_kw: (str(path), ""),
+    )
+    view = ResultView()
+    qtbot.addWidget(view)
+    view.show()
+    view.show_solution(nodes.run_static({"model": _beam_bundle()}, {}))
+    view._on_export_png()
+    assert path.exists()
+    assert path.stat().st_size > 0
+    assert "图片已导出" in view._summary.text()

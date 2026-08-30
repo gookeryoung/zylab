@@ -75,6 +75,25 @@ class TestRunCommand:
         assert code == 2
         assert "扫描参数非法" in capsys.readouterr().err
 
+    def test_run_export(self, tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+        """--export 目录：结果节点导出 CSV，模型等非解节点跳过."""
+        out_dir = tmp_path / "exports"
+        code = main(["run", "structural.cantilever_static", "--export", str(out_dir)])
+        assert code == 0
+        names = {p.name for p in out_dir.glob("*.csv")}
+        assert "solve.csv" in names
+        assert "model.csv" not in names  # 模型节点非解类型不导出
+        assert "已导出" in capsys.readouterr().err
+
+    def test_run_scan_export_suffix(self, tmp_path: Path) -> None:
+        """--scan + --export：文件按扫描值后缀命名."""
+        out_dir = tmp_path / "scan"
+        code = main(["run", "structural.cantilever_static", "--scan", "model.tip_load=10,20", "--export", str(out_dir)])
+        assert code == 0
+        names = {p.name for p in out_dir.glob("*.csv")}
+        assert "solve@10.csv" in names
+        assert "solve@20.csv" in names
+
     def test_run_json_template_file(self, tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
         """按 .json 模板文件路径运行."""
         template = TemplateRegistry.with_builtin().get("structural.cantilever_static")

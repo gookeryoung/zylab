@@ -7,6 +7,8 @@
 
 from __future__ import annotations
 
+from pathlib import Path
+
 import numpy as np
 import pyqtgraph as pg
 
@@ -18,6 +20,7 @@ from zylab.fea import (
     NonlinearSolution,
     StaticSolution,
     TransientSolution,
+    export_csv,
 )
 from zylab.fea.viewdata import deformed_coords, edge_segments, mesh_edges, scalar_colors
 from zylab.studio import ModelBundle
@@ -26,8 +29,11 @@ from zylab.studio.nodes import tip_node
 from .. import theme
 from ..qt_compat import (
     QComboBox,
+    QFileDialog,
+    QHBoxLayout,
     QHeaderView,
     QLabel,
+    QPushButton,
     QSpinBox,
     QTableWidget,
     QTableWidgetItem,
@@ -49,6 +55,7 @@ class ResultView(QWidget):
         self._nonlinear: NonlinearSolution | None = None
         self._transient: TransientSolution | None = None
         self._reference_load = 1.0
+        self._solution: object | None = None
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
@@ -57,6 +64,19 @@ class ResultView(QWidget):
         self._summary = QLabel("尚未求解", objectName="resultText")
         self._summary.setWordWrap(True)
         layout.addWidget(self._summary)
+
+        self._export_row = QWidget()
+        export_layout = QHBoxLayout(self._export_row)
+        export_layout.setContentsMargins(0, 0, 0, 0)
+        self._export_csv_btn = QPushButton("导出 CSV")
+        self._export_csv_btn.clicked.connect(self._on_export_csv)
+        export_layout.addWidget(self._export_csv_btn)
+        self._export_png_btn = QPushButton("导出 PNG")
+        self._export_png_btn.clicked.connect(self._on_export_png)
+        export_layout.addWidget(self._export_png_btn)
+        export_layout.addStretch(1)
+        self._export_row.setVisible(False)
+        layout.addWidget(self._export_row)
 
         self._freq_table = QTableWidget(objectName="freqTable")
         self._freq_table.setColumnCount(3)
@@ -132,6 +152,9 @@ class ResultView(QWidget):
             self._summary.setText(f"最大位移 |u| = {max_u:.6g}\n应变能 = {solution.strain_energy:.6g}")
         else:
             self._summary.setText(f"未知结果类型: {type(solution).__name__}")
+            return
+        self._solution = solution
+        self._export_row.setVisible(True)
 
     def show_error(self, message: str) -> None:
         """显示失败信息."""
@@ -158,9 +181,36 @@ class ResultView(QWidget):
         self._buckling = None
         self._nonlinear = None
         self._transient = None
+        self._solution = None
         self._freq_table.setVisible(False)
         self._mode_spin.setVisible(False)
         self._view_combo.setVisible(False)
+        self._export_row.setVisible(False)
+
+    def _on_export_csv(self) -> None:
+        """导出当前结果为 CSV（对话框选路径；失败信息显示在摘要）."""
+        if self._solution is None:
+            return
+        path_str, _ = QFileDialog.getSaveFileName(self, "导出 CSV", "results.csv", "CSV 文件 (*.csv)")
+        if not path_str:
+            return
+        try:
+            export_csv(self._solution, Path(path_str))
+        except (ValueError, OSError) as exc:
+            self._summary.setText(f"导出失败: {exc}")
+            return
+        self._summary.setText(f"结果已导出: {Path(path_str).name}")
+
+    def _on_export_png(self) -> None:
+        """导出当前绘图区为 PNG 截图."""
+        path_str, _ = QFileDialog.getSaveFileName(self, "导出 PNG", "result.png", "PNG 图片 (*.png)")
+        if not path_str:
+            return
+        pixmap = self._plot.grab()
+        if not pixmap.save(path_str):
+            self._summary.setText("导出失败: 无法写入图片文件")
+            return
+        self._summary.setText(f"图片已导出: {Path(path_str).name}")
 
     def _set_error(self, error: bool) -> None:
         """切换摘要的错误着色（objectName 切换 + 重刷样式）."""

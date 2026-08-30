@@ -16,7 +16,7 @@ from pathlib import Path
 from typing import Sequence
 
 from zylab.core.project import Project, ProjectFileError
-from zylab.studio.batch import run_scan, run_workflow, summarize
+from zylab.studio.batch import RunOutcome, run_scan, run_workflow, summarize
 from zylab.studio.errors import StudioError
 from zylab.studio.registry import TemplateRegistry
 from zylab.studio.template import Template, load_template
@@ -37,6 +37,11 @@ def build_parser() -> argparse.ArgumentParser:
         metavar="节点.参数=取值",
         help="参数化扫描；取值为逗号分隔列表（v1,v2,…）或起点:终点:点数（含端点线性插值）",
     )
+    run.add_argument(
+        "--export",
+        metavar="目录",
+        help="结果 CSV 导出目录（每个结果节点一个文件；扫描模式按值命名）",
+    )
 
     sub.add_parser("templates", help="列出可用模板")
     return parser
@@ -47,13 +52,13 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
     if args.command == "run":
-        return _cmd_run(args.target, args.param, args.scan)
+        return _cmd_run(args.target, args.param, args.scan, args.export)
     if args.command == "templates":
         return _cmd_templates()
     return _launch_gui()
 
 
-def _cmd_run(target: str, params: list[str], scan: str | None) -> int:
+def _cmd_run(target: str, params: list[str], scan: str | None, export: str | None) -> int:
     """``run`` 子命令：加载目标 → 覆盖/扫描 → 进程内求解 → 打印摘要."""
     try:
         template = _load_target(target)
@@ -73,10 +78,32 @@ def _cmd_run(target: str, params: list[str], scan: str | None) -> int:
             print(f"== 扫描值 {value:g} ==")
             print(summarize(outcome))
             failed = failed or not outcome.succeeded
+            if export is not None:
+                _export_outcomes(outcome, export, f"@{value:g}")
         return 1 if failed else 0
     outcome = run_workflow(template, overrides, _report_progress)
     print(summarize(outcome))
+    if export is not None:
+        _export_outcomes(outcome, export)
     return 0 if outcome.succeeded else 1
+
+
+def _export_outcomes(outcome: RunOutcome, directory: str, suffix: str = "") -> None:
+    """把运行结果按节点导出 CSV（失败节点跳过并告警）."""
+    from zylab.fea import export_csv
+
+    out_dir = Path(directory)
+    for o in outcome.outcomes:
+        if o.result is None:
+            continue
+        try:
+            path = export_csv(o.result, out_dir / f"{o.node_id}{suffix}.csv")
+        except ValueError:
+            continue  # 模型等非解类型不导出
+        except OSError as exc:
+            print(f"导出失败: {o.node_id}: {exc}", file=sys.stderr)
+            continue
+        print(f"已导出: {path}", file=sys.stderr)
 
 
 def _cmd_templates() -> int:

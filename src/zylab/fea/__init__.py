@@ -12,7 +12,8 @@
 - :mod:`zylab.fea.harmonic`：谐响应分析编排与结果（Rayleigh 阻尼）；
 - :mod:`zylab.fea.transient`：瞬态动力分析（Newmark 直接时间积分）；
 - :mod:`zylab.fea.buckling`：线性屈曲分析编排与结果（杆/梁几何刚度）；
-- :mod:`zylab.fea.nonlinear`：几何非线性静力（TRUSS2 大位移 Newton-Raphson）。
+- :mod:`zylab.fea.nonlinear`：几何非线性静力（TRUSS2 大位移 Newton-Raphson）；
+- :mod:`zylab.fea.export`：结果 CSV 导出（六类解，GUI 与 CLI 共用）。
 """
 
 from __future__ import annotations
@@ -31,6 +32,7 @@ from .elements import (
     truss2_tangent_stiffness,
 )
 from .errors import ElementError, MeshError, SolverError
+from .export import export_csv
 from .harmonic import HarmonicResponse, solve_harmonic
 from .material import LinearElastic, Section, StressState
 from .mesh import ElementBlock, ElementType, Mesh, element_dofs_per_node
@@ -72,6 +74,7 @@ __all__ = [
     "element_stiffness",
     "element_stress",
     "element_stress_at",
+    "export_csv",
     "solve_buckling",
     "solve_harmonic",
     "solve_modal",
