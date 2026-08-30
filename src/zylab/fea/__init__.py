@@ -10,6 +10,7 @@
 - :mod:`zylab.fea.static`：静力分析编排与结果；
 - :mod:`zylab.fea.modal`：模态分析编排与结果；
 - :mod:`zylab.fea.harmonic`：谐响应分析编排与结果（Rayleigh 阻尼）；
+- :mod:`zylab.fea.transient`：瞬态动力分析（Newmark 直接时间积分）；
 - :mod:`zylab.fea.buckling`：线性屈曲分析编排与结果（杆/梁几何刚度）；
 - :mod:`zylab.fea.nonlinear`：几何非线性静力（TRUSS2 大位移 Newton-Raphson）。
 """
@@ -36,6 +37,7 @@ from .mesh import ElementBlock, ElementType, Mesh, element_dofs_per_node
 from .modal import ModalSolution, solve_modal
 from .nonlinear import NonlinearSolution, solve_nonlinear_static
 from .static import ElementResult, StaticSolution, solve_static
+from .transient import TransientSolution, solve_transient
 
 __all__ = [
     "BodyForce",
@@ -58,6 +60,7 @@ __all__ = [
     "StaticCase",
     "StaticSolution",
     "StressState",
+    "TransientSolution",
     "assemble_geometric",
     "assemble_loads",
     "assemble_mass",
@@ -74,6 +77,7 @@ __all__ = [
     "solve_modal",
     "solve_nonlinear_static",
     "solve_static",
+    "solve_transient",
     "truss2_internal_force",
     "truss2_tangent_stiffness",
 ]
