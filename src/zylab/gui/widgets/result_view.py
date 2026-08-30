@@ -249,8 +249,7 @@ class ResultView(QWidget):
         self._colorbar = ColorBarWidget()
         plot_layout.addWidget(self._colorbar)  # 标尺居左（Workbench 布局习惯）
         plot_layout.addWidget(self._plot, stretch=1)
-        layout.addWidget(self._plot_row, stretch=1)
-        layout.addStretch(1)
+        layout.addWidget(self._plot_row, stretch=1)  # 唯一弹性项：占满剩余全部高度
 
     # ------------------------------------------------------------------ 公共接口
 

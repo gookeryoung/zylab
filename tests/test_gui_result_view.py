@@ -332,6 +332,9 @@ def test_colorbar_left_of_plot(qtbot) -> None:
     assert view._plot_row.layout().indexOf(view._plot) == 1
     assert view._colorbar.maximumHeight() == ColorBarWidget._MAX_H
     assert view._plot_row.maximumHeight() == 16777215  # Qt 默认无上限
+    # 绘图行位于布局末尾（无尾部弹簧分抢高度）
+    layout = view.layout()
+    assert layout.indexOf(view._plot_row) == layout.count() - 1
 
 
 @pytest.mark.gui
