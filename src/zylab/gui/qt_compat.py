@@ -40,6 +40,8 @@ try:
         QAbstractItemView,
         QApplication,
         QComboBox,
+        QDialog,
+        QDialogButtonBox,
         QDoubleSpinBox,
         QFileDialog,
         QFormLayout,
@@ -70,6 +72,8 @@ try:
         QTableWidget,
         QTableWidgetItem,
         QTabWidget,
+        QTreeWidget,
+        QTreeWidgetItem,
         QVBoxLayout,
         QWidget,
     )
@@ -110,6 +114,8 @@ except ImportError:  # pragma: no cover（3.8 环境走此分支）
         QAbstractItemView,
         QApplication,
         QComboBox,
+        QDialog,
+        QDialogButtonBox,
         QDoubleSpinBox,
         QFileDialog,
         QFormLayout,
@@ -140,6 +146,8 @@ except ImportError:  # pragma: no cover（3.8 环境走此分支）
         QTableWidget,
         QTableWidgetItem,
         QTabWidget,
+        QTreeWidget,
+        QTreeWidgetItem,
         QVBoxLayout,
         QWidget,
     )
@@ -156,6 +164,8 @@ __all__ = [
     "QColor",
     "QComboBox",
     "QContextMenuEvent",
+    "QDialog",
+    "QDialogButtonBox",
     "QDoubleSpinBox",
     "QEvent",
     "QFileDialog",
@@ -204,6 +214,8 @@ __all__ = [
     "QTableWidgetItem",
     "QTextCursor",
     "QTimer",
+    "QTreeWidget",
+    "QTreeWidgetItem",
     "QVBoxLayout",
     "QWidget",
     "Qt",
@@ -232,3 +244,9 @@ def exec_menu(menu: QMenu, pos: QPoint) -> object:
     """弹出上下文菜单并返回所选 action（兼容 PySide2 的 exec_ 与 PySide6 的 exec）."""
     popup = menu.exec if hasattr(menu, "exec") else menu.exec_  # type: ignore[union-attr]
     return popup(pos)
+
+
+def exec_dialog(dialog: QDialog) -> int:
+    """模态执行对话框（兼容 PySide2 的 exec_ 与 PySide6 的 exec）."""
+    run = dialog.exec if hasattr(dialog, "exec") else dialog.exec_  # type: ignore[union-attr]
+    return int(run())

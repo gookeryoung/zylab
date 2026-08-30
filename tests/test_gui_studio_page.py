@@ -38,12 +38,31 @@ def test_tool_buttons_have_icons(qtbot) -> None:
     page = StudioPage()
     qtbot.addWidget(page)
     for btn, tip in (
+        (page._new_template_button, "新建分析"),
         (page._save_template_button, "另存为模板"),
         (page._save_project_button, "保存工程"),
         (page._open_project_button, "打开工程"),
     ):
         assert not btn.icon().isNull()
         assert tip in btn.toolTip()
+    page.shutdown()
+
+
+@pytest.mark.gui
+def test_template_combo_grouped_by_discipline(qtbot) -> None:
+    """模板下拉分组：组头项（data=None）+ 模板项（data=id）交替，选组头跳组内首项."""
+    page = StudioPage()
+    qtbot.addWidget(page)
+    combo = page._template_combo
+    headers = [i for i in range(combo.count()) if combo.itemData(i) is None]
+    assert len(headers) >= 2  # 结构 + 热至少两个组头
+    assert any("结构分析" in combo.itemText(i) for i in headers)
+    assert any("热分析" in combo.itemText(i) for i in headers)
+    # 选组头 -> 自动跳到组内首个模板（触发实例化）
+    header = headers[0]
+    combo.setCurrentIndex(header)
+    assert combo.currentData() is not None
+    assert page._graph.template.id == combo.currentData()
     page.shutdown()
 
 

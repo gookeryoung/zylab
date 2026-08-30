@@ -58,11 +58,13 @@ from ..qt_compat import (
     QVBoxLayout,
     QWidget,
     Signal,
+    exec_dialog,
     exec_menu,
 )
 from ..widgets.node_canvas import NodeCanvasWidget
 from ..widgets.param_form import ParamForm
 from ..widgets.result_view import ResultTabs
+from ..widgets.template_dialog import TemplateDialog, discipline_label
 
 __all__ = ["StudioPage"]
 
@@ -181,11 +183,17 @@ class StudioPage(QWidget):
         layout.addStretch()
 
         icon_size = QSize(16, 16)
+        self._new_template_button = self._tool_button("新建分析（浏览模板库）")
         self._save_template_button = self._tool_button("另存为模板")
         self._save_project_button = self._tool_button("保存工程 (.zprj)")
         self._open_project_button = self._tool_button("打开工程 (.zprj)")
         self._refresh_tool_icons()
-        for btn in (self._save_template_button, self._save_project_button, self._open_project_button):
+        for btn in (
+            self._new_template_button,
+            self._save_template_button,
+            self._save_project_button,
+            self._open_project_button,
+        ):
             btn.setIconSize(icon_size)
             layout.addWidget(btn)
         return bar
@@ -220,6 +228,7 @@ class StudioPage(QWidget):
         """按当前主题重绘工具行图标（单色剪影随按钮文字色着色）."""
         pal = theme.current_palette()
         for name, btn in (
+            ("new_template", self._new_template_button),
             ("save_as_template", self._save_template_button),
             ("save_project", self._save_project_button),
             ("open_project", self._open_project_button),
@@ -230,6 +239,7 @@ class StudioPage(QWidget):
         """连接信号槽."""
         self._template_combo.currentIndexChanged.connect(self._on_template_selected)
         self._cancel_button.clicked.connect(self._on_cancel)
+        self._new_template_button.clicked.connect(self._on_open_template_dialog)
         self._save_template_button.clicked.connect(self._on_save_template_as)
         self._save_project_button.clicked.connect(self._on_save_project)
         self._open_project_button.clicked.connect(self._on_open_project)
@@ -246,12 +256,19 @@ class StudioPage(QWidget):
         self._preview_bridge.done.connect(self._on_preview_done)
 
     def _reload_template_list(self, select_id: str | None = None) -> None:
-        """重建模板下拉（注册表变化后）；select_id 非空时选中并触发实例化."""
+        """重建模板下拉（按学科分组，组头为不可选分隔项）；select_id 非空时选中并触发实例化."""
         self._template_combo.blockSignals(True)
         self._template_combo.clear()
+        grouped: dict[str, list[Template]] = {}
         for template in self._registry.list():
-            self._template_combo.addItem(template.name, template.id)
-            self._template_combo.setItemData(self._template_combo.count() - 1, template.description, Qt.ToolTipRole)
+            grouped.setdefault(template.discipline, []).append(template)
+        for discipline in sorted(grouped):
+            self._template_combo.insertSeparator(self._template_combo.count())
+            self._template_combo.addItem(f"{discipline_label(discipline)}", None)
+            self._template_combo.setItemData(self._template_combo.count() - 1, Qt.NoPen, Qt.ForegroundRole)
+            for template in grouped[discipline]:
+                self._template_combo.addItem("    " + template.name, template.id)
+                self._template_combo.setItemData(self._template_combo.count() - 1, template.description, Qt.ToolTipRole)
         self._template_combo.blockSignals(False)
         if select_id is not None:
             index = self._template_combo.findData(select_id)
@@ -265,8 +282,11 @@ class StudioPage(QWidget):
     # ------------------------------------------------------------------ 模板实例化
 
     def _on_template_selected(self, row: int) -> None:
-        """模板选择入口（运行中回退选择）."""
+        """模板选择入口（组头分隔项与运行中回退选择）."""
         if row < 0:
+            return
+        if self._template_combo.itemData(row) is None:
+            self._skip_group_header(row)
             return
         if self._runner is not None and self._runner.running:
             # 运行中禁止切换模板：回退下拉选择
@@ -277,6 +297,28 @@ class StudioPage(QWidget):
         self._active_row = row
         template = self._registry.get(self._template_combo.itemData(row))
         self._instantiate(template)
+
+    def _skip_group_header(self, row: int) -> None:
+        """组头分隔项不可选：跳到组内首个模板（无模板则回退当前选择）."""
+        count = self._template_combo.count()
+        for candidate in range(row + 1, count):
+            if self._template_combo.itemData(candidate) is not None:
+                self._template_combo.setCurrentIndex(candidate)  # 触发 _on_template_selected
+                return
+        self._template_combo.blockSignals(True)
+        self._template_combo.setCurrentIndex(self._active_row)
+        self._template_combo.blockSignals(False)
+
+    def _on_open_template_dialog(self) -> None:
+        """打开模板选择对话框（分组树 + 搜索 + 详情）并实例化所选模板."""
+        if self._runner is not None and self._runner.running:
+            self._status_label.setText("运行中，无法切换模板")
+            return
+        dialog = TemplateDialog(list(self._registry.list()), self)
+        if exec_dialog(dialog) and dialog.selected_id is not None:
+            index = self._template_combo.findData(dialog.selected_id)
+            if index >= 0:
+                self._template_combo.setCurrentIndex(index)  # 触发实例化
 
     def _instantiate(self, template: Template) -> None:
         """实例化模板：建图 + 画布/表单装配 + 源节点进程内建模预览."""
