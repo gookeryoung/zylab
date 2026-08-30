@@ -42,16 +42,19 @@ from ..qt_compat import (
     QColor,
     QComboBox,
     QFileDialog,
+    QFontMetrics,
     QHBoxLayout,
     QHeaderView,
     QLabel,
     QPainter,
     QPushButton,
+    QSlider,
     QSpinBox,
     Qt,
     QTableWidget,
     QTableWidgetItem,
     QTabWidget,
+    QTimer,
     QVBoxLayout,
     QWidget,
 )
@@ -60,11 +63,12 @@ __all__ = ["ColorBarWidget", "ResultTabs", "ResultView"]
 
 
 class ColorBarWidget(QWidget):
-    """云图标尺（自绘）：竖向色带 + 最大/中值/最小刻度.
+    """云图标尺（自绘）：竖向色带 + 最大/中值/最小刻度 + 单位.
 
     - 顶部为最大值色（与云图一致：标量归一化后经色带采样）；
     - 无场量时隐藏（clear），布局自动收回空间；
-    - 刻度文字颜色随主题（refresh_theme 触发重绘）。
+    - 刻度文字颜色随主题（refresh_theme 触发重绘）；
+    - 单位后缀由场绑定方传入（如位移单位 m/mm）。
     """
 
     _BAR_W = 14  # 色带条宽度（像素）
@@ -75,11 +79,12 @@ class ColorBarWidget(QWidget):
         super().__init__(parent)
         self._vmin = 0.0
         self._vmax = 1.0
+        self._unit = ""
         self._lut = cmap_lut("jet")
-        self.setFixedWidth(self._BAR_W + 52)
+        self.setFixedWidth(self._BAR_W + 72)
         self.setVisible(False)
 
-    def set_field(self, values: np.ndarray, cmap: str) -> None:
+    def set_field(self, values: np.ndarray, cmap: str, unit: str = "") -> None:
         """绑定标量场与色带（云图渲染时同步调用）."""
         data = np.asarray(values, dtype=float)
         if data.size == 0:
@@ -87,6 +92,7 @@ class ColorBarWidget(QWidget):
             return
         self._vmin = float(np.min(data))
         self._vmax = float(np.max(data))
+        self._unit = unit
         self._lut = cmap_lut(cmap)
         self.setVisible(True)
         self.update()
@@ -100,7 +106,7 @@ class ColorBarWidget(QWidget):
         self.update()
 
     def paintEvent(self, event) -> None:  # Qt 命名约定
-        """绘制竖向色带（64 段）与三档刻度值."""
+        """绘制竖向色带（64 段）、三档刻度值与单位后缀."""
         del event
         pal = theme.current_palette()
         painter = QPainter(self)
@@ -121,36 +127,25 @@ class ColorBarWidget(QWidget):
         painter.setPen(QColor(pal.border))
         painter.setBrush(Qt.NoBrush)
         painter.drawRect(int(bar_x), self._PAD, self._BAR_W, int(bar_h))
-        # 刻度：最大（顶）/中/最小（底）
+        # 刻度：最大（顶）/中/最小（底）；文字行高按字体度量（避免下部裁剪）
+        metrics = QFontMetrics(painter.font())
+        text_h = metrics.height()
+        text_x = bar_x + self._BAR_W + self._PAD
+        text_w = self.width() - text_x
+        unit = f" {self._unit}" if self._unit else ""
         painter.setPen(QColor(pal.text_secondary))
+        painter.drawText(text_x, self._PAD, text_w, text_h, 0, f"{self._vmax:.4g}{unit}")
         painter.drawText(
-            bar_x + self._BAR_W + self._PAD,
-            self._PAD,
-            self.width() - bar_x - self._BAR_W - self._PAD,
-            14,
-            0,
-            f"{self._vmax:.4g}",
+            text_x, int((self.height() - text_h) / 2), text_w, text_h, 0, f"{(self._vmin + self._vmax) / 2.0:.4g}"
         )
-        painter.drawText(
-            bar_x + self._BAR_W + self._PAD,
-            int(self.height() / 2 - 7),
-            self.width() - bar_x - self._BAR_W - self._PAD,
-            14,
-            0,
-            f"{(self._vmin + self._vmax) / 2.0:.4g}",
-        )
-        painter.drawText(
-            bar_x + self._BAR_W + self._PAD,
-            self.height() - self._PAD - 14,
-            self.width() - bar_x - self._BAR_W - self._PAD,
-            14,
-            0,
-            f"{self._vmin:.4g}",
-        )
+        painter.drawText(text_x, self.height() - self._PAD - text_h, text_w, text_h, 0, f"{self._vmin:.4g}{unit}")
 
 
 class ResultView(QWidget):
     """结果视图控件（pyqtgraph 绘图 + 类型关联的控制条）."""
+
+    _PLOT_MAX_H = 460  # 云图区最大高度（避免纵向占比过大）
+    _UNLIMITED_H = 16777215  # Qt 默认无上限（曲线视图恢复占满）
 
     def __init__(self, parent: QWidget | None = None) -> None:
         """初始化结果视图."""
@@ -163,6 +158,12 @@ class ResultView(QWidget):
         self._reference_load = 1.0
         self._solution: object | None = None
         self._cmap = "jet"
+        self._unit = "m"
+        # 动画状态：帧序列（位移数组, 标签）+ 统一变形放大系数
+        self._frames: list[tuple[np.ndarray, str]] = []
+        self._frame_index = 0
+        self._anim_mesh: Mesh | None = None
+        self._anim_scale = 1.0
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
@@ -181,6 +182,12 @@ class ResultView(QWidget):
             self._cmap_combo.addItem(cmap_label(key), key)
         self._cmap_combo.currentIndexChanged.connect(self._on_cmap_changed)
         export_layout.addWidget(self._cmap_combo)
+        export_layout.addWidget(QLabel("位移单位"))
+        self._unit_combo = QComboBox(objectName="unitCombo")
+        self._unit_combo.addItem("m (米)", "m")
+        self._unit_combo.addItem("mm (毫米)", "mm")
+        self._unit_combo.currentIndexChanged.connect(self._on_unit_changed)
+        export_layout.addWidget(self._unit_combo)
         self._export_csv_btn = QPushButton("导出 CSV")
         self._export_csv_btn.clicked.connect(self._on_export_csv)
         export_layout.addWidget(self._export_csv_btn)
@@ -214,18 +221,37 @@ class ResultView(QWidget):
         self._view_combo.currentIndexChanged.connect(self._on_view_changed)
         layout.addWidget(self._view_combo)
 
+        # 动画控制行（播放/暂停 + 帧滑块 + 当前帧标签；帧数 > 1 时显示）
+        self._anim_row = QWidget()
+        anim_layout = QHBoxLayout(self._anim_row)
+        anim_layout.setContentsMargins(0, 0, 0, 0)
+        self._play_btn = QPushButton("播放")
+        self._play_btn.clicked.connect(self._on_play_toggled)
+        anim_layout.addWidget(self._play_btn)
+        self._frame_slider = QSlider(Qt.Horizontal)
+        self._frame_slider.valueChanged.connect(self._on_frame_slider)
+        anim_layout.addWidget(self._frame_slider, stretch=1)
+        self._frame_label = QLabel(objectName="secondaryText")
+        anim_layout.addWidget(self._frame_label)
+        self._anim_row.setVisible(False)
+        layout.addWidget(self._anim_row)
+        self._anim_timer = QTimer(self)
+        self._anim_timer.setInterval(120)  # ms/帧
+        self._anim_timer.timeout.connect(self._on_anim_tick)
+
         self._plot = pg.PlotWidget(background=theme.current_palette().bg_app)
         self._plot.showGrid(x=True, y=True, alpha=0.3)
         self._plot.setAspectLocked(True)
         self._plot.addLegend(offset=(12, 12))
-        plot_row = QWidget()
-        plot_layout = QHBoxLayout(plot_row)
+        self._plot_row = QWidget()
+        plot_layout = QHBoxLayout(self._plot_row)
         plot_layout.setContentsMargins(0, 0, 0, 0)
         plot_layout.setSpacing(theme.SPACING_SM)
-        plot_layout.addWidget(self._plot, stretch=1)
         self._colorbar = ColorBarWidget()
-        plot_layout.addWidget(self._colorbar)
-        layout.addWidget(plot_row, stretch=1)
+        plot_layout.addWidget(self._colorbar)  # 标尺居左（Workbench 布局习惯）
+        plot_layout.addWidget(self._plot, stretch=1)
+        layout.addWidget(self._plot_row, stretch=1)
+        layout.addStretch(1)
 
     # ------------------------------------------------------------------ 公共接口
 
@@ -234,6 +260,7 @@ class ResultView(QWidget):
         self._reset_controls()
         mesh = bundle.mesh
         self._restore_mesh_view()
+        self._plot_row.setMaximumHeight(self._PLOT_MAX_H)
         edges = mesh_edges(mesh)
         segments = edge_segments(mesh.coords, edges)
         self._plot.clear()
@@ -272,7 +299,9 @@ class ResultView(QWidget):
         elif isinstance(solution, StaticSolution):
             self._render_deformation(solution.mesh, solution.displacements)
             max_u = float(np.max(np.linalg.norm(solution.displacements, axis=1)))
-            self._summary.setText(f"最大位移 |u| = {max_u:.6g}\n应变能 = {solution.strain_energy:.6g}")
+            self._summary.setText(
+                f"最大位移 |u| = {max_u * self._disp_factor():.6g} {self._unit}\n应变能 = {solution.strain_energy:.6g}"
+            )
         else:
             self._summary.setText(f"未知结果类型: {type(solution).__name__}")
             return
@@ -307,11 +336,15 @@ class ResultView(QWidget):
         self._transient = None
         self._electrothermal = None
         self._solution = None
+        self._stop_anim()
+        self._frames = []
+        self._anim_mesh = None
         self._freq_table.setVisible(False)
         self._mode_spin.setVisible(False)
         self._view_combo.setVisible(False)
         self._export_row.setVisible(False)
         self._colorbar.clear()
+        self._plot_row.setMaximumHeight(self._UNLIMITED_H)
 
     def _on_export_csv(self) -> None:
         """导出当前结果为 CSV（对话框选路径；失败信息显示在摘要）."""
@@ -359,12 +392,16 @@ class ResultView(QWidget):
         span = float(np.ptp(mesh.coords, axis=0).max())
         return 0.05 * span / max_u
 
-    def _render_deformation(self, mesh: Mesh, displacements: np.ndarray) -> None:
-        """渲染变形线框与节点位移模云图（静力/几何非线性共用）."""
+    def _disp_factor(self) -> float:
+        """位移显示换算系数（m -> mm 时 1000）."""
+        return 1000.0 if self._unit == "mm" else 1.0
+
+    def _draw_deformed(self, mesh: Mesh, displacements: np.ndarray, scale: float, label: str) -> None:
+        """绘制变形线框与节点位移模着色散点（不动标尺/摘要，供单帧与动画复用）."""
         self._restore_mesh_view()
+        self._plot_row.setMaximumHeight(self._PLOT_MAX_H)
         edges = mesh_edges(mesh)
         field = np.linalg.norm(displacements, axis=1)
-        scale = self._deform_scale(mesh, field)
         deformed = deformed_coords(mesh, displacements, scale)
         segments = edge_segments(deformed, edges)
         self._plot.clear()
@@ -373,11 +410,87 @@ class ResultView(QWidget):
             segments[:, :, 1].ravel(),
             connect="pairs",
             pen=pg.mkPen(theme.current_palette().primary, width=3),
-            name=f"变形 (x{scale:.0f})",
+            name=f"{label} (x{scale:.0f})",
         )
         colors = [pg.mkColor(int(r * 255), int(g * 255), int(b * 255)) for r, g, b in scalar_colors(field, self._cmap)]
         self._plot.addItem(pg.ScatterPlotItem(x=deformed[:, 0], y=deformed[:, 1], size=6, brush=colors, pen=None))
-        self._colorbar.set_field(field, self._cmap)
+        self._colorbar.set_field(field * self._disp_factor(), self._cmap, self._unit)
+
+    def _render_deformation(self, mesh: Mesh, displacements: np.ndarray) -> None:
+        """渲染变形线框与节点位移模云图（静力/几何非线性共用）."""
+        field = np.linalg.norm(displacements, axis=1)
+        scale = self._deform_scale(mesh, field)
+        self._draw_deformed(mesh, displacements, scale, "变形")
+
+    # ------------------------------------------------------------------ 动画
+
+    def _start_anim(self, mesh: Mesh, frames: list[tuple[np.ndarray, str]], *, first_index: int = 0) -> None:
+        """绑定动画帧序列（帧数 <= 1 时隐藏控制行）.
+
+        Args:
+            mesh: 云图网格（帧位移的形状上下文）。
+            frames: ``[(位移数组, 帧标签), ...]``。
+            first_index: 初始显示帧（结果态默认末帧，振型默认当前阶）。
+        """
+        self._frames = frames
+        self._anim_mesh = mesh
+        if len(frames) <= 1:
+            self._stop_anim()
+            return
+        max_u = max(float(np.max(np.abs(disp))) for disp, _ in frames)
+        self._anim_scale = self._deform_scale(mesh, np.array([max_u]))
+        self._frame_slider.blockSignals(True)
+        self._frame_slider.setRange(0, len(frames) - 1)
+        self._frame_slider.setValue(first_index)
+        self._frame_slider.blockSignals(False)
+        self._anim_row.setVisible(True)
+        self._frame_index = first_index
+        self._show_frame(first_index)
+
+    def _show_frame(self, index: int) -> None:
+        """显示指定帧（云图重绘 + 滑块/标签联动）."""
+        if not self._frames or not (0 <= index < len(self._frames)) or self._anim_mesh is None:
+            return
+        self._frame_index = index
+        disp, label = self._frames[index]
+        self._draw_deformed(self._anim_mesh, disp, self._anim_scale, label)
+        self._frame_label.setText(label)
+        if self._frame_slider.value() != index:
+            self._frame_slider.blockSignals(True)
+            self._frame_slider.setValue(index)
+            self._frame_slider.blockSignals(False)
+
+    def _on_play_toggled(self) -> None:
+        """播放/暂停切换（播放到末帧自动停在末帧）."""
+        if self._anim_timer.isActive():
+            self._anim_timer.stop()
+            self._play_btn.setText("播放")
+        else:
+            if not self._frames:
+                return
+            self._frame_index = 0 if self._frame_index >= len(self._frames) - 1 else self._frame_index
+            self._show_frame(self._frame_index)
+            self._anim_timer.start()
+            self._play_btn.setText("暂停")
+
+    def _on_anim_tick(self) -> None:
+        """定时器驱动逐帧推进（末帧回绕重新播放）."""
+        if not self._frames:
+            self._stop_anim()
+            return
+        self._show_frame((self._frame_index + 1) % len(self._frames))
+
+    def _on_frame_slider(self, value: int) -> None:
+        """拖动帧滑块：暂停自动播放并显示指定帧."""
+        if self._anim_timer.isActive():
+            self._on_play_toggled()
+        self._show_frame(value)
+
+    def _stop_anim(self) -> None:
+        """停止播放并隐藏控制行."""
+        self._anim_timer.stop()
+        self._play_btn.setText("播放")
+        self._anim_row.setVisible(False)
 
     def _render_modal(self, solution: ModalSolution) -> None:
         """填充频率表并渲染首阶振型云图."""
@@ -425,54 +538,35 @@ class ResultView(QWidget):
         self._render_mode_shape(1)
 
     def _render_mode_shape(self, index: int) -> None:
-        """渲染第 index 阶（1 基）振型/屈曲模态云图."""
-        shape: np.ndarray | None = None
-        label = ""
-        mesh: Mesh | None = None
-        if self._modal is not None and 1 <= index <= self._modal.n_modes:
-            shape = self._modal.mode_shape(index - 1)
-            label = f"第 {index} 阶振型"
-            mesh = self._modal.mesh
-        elif self._buckling is not None and 1 <= index <= self._buckling.n_modes:
-            shape = self._buckling.mode_shape(index - 1)
-            label = f"第 {index} 阶屈曲"
-            mesh = self._buckling.mesh
-        if shape is None or mesh is None:
+        """渲染第 index 阶（1 基）振型/屈曲模态云图（各阶可动画循环）."""
+        solution = self._modal if self._modal is not None else self._buckling
+        if solution is None:
             return
-        self._restore_mesh_view()
-        edges = mesh_edges(mesh)
-        translation = shape[:, :2]  # 梁含转角分量，仅取平动
-        field = np.linalg.norm(translation, axis=1)
-        scale = self._deform_scale(mesh, field)
-        deformed = deformed_coords(mesh, translation, scale)
-        segments = edge_segments(deformed, edges)
-        self._plot.clear()
-        self._plot.plot(
-            segments[:, :, 0].ravel(),
-            segments[:, :, 1].ravel(),
-            connect="pairs",
-            pen=pg.mkPen(theme.current_palette().primary, width=3),
-            name=f"{label} (x{scale:.0f})",
-        )
-        colors = [pg.mkColor(int(r * 255), int(g * 255), int(b * 255)) for r, g, b in scalar_colors(field, self._cmap)]
-        self._plot.addItem(pg.ScatterPlotItem(x=deformed[:, 0], y=deformed[:, 1], size=6, brush=colors, pen=None))
-        self._colorbar.set_field(field, self._cmap)
+        mesh = solution.mesh
+        kind = "振型" if self._modal is not None else "屈曲"
+        frames = [
+            (solution.mode_shape(i)[:, :2], f"第 {i + 1} 阶{kind}")  # 梁含转角分量，仅取平动
+            for i in range(solution.n_modes)
+        ]
+        self._start_anim(mesh, frames, first_index=index - 1)
 
     def _render_harmonic(self, solution: HarmonicResponse) -> None:
         """渲染频响曲线（末端观察点 |uy| 随 ω 变化，对数幅值轴）并标注峰值."""
         mesh = solution.mesh
         node = tip_node(mesh)
         dof_y = node * mesh.dofs_per_node + 1  # 观察点竖向分量
-        amplitude = np.abs(solution.displacements[dof_y, :])
+        amplitude = np.abs(solution.displacements[dof_y, :]) * self._disp_factor()
         omegas = solution.frequencies
+        self._stop_anim()  # 曲线视图无动画帧
         self._colorbar.clear()  # 曲线视图无场量
+        self._plot_row.setMaximumHeight(self._UNLIMITED_H)
 
         self._plot.clear()
         self._plot.setAspectLocked(False)
         self._plot.showGrid(x=True, y=True, alpha=0.3)
         self._plot.setLogMode(y=True)
         self._plot.setLabel("bottom", "ω", units="rad/s")
-        self._plot.setLabel("left", "|uy|（对数）")
+        self._plot.setLabel("left", f"|uy|（对数，{self._unit}）")
         self._plot.plot(
             omegas,
             amplitude,
@@ -491,7 +585,7 @@ class ResultView(QWidget):
             )
         )
         self._summary.setText(
-            f"峰值 |uy| = {amplitude[peak_index]:.6g} @ ω = {omegas[peak_index]:.6g} rad/s"
+            f"峰值 |uy| = {amplitude[peak_index]:.6g} {self._unit} @ ω = {omegas[peak_index]:.6g} rad/s"
             f"（{solution.n_frequencies} 个频率点）"
         )
 
@@ -506,26 +600,37 @@ class ResultView(QWidget):
         self._render_nonlinear_deform(solution)
 
     def _render_nonlinear_deform(self, solution: NonlinearSolution) -> None:
-        """渲染非线性收敛态变形云图与迭代历程摘要."""
-        self._render_deformation(solution.mesh, solution.displacements)
+        """渲染非线性变形云图（增量步动画）与迭代历程摘要."""
+        mesh = solution.mesh
+        frames = [
+            (snapshot.reshape(mesh.n_nodes, mesh.dofs_per_node), f"λ = {factor:.3g}")
+            for snapshot, factor in zip(solution.history_displacements, solution.history_factors)
+        ]
+        if len(frames) > 1:
+            self._start_anim(mesh, frames, first_index=len(frames) - 1)  # 结果态默认末帧（收敛态）
+        else:  # 无历时快照（兼容旧结果）：退化为单帧收敛态云图
+            self._render_deformation(mesh, solution.displacements)
         max_u = float(np.max(np.linalg.norm(solution.displacements, axis=1)))
         self._summary.setText(
-            f"最大位移 |u| = {max_u:.6g}\n收敛：{len(solution.iterations)} 增量步 · {solution.total_iterations} 次 Newton 迭代"
+            f"最大位移 |u| = {max_u * self._disp_factor():.6g} {self._unit}\n"
+            f"收敛：{len(solution.iterations)} 增量步 · {solution.total_iterations} 次 Newton 迭代"
         )
 
     def _render_nonlinear_curve(self, solution: NonlinearSolution) -> None:
         """渲染载荷-位移曲线（最大位移节点 uy vs 载荷因子，含线性参照虚线）."""
         node = int(np.argmax(np.linalg.norm(solution.displacements, axis=1)))
-        uy = solution.history_dof(node, 1)
+        uy = solution.history_dof(node, 1) * self._disp_factor()
         factors = solution.history_factors
+        self._stop_anim()  # 曲线视图无动画帧
         self._colorbar.clear()  # 曲线视图无场量
+        self._plot_row.setMaximumHeight(self._UNLIMITED_H)
 
         self._plot.clear()
         self._plot.setAspectLocked(False)
         self._plot.showGrid(x=True, y=True, alpha=0.3)
         self._plot.setLogMode(y=False)
         self._plot.setLabel("bottom", "载荷因子 λ")
-        self._plot.setLabel("left", f"节点 {node} uy")
+        self._plot.setLabel("left", f"节点 {node} uy ({self._unit})")
         slope = uy[1] / factors[1]
         self._plot.plot(
             factors,
@@ -536,18 +641,33 @@ class ResultView(QWidget):
         self._plot.plot(factors, uy, pen=pg.mkPen(theme.current_palette().primary, width=3), name="非线性")
         self._summary.setText(
             f"载荷-位移曲线：{len(factors) - 1} 增量步\n"
-            f"观察点节点 {node} uy = {uy[-1]:.6g}（线性 {slope * factors[-1]:.6g}）"
+            f"观察点节点 {node} uy = {uy[-1]:.6g} {self._unit}（线性 {slope * factors[-1]:.6g}）"
         )
 
     def _on_cmap_changed(self, index: int) -> None:
         """切换色带：以当前解重渲染云图与标尺（保留类型内视图选择）."""
         self._cmap = self._cmap_combo.itemData(index)
+        self._rerender_current()
+
+    def _on_unit_changed(self, index: int) -> None:
+        """切换位移单位（m/mm）：重渲染当前解的标尺刻度与文本."""
+        self._unit = self._unit_combo.itemData(index)
+        self._rerender_current()
+
+    def _rerender_current(self) -> None:
+        """按当前解重渲染（保留类型内视图选择、模态阶数与动画帧位置）."""
         if self._solution is None:
-            return  # 模型预览态无云图，下张云图生效
-        saved = self._view_combo.currentIndex()
+            return  # 模型预览态无云图，下次渲染生效
+        saved_view = self._view_combo.currentIndex()
+        saved_frame = self._frame_index
+        saved_mode = self._mode_spin.value() if self._mode_spin.isVisibleTo(self) else 0
         self.show_solution(self._solution, self._reference_load)
-        if saved > 0 and self._view_combo.count() > saved:
-            self._view_combo.setCurrentIndex(saved)  # 触发 _on_view_changed 恢复原视图
+        if saved_view > 0 and self._view_combo.count() > saved_view:
+            self._view_combo.setCurrentIndex(saved_view)  # 触发 _on_view_changed 恢复原视图
+        elif saved_mode > 1 and self._mode_spin.isVisibleTo(self):
+            self._mode_spin.setValue(saved_mode)  # 触发 _render_mode_shape 恢复原阶
+        elif saved_frame > 0 and self._frames:
+            self._show_frame(min(saved_frame, len(self._frames) - 1))  # 恢复动画帧位置
 
     def _on_view_changed(self, index: int) -> None:
         """切换结果视图（非线性/瞬态/电-热耦合的类型关联双视图）."""
@@ -566,11 +686,13 @@ class ResultView(QWidget):
             # 电-热耦合：0 = 温度云图，1 = 电压云图
             field = self._electrothermal.temperatures if index == 0 else self._electrothermal.voltages
             label = "温度 T" if index == 0 else "电压 V"
-            self._render_scalar_field(self._electrothermal.mesh, field, label)
+            unit = "K" if index == 0 else "V"
+            self._render_scalar_field(self._electrothermal.mesh, field, label, unit)
 
-    def _render_scalar_field(self, mesh: Mesh, field: np.ndarray, label: str) -> None:
+    def _render_scalar_field(self, mesh: Mesh, field: np.ndarray, label: str, unit: str = "") -> None:
         """渲染标量场云图（未变形线框 + 节点场值着色）."""
         self._restore_mesh_view()
+        self._plot_row.setMaximumHeight(self._PLOT_MAX_H)
         edges = mesh_edges(mesh)
         segments = edge_segments(mesh.coords, edges)
         self._plot.clear()
@@ -585,7 +707,7 @@ class ResultView(QWidget):
         self._plot.addItem(
             pg.ScatterPlotItem(x=mesh.coords[:, 0], y=mesh.coords[:, 1], size=6, brush=colors, pen=None, name=label)
         )
-        self._colorbar.set_field(field, self._cmap)
+        self._colorbar.set_field(field, self._cmap, unit)
 
     def _render_electrothermal(self, solution: ElectroThermalSolution) -> None:
         """渲染电-热耦合结果：显示视图切换并默认温度云图."""
@@ -612,30 +734,40 @@ class ResultView(QWidget):
         self._render_transient_deform(solution)
 
     def _render_transient_deform(self, solution: TransientSolution) -> None:
-        """渲染瞬态末帧变形云图与时程摘要."""
+        """渲染瞬态变形云图（时程动画）与时程摘要."""
         mesh = solution.mesh
-        final = solution.displacements[:, -1].reshape(mesh.n_nodes, mesh.dofs_per_node)
-        self._render_deformation(mesh, final)
-        max_u = float(np.max(np.abs(final)))
+        shape = (mesh.n_nodes, mesh.dofs_per_node)
+        frames = [
+            (solution.displacements[:, i].reshape(shape), f"t = {solution.times[i]:.4g} s")
+            for i in range(solution.times.size)
+        ]
+        if len(frames) > 1:
+            self._start_anim(mesh, frames, first_index=len(frames) - 1)  # 结果态默认末帧
+        else:
+            self._render_deformation(mesh, solution.displacements[:, -1].reshape(shape))
+        max_u = float(np.max(np.abs(solution.displacements[:, -1])))
         self._summary.setText(
-            f"末帧最大位移 |u| = {max_u:.6g}\n时程：{solution.n_steps} 步 · dt = {solution.dt:.4g}"
-            f" · 总时长 = {solution.times[-1]:.6g}"
+            f"末帧最大位移 |u| = {max_u * self._disp_factor():.6g} {self._unit}\n"
+            f"时程：{solution.n_steps} 步 · dt = {solution.dt:.4g}"
+            f" · 总时长 = {solution.times[-1]:.6g} s"
         )
 
     def _render_transient_curve(self, solution: TransientSolution) -> None:
         """渲染位移时程曲线（末端观察点 uy 随时间变化）并标注峰值."""
         mesh = solution.mesh
         node = tip_node(mesh)
-        uy = solution.node_history(node, 1)
+        uy = solution.node_history(node, 1) * self._disp_factor()
         times = solution.times
+        self._stop_anim()  # 曲线视图无动画帧
         self._colorbar.clear()  # 曲线视图无场量
+        self._plot_row.setMaximumHeight(self._UNLIMITED_H)
 
         self._plot.clear()
         self._plot.setAspectLocked(False)
         self._plot.showGrid(x=True, y=True, alpha=0.3)
         self._plot.setLogMode(y=False)
-        self._plot.setLabel("bottom", "时间 t")
-        self._plot.setLabel("left", f"节点 {node} uy")
+        self._plot.setLabel("bottom", "时间 t (s)")
+        self._plot.setLabel("left", f"节点 {node} uy ({self._unit})")
         self._plot.plot(
             times,
             uy,
@@ -654,7 +786,7 @@ class ResultView(QWidget):
             )
         )
         self._summary.setText(
-            f"峰值 |uy| = {abs(uy[peak_index]):.6g} @ t = {times[peak_index]:.6g}"
+            f"峰值 |uy| = {abs(uy[peak_index]):.6g} {self._unit} @ t = {times[peak_index]:.6g} s"
             f"（{solution.n_steps} 步 · dt = {solution.dt:.4g}）"
         )
 

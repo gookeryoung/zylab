@@ -239,6 +239,100 @@ def test_colorbar_field_range(qtbot) -> None:
 
 
 @pytest.mark.gui
+def test_unit_switch_rerenders(qtbot) -> None:
+    """单位切换（m -> mm）：摘要与标尺刻度乘 1000 并带单位后缀."""
+    view = ResultView()
+    qtbot.addWidget(view)
+    view.show()
+    static = nodes.run_static({"model": _beam_bundle()}, {})
+    view.show_solution(static)
+    max_u = float(np.max(np.linalg.norm(static.displacements, axis=1)))
+    assert f"{max_u:.6g} m" in view._summary.text()
+    view._unit_combo.setCurrentIndex(1)  # mm
+    assert view._unit == "mm"
+    assert f"{max_u * 1000.0:.6g} mm" in view._summary.text()
+    assert view._colorbar._vmax == pytest.approx(max_u * 1000.0, rel=1e-6)
+    assert view._colorbar._unit == "mm"
+
+
+@pytest.mark.gui
+def test_anim_frames_nonlinear(qtbot) -> None:
+    """非线性云图动画：增量步帧序列、控制行显示、默认末帧、播放推进."""
+    view = ResultView()
+    qtbot.addWidget(view)
+    view.show()
+    solution = nodes.run_nonlinear({"model": nodes.build_truss({}, {})}, {"n_increments": 4})
+    view.show_solution(solution)
+    assert view._anim_row.isVisible()  # 帧数 = 步数 + 1 > 1
+    assert len(view._frames) == 5
+    assert view._frame_index == 4  # 结果态默认末帧（收敛态）
+    assert view._frame_label.text().startswith("λ = ")
+    view._on_play_toggled()  # 播放（末帧回绕，从首帧重新开始）
+    assert view._anim_timer.isActive()
+    assert view._frame_index == 0
+    view._on_anim_tick()  # 手动推进一帧
+    assert view._frame_index == 1
+    view._on_play_toggled()  # 暂停
+    assert not view._anim_timer.isActive()
+    view._view_combo.setCurrentIndex(1)  # 曲线视图：动画行隐藏
+    assert not view._anim_row.isVisible()
+
+
+@pytest.mark.gui
+def test_anim_frames_transient(qtbot) -> None:
+    """瞬态云图动画：时程帧序列（标签含 t = ... s）."""
+    view = ResultView()
+    qtbot.addWidget(view)
+    view.show()
+    solution = nodes.run_transient(
+        {"model": _beam_bundle()},
+        {"duration": 4.0, "n_steps": 40, "alpha": 0.5},
+    )
+    view.show_solution(solution)
+    assert view._anim_row.isVisible()
+    assert len(view._frames) == 41  # 步数 + 1
+    assert "s" in view._frame_label.text()
+    view._frame_slider.setValue(0)  # 拖回首帧
+    assert view._frame_index == 0
+
+
+@pytest.mark.gui
+def test_anim_frames_modal_modes(qtbot) -> None:
+    """模态振型动画：各阶帧序列，mode_spin 切换联动帧位."""
+    view = ResultView()
+    qtbot.addWidget(view)
+    view.show()
+    solution = nodes.run_modal({"model": _beam_bundle()}, {"n_modes": 3})
+    view.show_solution(solution)
+    assert view._anim_row.isVisible()
+    assert len(view._frames) == 3
+    view._mode_spin.setValue(2)  # 切换第二阶振型
+    assert view._frame_index == 1
+    assert "第 2 阶" in view._frame_label.text()
+
+
+@pytest.mark.gui
+def test_anim_hidden_for_static(qtbot) -> None:
+    """静力解单帧：动画控制行不显示."""
+    view = ResultView()
+    qtbot.addWidget(view)
+    view.show()
+    view.show_solution(nodes.run_static({"model": _beam_bundle()}, {}))
+    assert not view._anim_row.isVisible()
+    assert view._frames == []
+
+
+@pytest.mark.gui
+def test_colorbar_left_of_plot(qtbot) -> None:
+    """标尺位于绘图区左侧（Workbench 布局）."""
+    view = ResultView()
+    qtbot.addWidget(view)
+    view.show()
+    assert view._plot_row.layout().indexOf(view._colorbar) == 0
+    assert view._plot_row.layout().indexOf(view._plot) == 1
+
+
+@pytest.mark.gui
 def test_export_csv_writes_file(qtbot, monkeypatch: pytest.MonkeyPatch, tmp_path) -> None:
     """导出 CSV：对话框路径落盘，摘要提示文件名."""
     path = tmp_path / "out.csv"
