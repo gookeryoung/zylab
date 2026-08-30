@@ -121,7 +121,7 @@ class ResultView(QWidget):
             segments[:, :, 0].ravel(),
             segments[:, :, 1].ravel(),
             connect="pairs",
-            pen=pg.mkPen(theme.current_palette().border, width=1),
+            pen=pg.mkPen(theme.current_palette().border_strong, width=2),
             name="未变形",
         )
         self._summary.setText(f"模型预览 · {mesh.n_nodes} 节点 · {mesh.n_elements} 单元")
@@ -246,11 +246,11 @@ class ResultView(QWidget):
             segments[:, :, 0].ravel(),
             segments[:, :, 1].ravel(),
             connect="pairs",
-            pen=pg.mkPen(theme.current_palette().primary, width=2),
+            pen=pg.mkPen(theme.current_palette().primary, width=3),
             name=f"变形 (x{scale:.0f})",
         )
         colors = [pg.mkColor(int(r * 255), int(g * 255), int(b * 255)) for r, g, b in scalar_colors(field)]
-        self._plot.addItem(pg.ScatterPlotItem(x=deformed[:, 0], y=deformed[:, 1], size=4, brush=colors, pen=None))
+        self._plot.addItem(pg.ScatterPlotItem(x=deformed[:, 0], y=deformed[:, 1], size=6, brush=colors, pen=None))
 
     def _render_modal(self, solution: ModalSolution) -> None:
         """填充频率表并渲染首阶振型云图."""
@@ -324,11 +324,11 @@ class ResultView(QWidget):
             segments[:, :, 0].ravel(),
             segments[:, :, 1].ravel(),
             connect="pairs",
-            pen=pg.mkPen(theme.current_palette().primary, width=2),
+            pen=pg.mkPen(theme.current_palette().primary, width=3),
             name=f"{label} (x{scale:.0f})",
         )
         colors = [pg.mkColor(int(r * 255), int(g * 255), int(b * 255)) for r, g, b in scalar_colors(field)]
-        self._plot.addItem(pg.ScatterPlotItem(x=deformed[:, 0], y=deformed[:, 1], size=4, brush=colors, pen=None))
+        self._plot.addItem(pg.ScatterPlotItem(x=deformed[:, 0], y=deformed[:, 1], size=6, brush=colors, pen=None))
 
     def _render_harmonic(self, solution: HarmonicResponse) -> None:
         """渲染频响曲线（末端观察点 |uy| 随 ω 变化，对数幅值轴）并标注峰值."""
@@ -347,7 +347,7 @@ class ResultView(QWidget):
         self._plot.plot(
             omegas,
             amplitude,
-            pen=pg.mkPen(theme.current_palette().primary, width=2),
+            pen=pg.mkPen(theme.current_palette().primary, width=3),
             name=f"节点 {node} |uy|",
         )
         peak_index = int(np.argmax(amplitude))
@@ -400,10 +400,10 @@ class ResultView(QWidget):
         self._plot.plot(
             factors,
             slope * factors,
-            pen=pg.mkPen(theme.current_palette().text_secondary, width=1, style=pg.QtCore.Qt.DashLine),
+            pen=pg.mkPen(theme.current_palette().text_secondary, width=2, style=pg.QtCore.Qt.DashLine),
             name="线性参照",
         )
-        self._plot.plot(factors, uy, pen=pg.mkPen(theme.current_palette().primary, width=2), name="非线性")
+        self._plot.plot(factors, uy, pen=pg.mkPen(theme.current_palette().primary, width=3), name="非线性")
         self._summary.setText(
             f"载荷-位移曲线：{len(factors) - 1} 增量步\n"
             f"观察点节点 {node} uy = {uy[-1]:.6g}（线性 {slope * factors[-1]:.6g}）"
@@ -460,7 +460,7 @@ class ResultView(QWidget):
         self._plot.plot(
             times,
             uy,
-            pen=pg.mkPen(theme.current_palette().primary, width=2),
+            pen=pg.mkPen(theme.current_palette().primary, width=3),
             name=f"节点 {node} uy",
         )
         peak_index = int(np.argmax(np.abs(uy)))

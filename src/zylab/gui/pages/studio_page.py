@@ -37,6 +37,7 @@ from zylab.studio import (
 )
 
 from .. import theme
+from ..icons import load_icon
 from ..qt_compat import (
     QFrame,
     QGroupBox,
@@ -49,6 +50,7 @@ from ..qt_compat import (
     QProgressBar,
     QPushButton,
     QScrollArea,
+    QSize,
     QSplitter,
     Qt,
     QTimer,
@@ -148,6 +150,14 @@ class StudioPage(QWidget):
         root.setContentsMargins(0, 0, 0, 0)
         root.addWidget(splitter)
 
+    @staticmethod
+    def _tool_button(text: str, icon_name: str, tooltip: str) -> QPushButton:
+        """构建工具行紧凑按钮（图标 + 短文字 + 完整 tooltip）."""
+        btn = QPushButton(text, objectName="toolBtn")
+        btn.setIcon(load_icon(icon_name))
+        btn.setToolTip(tooltip)
+        return btn
+
     def _build_library_panel(self) -> QWidget:
         """左栏：模板库 + 模板/工程操作 + 运行控制."""
         panel = QWidget()
@@ -164,9 +174,13 @@ class StudioPage(QWidget):
         lib_layout.addWidget(self._template_list, stretch=1)
         tools = QHBoxLayout()
         tools.setSpacing(theme.SPACING_XS)
-        self._save_template_button = QPushButton("另存模板")
-        self._save_project_button = QPushButton("保存工程")
-        self._open_project_button = QPushButton("打开工程")
+        icon_size = QSize(16, 16)
+        self._save_template_button = self._tool_button("另存", "save_as_template", "另存为模板")
+        self._save_project_button = self._tool_button("保存", "save_project", "保存工程 (.zprj)")
+        self._open_project_button = self._tool_button("打开", "open_project", "打开工程 (.zprj)")
+        self._save_template_button.setIconSize(icon_size)
+        self._save_project_button.setIconSize(icon_size)
+        self._open_project_button.setIconSize(icon_size)
         tools.addWidget(self._save_template_button)
         tools.addWidget(self._save_project_button)
         tools.addWidget(self._open_project_button)

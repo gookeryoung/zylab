@@ -11,14 +11,40 @@ from __future__ import annotations
 from pathlib import Path
 
 from . import theme
-from .qt_compat import QByteArray, QIcon, QPixmap
+from .qt_compat import QByteArray, QIcon, QPixmap, Qt
 
-__all__ = ["NAV_ICON_NAMES", "nav_icon"]
+__all__ = ["NAV_ICON_NAMES", "load_icon", "nav_icon"]
 
 _ICONS_DIR = Path(__file__).resolve().parent.parent / "assets" / "icons"
 
 #: 侧边栏页序对应的图标文件基名（与 MainWindow 页序一致）
 NAV_ICON_NAMES = ("console", "analysis", "about")
+
+
+def load_icon(name: str, size: int = 16) -> QIcon:
+    """加载 SVG 图标原色渲染并缩放到指定尺寸.
+
+    与 :func:`nav_icon` 不同，本函数不做主题着色（根元素注入 fill
+    只对无显式 fill 的单色剪影生效，彩色图标 path 自带 fill）。
+
+    Args:
+        name: 图标文件基名（如 ``save_project``）。
+        size: 目标渲染尺寸（像素）。
+
+    Returns:
+        原色 QIcon；SVG 缺失或渲染失败时返回空 QIcon（界面退化为纯文字）。
+    """
+    svg_path = _ICONS_DIR / f"{name}.svg"
+    try:
+        text = svg_path.read_text(encoding="utf-8")
+    except OSError:
+        return QIcon()
+    pixmap = QPixmap()
+    if not pixmap.loadFromData(QByteArray(text.encode("utf-8")), "SVG"):
+        return QIcon()
+    if pixmap.width() != size or pixmap.height() != size:
+        pixmap = pixmap.scaled(size, size, Qt.KeepAspectRatio, Qt.SmoothTransformation)
+    return QIcon(pixmap)
 
 
 def nav_icon(name: str, color: str | None = None) -> QIcon:

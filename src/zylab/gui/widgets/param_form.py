@@ -33,7 +33,7 @@ class ParamForm(QWidget):
         super().__init__(parent)
         self._layout = QVBoxLayout(self)
         self._layout.setContentsMargins(0, 0, 0, 0)
-        self._layout.setSpacing(theme.SPACING_MD)
+        self._layout.setSpacing(theme.SPACING_SM)
         self._fields: dict[tuple[str, str], QDoubleSpinBox] = {}
         self._graph: WorkflowGraph | None = None
 
@@ -57,6 +57,7 @@ class ParamForm(QWidget):
             box = QGroupBox(group.title)
             form = QFormLayout(box)
             form.setSpacing(theme.SPACING_SM)
+            form.setFieldGrowthPolicy(QFormLayout.AllNonFixedFieldsGrow)
             for ref in group.params:
                 node_id, _, key = ref.partition(".")
                 self._add_row(form, graph, node_id, key)

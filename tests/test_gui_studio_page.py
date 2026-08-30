@@ -35,6 +35,21 @@ def test_page_builds_with_first_template(qtbot) -> None:
 
 
 @pytest.mark.gui
+def test_tool_buttons_have_icons(qtbot) -> None:
+    """工具行按钮：图标非空 + tooltip 完整语义（短文字不丢语义）."""
+    page = StudioPage()
+    qtbot.addWidget(page)
+    for btn, tip in (
+        (page._save_template_button, "另存为模板"),
+        (page._save_project_button, "保存工程"),
+        (page._open_project_button, "打开工程"),
+    ):
+        assert not btn.icon().isNull()
+        assert tip in btn.toolTip()
+    page.shutdown()
+
+
+@pytest.mark.gui
 def test_template_switch_rebuilds_graph(qtbot) -> None:
     """切换模板重建图与画布."""
     page = StudioPage()

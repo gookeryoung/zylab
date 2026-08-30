@@ -67,6 +67,16 @@ def test_main_window_sidebar_icons(qtbot, isolated_data_dir: Path) -> None:
 
 
 @pytest.mark.gui
+def test_load_icon_renders_and_falls_back(qtbot) -> None:
+    """load_icon：彩色 SVG 原色渲染非空；缺失文件退化空图标."""
+    from zylab.gui.icons import load_icon
+
+    for name in ("save_project", "save_as_template", "open_project"):
+        assert not load_icon(name).isNull(), f"图标 {name} 加载失败"
+    assert load_icon("nonexistent").isNull()
+
+
+@pytest.mark.gui
 def test_nav_icon_background_transparent(qtbot) -> None:
     """图标角落像素应全透明（无背景色块）."""
     from zylab.gui.icons import nav_icon

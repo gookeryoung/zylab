@@ -164,6 +164,12 @@ QPushButton#flatBtn:hover {
 }
 QPushButton#flatBtn:disabled { color: ${QSS_TEXT_DISABLED}; }
 
+/* 工具行紧凑按钮（图标 + 短文字） */
+QPushButton#toolBtn {
+    padding: 4px 10px;
+    min-height: 0;
+}
+
 /* ------------------------------------------------ 输入控件 */
 QLineEdit, QTextEdit, QPlainTextEdit {
     background-color: ${QSS_BG_INPUT};
@@ -312,14 +318,14 @@ QHeaderView::section {
 QGroupBox {
     border: 1px solid ${QSS_BORDER};
     border-radius: ${RADIUS_MD};
-    margin-top: 10px;
-    padding-top: 6px;
+    margin-top: 6px;
+    padding: 2px 6px 6px 6px;
     color: ${QSS_TEXT_PRIMARY};
 }
 QGroupBox::title {
     subcontrol-origin: margin;
     subcontrol-position: top left;
-    left: 10px;
+    left: 6px;
     padding: 0 4px;
     color: ${QSS_TEXT_PRIMARY};
     font-weight: bold;
