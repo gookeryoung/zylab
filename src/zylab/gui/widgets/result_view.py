@@ -38,6 +38,7 @@ from zylab.studio import ConductionBundle, ModelBundle
 from zylab.studio.nodes import tip_node
 
 from .. import theme
+from ..icons import nav_icon
 from ..qt_compat import (
     QColor,
     QComboBox,
@@ -48,6 +49,7 @@ from ..qt_compat import (
     QLabel,
     QPainter,
     QPushButton,
+    QSize,
     QSlider,
     QSpinBox,
     Qt,
@@ -168,76 +170,90 @@ class ResultView(QWidget):
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(theme.SPACING_SM)
 
+        # 摘要单行化（超宽由结果类型控制文本长度，不再换行撑高）
         self._summary = QLabel("尚未求解", objectName="resultText")
-        self._summary.setWordWrap(True)
         layout.addWidget(self._summary)
 
-        self._export_row = QWidget()
-        export_layout = QHBoxLayout(self._export_row)
-        export_layout.setContentsMargins(0, 0, 0, 0)
-        export_layout.addWidget(QLabel("色带"))
+        # 单条工具条：阶数/视图/动画控制 + 色带/单位 + 导出图标按钮
+        # （Workbench 布局习惯：功能键纯图标 + tooltip，控制条恒占一行）
+        self._toolbar = QWidget(objectName="resultToolbar")
+        bar = QHBoxLayout(self._toolbar)
+        bar.setContentsMargins(0, 0, 0, 0)
+        bar.setSpacing(theme.SPACING_SM)
+        self._mode_spin = QSpinBox()
+        self._mode_spin.setRange(1, 1)
+        self._mode_spin.setPrefix("振型 ")
+        self._mode_spin.setToolTip("模态阶数（模态/屈曲解显示）")
+        self._mode_spin.setVisible(False)
+        self._mode_spin.valueChanged.connect(self._render_mode_shape)
+        bar.addWidget(self._mode_spin)
+        self._view_combo = QComboBox(objectName="nonlinearView")
+        self._view_combo.addItem("变形云图", "deform")
+        self._view_combo.addItem("载荷-位移曲线", "curve")
+        self._view_combo.setToolTip("结果视图切换")
+        self._view_combo.setVisible(False)
+        self._view_combo.currentIndexChanged.connect(self._on_view_changed)
+        bar.addWidget(self._view_combo)
+        self._play_btn = QPushButton(objectName="iconBtn")
+        self._play_btn.setToolTip("播放动画")
+        self._play_btn.setIconSize(QSize(14, 14))
+        self._play_btn.clicked.connect(self._on_play_toggled)
+        self._play_btn.setVisible(False)
+        bar.addWidget(self._play_btn)
+        self._frame_slider = QSlider(Qt.Horizontal)
+        self._frame_slider.valueChanged.connect(self._on_frame_slider)
+        self._frame_slider.setVisible(False)
+        bar.addWidget(self._frame_slider, stretch=1)
+        self._frame_label = QLabel(objectName="secondaryText")
+        self._frame_label.setVisible(False)
+        bar.addWidget(self._frame_label)
+        bar.addStretch(1)
         self._cmap_combo = QComboBox(objectName="cmapCombo")
         for key in cmap_keys():
             self._cmap_combo.addItem(cmap_label(key), key)
+        self._cmap_combo.setToolTip("云图色带配色")
         self._cmap_combo.currentIndexChanged.connect(self._on_cmap_changed)
-        export_layout.addWidget(self._cmap_combo)
-        export_layout.addWidget(QLabel("位移单位"))
+        self._cmap_combo.setVisible(False)
+        bar.addWidget(self._cmap_combo)
         self._unit_combo = QComboBox(objectName="unitCombo")
         self._unit_combo.addItem("m (米)", "m")
         self._unit_combo.addItem("mm (毫米)", "mm")
+        self._unit_combo.setToolTip("位移显示单位")
         self._unit_combo.currentIndexChanged.connect(self._on_unit_changed)
-        export_layout.addWidget(self._unit_combo)
-        self._export_csv_btn = QPushButton("导出 CSV")
+        self._unit_combo.setVisible(False)
+        bar.addWidget(self._unit_combo)
+        self._export_csv_btn = QPushButton(objectName="iconBtn")
+        self._export_csv_btn.setToolTip("导出 CSV")
+        self._export_csv_btn.setIconSize(QSize(14, 14))
         self._export_csv_btn.clicked.connect(self._on_export_csv)
-        export_layout.addWidget(self._export_csv_btn)
-        self._export_png_btn = QPushButton("导出 PNG")
+        self._export_csv_btn.setVisible(False)
+        bar.addWidget(self._export_csv_btn)
+        self._export_png_btn = QPushButton(objectName="iconBtn")
+        self._export_png_btn.setToolTip("导出 PNG")
+        self._export_png_btn.setIconSize(QSize(14, 14))
         self._export_png_btn.clicked.connect(self._on_export_png)
-        export_layout.addWidget(self._export_png_btn)
-        export_layout.addStretch(1)
-        self._export_row.setVisible(False)
-        layout.addWidget(self._export_row)
+        self._export_png_btn.setVisible(False)
+        bar.addWidget(self._export_png_btn)
+        self._anim_timer = QTimer(self)
+        self._anim_timer.setInterval(120)  # ms/帧
+        self._anim_timer.timeout.connect(self._on_anim_tick)
+        self._refresh_button_icons()
+        layout.addWidget(self._toolbar)
 
+        # 数据页（模态/屈曲频率表，整页呈现；行点击联动阶数）
         self._freq_table = QTableWidget(objectName="freqTable")
         self._freq_table.setColumnCount(3)
         self._freq_table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
         self._freq_table.verticalHeader().setVisible(False)
         self._freq_table.setEditTriggers(QTableWidget.NoEditTriggers)
-        self._freq_table.setVisible(False)
-        self._freq_table.setMaximumHeight(160)
-        layout.addWidget(self._freq_table)
+        self._freq_table.cellClicked.connect(self._on_table_row_clicked)
+        self._data_page = QWidget()
+        data_layout = QVBoxLayout(self._data_page)
+        data_layout.setContentsMargins(theme.SPACING_SM, theme.SPACING_SM, theme.SPACING_SM, theme.SPACING_SM)
+        data_layout.addWidget(self._freq_table)
 
-        self._mode_spin = QSpinBox()
-        self._mode_spin.setRange(1, 1)
-        self._mode_spin.setPrefix("振型 ")
-        self._mode_spin.setVisible(False)
-        self._mode_spin.valueChanged.connect(self._render_mode_shape)
-        layout.addWidget(self._mode_spin)
-
-        self._view_combo = QComboBox(objectName="nonlinearView")
-        self._view_combo.addItem("变形云图", "deform")
-        self._view_combo.addItem("载荷-位移曲线", "curve")
-        self._view_combo.setVisible(False)
-        self._view_combo.currentIndexChanged.connect(self._on_view_changed)
-        layout.addWidget(self._view_combo)
-
-        # 动画控制行（播放/暂停 + 帧滑块 + 当前帧标签；帧数 > 1 时显示）
-        self._anim_row = QWidget()
-        anim_layout = QHBoxLayout(self._anim_row)
-        anim_layout.setContentsMargins(0, 0, 0, 0)
-        self._play_btn = QPushButton("播放")
-        self._play_btn.clicked.connect(self._on_play_toggled)
-        anim_layout.addWidget(self._play_btn)
-        self._frame_slider = QSlider(Qt.Horizontal)
-        self._frame_slider.valueChanged.connect(self._on_frame_slider)
-        anim_layout.addWidget(self._frame_slider, stretch=1)
-        self._frame_label = QLabel(objectName="secondaryText")
-        anim_layout.addWidget(self._frame_label)
-        self._anim_row.setVisible(False)
-        layout.addWidget(self._anim_row)
-        self._anim_timer = QTimer(self)
-        self._anim_timer.setInterval(120)  # ms/帧
-        self._anim_timer.timeout.connect(self._on_anim_tick)
-
+        # 绘图区子 TAB：「云图」（色条 + 绘图）+「数据」（仅模态/屈曲）；
+        # 单页时隐藏页签条（不浪费纵向空间）
         self._plot = pg.PlotWidget(background=theme.current_palette().bg_app)
         self._plot.showGrid(x=True, y=True, alpha=0.3)
         self._plot.setAspectLocked(True)
@@ -251,7 +267,11 @@ class ResultView(QWidget):
         self._colorbar = ColorBarWidget()
         plot_layout.addWidget(self._colorbar)  # 标尺居左（Workbench 布局习惯）
         plot_layout.addWidget(self._plot, stretch=1)
-        layout.addWidget(self._plot_row, stretch=1)  # 唯一弹性项：占满剩余全部高度
+        self._tabs = QTabWidget(objectName="resultSubTabs")
+        self._tabs.setTabPosition(QTabWidget.South)  # Workbench 数据页签居底
+        self._tabs.addTab(self._plot_row, "云图")
+        self._tabs.tabBar().setVisible(False)
+        layout.addWidget(self._tabs, stretch=1)  # 唯一弹性项：占满剩余全部高度
 
     # ------------------------------------------------------------------ 公共接口
 
@@ -309,13 +329,14 @@ class ResultView(QWidget):
             self._render_deformation(solution.mesh, solution.displacements)
             max_u = float(np.max(np.linalg.norm(solution.displacements, axis=1)))
             self._summary.setText(
-                f"最大位移 |u| = {max_u * self._disp_factor():.6g} {self._unit}\n应变能 = {solution.strain_energy:.6g}"
+                f"最大位移 |u| = {max_u * self._disp_factor():.6g} {self._unit} · 应变能 = {solution.strain_energy:.6g}"
             )
         else:
             self._summary.setText(f"未知结果类型: {type(solution).__name__}")
             return
         self._solution = solution
-        self._export_row.setVisible(True)
+        for btn in (self._cmap_combo, self._unit_combo, self._export_csv_btn, self._export_png_btn):
+            btn.setVisible(True)
 
     def show_error(self, message: str) -> None:
         """显示失败信息."""
@@ -331,9 +352,10 @@ class ResultView(QWidget):
         self._set_error(False)
 
     def refresh_theme(self) -> None:
-        """主题切换后重刷绘图背景与标尺刻度."""
+        """主题切换后重刷绘图背景、标尺刻度与工具条图标."""
         self._plot.setBackground(theme.current_palette().bg_app)
         self._colorbar.refresh_theme()
+        self._refresh_button_icons()
 
     # ------------------------------------------------------------------ 内部
 
@@ -348,10 +370,11 @@ class ResultView(QWidget):
         self._stop_anim()
         self._frames = []
         self._anim_mesh = None
-        self._freq_table.setVisible(False)
+        self._remove_data_tab()
         self._mode_spin.setVisible(False)
         self._view_combo.setVisible(False)
-        self._export_row.setVisible(False)
+        for btn in (self._cmap_combo, self._unit_combo, self._export_csv_btn, self._export_png_btn):
+            btn.setVisible(False)
         self._colorbar.clear()
 
     def _on_export_csv(self) -> None:
@@ -450,7 +473,8 @@ class ResultView(QWidget):
         self._frame_slider.setRange(0, len(frames) - 1)
         self._frame_slider.setValue(first_index)
         self._frame_slider.blockSignals(False)
-        self._anim_row.setVisible(True)
+        for widget in (self._play_btn, self._frame_slider, self._frame_label):
+            widget.setVisible(True)
         self._frame_index = first_index
         self._show_frame(first_index)
 
@@ -471,14 +495,14 @@ class ResultView(QWidget):
         """播放/暂停切换（播放到末帧自动停在末帧）."""
         if self._anim_timer.isActive():
             self._anim_timer.stop()
-            self._play_btn.setText("播放")
+            self._set_play_icon(False)
         else:
             if not self._frames:
                 return
             self._frame_index = 0 if self._frame_index >= len(self._frames) - 1 else self._frame_index
             self._show_frame(self._frame_index)
             self._anim_timer.start()
-            self._play_btn.setText("暂停")
+            self._set_play_icon(True)
 
     def _on_anim_tick(self) -> None:
         """定时器驱动逐帧推进（末帧回绕重新播放）."""
@@ -494,10 +518,11 @@ class ResultView(QWidget):
         self._show_frame(value)
 
     def _stop_anim(self) -> None:
-        """停止播放并隐藏控制行."""
+        """停止播放并隐藏动画控件."""
         self._anim_timer.stop()
-        self._play_btn.setText("播放")
-        self._anim_row.setVisible(False)
+        self._set_play_icon(False)
+        for widget in (self._play_btn, self._frame_slider, self._frame_label):
+            widget.setVisible(False)
 
     def _render_modal(self, solution: ModalSolution) -> None:
         """填充频率表并渲染首阶振型云图."""
@@ -509,14 +534,14 @@ class ResultView(QWidget):
         self._render_mode_shape(1)
 
     def _fill_freq_table(self, solution: ModalSolution) -> None:
-        """频率表 + 振型序号控件（模态专用）."""
+        """频率表（数据页）+ 振型序号控件（模态专用）."""
         self._freq_table.setHorizontalHeaderLabels(("阶", "ω (rad/s)", "f (Hz)"))
         self._freq_table.setRowCount(solution.n_modes)
         for i in range(solution.n_modes):
             self._freq_table.setItem(i, 0, QTableWidgetItem(str(i + 1)))
             self._freq_table.setItem(i, 1, QTableWidgetItem(f"{solution.frequencies[i]:.6g}"))
             self._freq_table.setItem(i, 2, QTableWidgetItem(f"{solution.frequencies_hz[i]:.6g}"))
-        self._freq_table.setVisible(True)
+        self._show_data_tab()
         self._mode_spin.blockSignals(True)
         self._mode_spin.setRange(1, solution.n_modes)
         self._mode_spin.setValue(1)
@@ -524,7 +549,7 @@ class ResultView(QWidget):
         self._mode_spin.setVisible(True)
 
     def _render_buckling(self, solution: BucklingSolution) -> None:
-        """填充载荷因子表并渲染首阶屈曲模态."""
+        """填充载荷因子表（数据页）并渲染首阶屈曲模态."""
         self._freq_table.setHorizontalHeaderLabels(("阶", "载荷因子 λ", "临界载荷"))
         self._freq_table.setRowCount(solution.n_modes)
         for i in range(solution.n_modes):
@@ -532,7 +557,7 @@ class ResultView(QWidget):
             self._freq_table.setItem(i, 0, QTableWidgetItem(str(i + 1)))
             self._freq_table.setItem(i, 1, QTableWidgetItem(f"{factor:.6g}"))
             self._freq_table.setItem(i, 2, QTableWidgetItem(f"{factor * self._reference_load:.6g}"))
-        self._freq_table.setVisible(True)
+        self._show_data_tab()
         self._mode_spin.blockSignals(True)
         self._mode_spin.setRange(1, solution.n_modes)
         self._mode_spin.setValue(1)
@@ -556,6 +581,39 @@ class ResultView(QWidget):
             for i in range(solution.n_modes)
         ]
         self._start_anim(mesh, frames, first_index=index - 1)
+        # 数据页同步高亮当前阶（cellClicked 不因程序化选择触发，无回环）
+        self._freq_table.selectRow(index - 1)
+
+    def _show_data_tab(self) -> None:
+        """加入「数据」子页（频率/载荷因子表整页呈现；页签条随之显示）."""
+        if self._tabs.indexOf(self._data_page) < 0:
+            self._tabs.addTab(self._data_page, "数据")
+            self._tabs.tabBar().setVisible(True)
+
+    def _remove_data_tab(self) -> None:
+        """移除「数据」子页（非模态/屈曲解；单页时隐藏页签条）."""
+        index = self._tabs.indexOf(self._data_page)
+        if index >= 0:
+            self._tabs.removeTab(index)
+        self._tabs.tabBar().setVisible(self._tabs.count() > 1)
+
+    def _on_table_row_clicked(self, row: int, _column: int) -> None:
+        """数据页表格行点击：切换到对应阶模态云图."""
+        if self._mode_spin.isVisibleTo(self) and 0 <= row < self._mode_spin.maximum():
+            self._mode_spin.setValue(row + 1)  # 触发 _render_mode_shape 重渲染
+
+    def _set_play_icon(self, playing: bool) -> None:
+        """播放按钮图标态切换（播放中显示暂停图标）."""
+        pal = theme.current_palette()
+        self._play_btn.setIcon(nav_icon("pause" if playing else "play", pal.text_primary))
+        self._play_btn.setToolTip("暂停" if playing else "播放动画")
+
+    def _refresh_button_icons(self) -> None:
+        """按当前主题刷新工具条图标按钮（导出/播放）."""
+        pal = theme.current_palette()
+        self._export_csv_btn.setIcon(nav_icon("export_csv", pal.text_secondary))
+        self._export_png_btn.setIcon(nav_icon("export_png", pal.text_secondary))
+        self._set_play_icon(self._anim_timer.isActive())
 
     def _render_harmonic(self, solution: HarmonicResponse) -> None:
         """渲染频响曲线（末端观察点 |uy| 随 ω 变化，对数幅值轴）并标注峰值."""
@@ -618,7 +676,7 @@ class ResultView(QWidget):
             self._render_deformation(mesh, solution.displacements)
         max_u = float(np.max(np.linalg.norm(solution.displacements, axis=1)))
         self._summary.setText(
-            f"最大位移 |u| = {max_u * self._disp_factor():.6g} {self._unit}\n"
+            f"最大位移 |u| = {max_u * self._disp_factor():.6g} {self._unit} · "
             f"收敛：{len(solution.iterations)} 增量步 · {solution.total_iterations} 次 Newton 迭代"
         )
 
@@ -645,7 +703,7 @@ class ResultView(QWidget):
         )
         self._plot.plot(factors, uy, pen=pg.mkPen(theme.current_palette().primary, width=3), name="非线性")
         self._summary.setText(
-            f"载荷-位移曲线：{len(factors) - 1} 增量步\n"
+            f"载荷-位移曲线：{len(factors) - 1} 增量步 · "
             f"观察点节点 {node} uy = {uy[-1]:.6g} {self._unit}（线性 {slope * factors[-1]:.6g}）"
         )
 
@@ -723,7 +781,7 @@ class ResultView(QWidget):
         self._view_combo.setVisible(True)
         self._render_scalar_field(solution.mesh, solution.temperatures, "温度 T")
         self._summary.setText(
-            f"峰值温度 T_max = {solution.t_max:.6g}（最低 {solution.t_min:.6g}）\n"
+            f"峰值温度 T_max = {solution.t_max:.6g}（最低 {solution.t_min:.6g}） · "
             f"总电功率 P = {solution.total_power:.6g} W（Joule 热源）"
         )
 
@@ -751,7 +809,7 @@ class ResultView(QWidget):
             self._render_deformation(mesh, solution.displacements[:, -1].reshape(shape))
         max_u = float(np.max(np.abs(solution.displacements[:, -1])))
         self._summary.setText(
-            f"末帧最大位移 |u| = {max_u * self._disp_factor():.6g} {self._unit}\n"
+            f"末帧最大位移 |u| = {max_u * self._disp_factor():.6g} {self._unit} · "
             f"时程：{solution.n_steps} 步 · dt = {solution.dt:.4g}"
             f" · 总时长 = {solution.times[-1]:.6g} s"
         )

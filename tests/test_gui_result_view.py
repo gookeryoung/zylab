@@ -43,7 +43,7 @@ def test_show_static_solution(qtbot) -> None:
     view.show_solution(nodes.run_static({"model": bundle}, {}))
     assert "最大位移" in view._summary.text()
     assert "应变能" in view._summary.text()
-    assert not view._freq_table.isVisible()
+    assert view._tabs.indexOf(view._data_page) < 0  # 无数据子页
 
 
 @pytest.mark.gui
@@ -54,12 +54,14 @@ def test_show_modal_solution_and_mode_switch(qtbot) -> None:
     view.show()
     solution = nodes.run_modal({"model": _beam_bundle()}, {"n_modes": 3})
     view.show_solution(solution)
-    assert view._freq_table.isVisible()
+    assert view._tabs.indexOf(view._data_page) >= 0  # 数据子页已建
+    assert view._tabs.tabBar().isVisible()  # 多页时页签条可见
     assert view._freq_table.rowCount() == 3
     assert view._mode_spin.isVisible()
     assert "基频" in view._summary.text()
     view._mode_spin.setValue(2)  # 切换第二阶振型
     assert view._plot.getPlotItem().listDataItems()
+    assert view._freq_table.currentRow() == 1  # 数据页同步高亮当前阶
 
 
 @pytest.mark.gui
@@ -186,15 +188,16 @@ def test_refresh_theme_no_crash(qtbot) -> None:
 
 @pytest.mark.gui
 def test_export_row_visibility(qtbot) -> None:
-    """导出行：有解时可见，清空后隐藏."""
+    """导出按钮：有解时可见，清空后隐藏."""
     view = ResultView()
     qtbot.addWidget(view)
     view.show()
-    assert not view._export_row.isVisible()
+    assert not view._export_csv_btn.isVisible()
     view.show_solution(nodes.run_static({"model": _beam_bundle()}, {}))
-    assert view._export_row.isVisible()
+    assert view._export_csv_btn.isVisible()
+    assert view._export_png_btn.isVisible()
     view.clear()
-    assert not view._export_row.isVisible()
+    assert not view._export_csv_btn.isVisible()
 
 
 @pytest.mark.gui
@@ -270,7 +273,8 @@ def test_anim_frames_nonlinear(qtbot) -> None:
     view.show()
     solution = nodes.run_nonlinear({"model": nodes.build_truss({}, {})}, {"n_increments": 4})
     view.show_solution(solution)
-    assert view._anim_row.isVisible()  # 帧数 = 步数 + 1 > 1
+    assert view._frame_slider.isVisible()  # 帧数 = 步数 + 1 > 1（动画控件显示）
+    assert view._play_btn.isVisible()
     assert len(view._frames) == 5
     assert view._frame_index == 4  # 结果态默认末帧（收敛态）
     assert view._frame_label.text().startswith("λ = ")
@@ -281,8 +285,8 @@ def test_anim_frames_nonlinear(qtbot) -> None:
     assert view._frame_index == 1
     view._on_play_toggled()  # 暂停
     assert not view._anim_timer.isActive()
-    view._view_combo.setCurrentIndex(1)  # 曲线视图：动画行隐藏
-    assert not view._anim_row.isVisible()
+    view._view_combo.setCurrentIndex(1)  # 曲线视图：动画控件隐藏
+    assert not view._frame_slider.isVisible()
 
 
 @pytest.mark.gui
@@ -296,7 +300,7 @@ def test_anim_frames_transient(qtbot) -> None:
         {"duration": 4.0, "n_steps": 40, "alpha": 0.5},
     )
     view.show_solution(solution)
-    assert view._anim_row.isVisible()
+    assert view._frame_slider.isVisible()
     assert len(view._frames) == 41  # 步数 + 1
     assert "s" in view._frame_label.text()
     view._frame_slider.setValue(0)  # 拖回首帧
@@ -311,11 +315,14 @@ def test_anim_frames_modal_modes(qtbot) -> None:
     view.show()
     solution = nodes.run_modal({"model": _beam_bundle()}, {"n_modes": 3})
     view.show_solution(solution)
-    assert view._anim_row.isVisible()
+    assert view._frame_slider.isVisible()
     assert len(view._frames) == 3
     view._mode_spin.setValue(2)  # 切换第二阶振型
     assert view._frame_index == 1
     assert "第 2 阶" in view._frame_label.text()
+    view._on_table_row_clicked(0, 0)  # 数据页点击第一行 -> 回到首阶
+    assert view._mode_spin.value() == 1
+    assert view._frame_index == 0
 
 
 @pytest.mark.gui
@@ -325,7 +332,7 @@ def test_anim_hidden_for_static(qtbot) -> None:
     qtbot.addWidget(view)
     view.show()
     view.show_solution(nodes.run_static({"model": _beam_bundle()}, {}))
-    assert not view._anim_row.isVisible()
+    assert not view._frame_slider.isVisible()
     assert view._frames == []
 
 
@@ -342,9 +349,50 @@ def test_colorbar_left_of_plot(qtbot) -> None:
     # 绘图行四周保留呼吸边距（非零边距）
     margins = view._plot_row.layout().contentsMargins()
     assert (margins.left(), margins.top(), margins.right(), margins.bottom()) == (8, 8, 8, 8)
-    # 绘图行位于布局末尾（无尾部弹簧分抢高度）
+    # 子 TAB 容器位于布局末尾（无尾部弹簧分抢高度），云图页在册
     layout = view.layout()
-    assert layout.indexOf(view._plot_row) == layout.count() - 1
+    assert layout.indexOf(view._tabs) == layout.count() - 1
+    assert view._tabs.indexOf(view._plot_row) == 0
+
+
+@pytest.mark.gui
+def test_toolbar_single_row_compact(qtbot) -> None:
+    """工具条单行：全部控制（阶数/视图/动画/色带/单位/导出）同住一行，摘要单行化."""
+    view = ResultView()
+    qtbot.addWidget(view)
+    view.show()
+    bar = view._toolbar.layout()
+    for widget in (
+        view._mode_spin,
+        view._view_combo,
+        view._play_btn,
+        view._frame_slider,
+        view._frame_label,
+        view._cmap_combo,
+        view._unit_combo,
+        view._export_csv_btn,
+        view._export_png_btn,
+    ):
+        assert bar.indexOf(widget) >= 0  # 均在工具条内（不再各自占行）
+    assert not view._summary.wordWrap()  # 摘要单行
+    assert view._export_csv_btn.toolTip() == "导出 CSV"  # 图标按钮语义由 tooltip 承载
+    assert not view._export_csv_btn.text()  # 无文字
+
+
+@pytest.mark.gui
+def test_data_tab_added_and_removed(qtbot) -> None:
+    """数据子页：模态解加入（South 位页签），切换解/清空后移除."""
+    view = ResultView()
+    qtbot.addWidget(view)
+    view.show()
+    solution = nodes.run_modal({"model": _beam_bundle()}, {"n_modes": 2})
+    view.show_solution(solution)
+    assert view._tabs.count() == 2
+    assert view._tabs.tabText(1) == "数据"
+    assert view._tabs.tabPosition() == view._tabs.South  # Workbench 数据页签居底
+    view.show_solution(nodes.run_static({"model": _beam_bundle()}, {}))  # 换静力解
+    assert view._tabs.count() == 1  # 数据页移除
+    assert not view._tabs.tabBar().isVisible()  # 单页时页签条隐藏
 
 
 @pytest.mark.gui

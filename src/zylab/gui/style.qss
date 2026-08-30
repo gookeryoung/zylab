@@ -196,6 +196,47 @@ QPushButton#toolBtn {
     min-height: 0;
 }
 
+/* 结果视图工具条图标按钮（纯图标 + tooltip，Workbench 风格） */
+QPushButton#iconBtn {
+    background: transparent;
+    color: ${QSS_TEXT_SECONDARY};
+    border: 1px solid transparent;
+    border-radius: ${RADIUS_SM};
+    padding: 3px;
+    min-height: 0;
+    min-width: 24px;
+}
+QPushButton#iconBtn:hover {
+    background-color: ${QSS_BG_MUTED};
+    border-color: ${QSS_BORDER};
+    color: ${QSS_TEXT_PRIMARY};
+}
+
+/* 结果视图绘图区子页签（云图/数据，South 位；复用结果页页签视觉） */
+QTabWidget#resultSubTabs::pane {
+    border: 1px solid ${QSS_BORDER};
+    border-radius: ${RADIUS_SM};
+    background-color: ${QSS_BG_APP};
+}
+QTabWidget#resultSubTabs > QTabBar::tab {
+    background-color: ${QSS_BG_MUTED};
+    color: ${QSS_TEXT_SECONDARY};
+    padding: 2px 12px;
+    margin-right: 2px;
+    border-bottom-left-radius: ${RADIUS_SM};
+    border-bottom-right-radius: ${RADIUS_SM};
+    border: 1px solid ${QSS_BORDER};
+    border-top: none;
+}
+QTabWidget#resultSubTabs > QTabBar::tab:selected {
+    background-color: ${QSS_BG_APP};
+    color: ${QSS_PRIMARY};
+    border-top: 2px solid ${QSS_PRIMARY};
+}
+QTabWidget#resultSubTabs > QTabBar::tab:hover:!selected {
+    background-color: ${QSS_SELECTION_BG};
+}
+
 /* 工作台顶部工具栏与底部状态栏（与内容区以边框分隔） */
 QFrame#toolBar {
     background-color: ${QSS_BG_APP};
