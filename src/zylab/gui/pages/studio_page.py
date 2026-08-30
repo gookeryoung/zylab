@@ -228,7 +228,7 @@ class StudioPage(QWidget):
         """按当前主题重绘工具行图标（单色剪影随按钮文字色着色）."""
         pal = theme.current_palette()
         for name, btn in (
-            ("new_template", self._new_template_button),
+            ("new_analysis", self._new_template_button),
             ("save_as_template", self._save_template_button),
             ("save_project", self._save_project_button),
             ("open_project", self._open_project_button),
