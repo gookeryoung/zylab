@@ -8,6 +8,7 @@ SVG 源为单色剪影（path 无 fill 属性，默认黑）。着色方式为�
 
 from __future__ import annotations
 
+import re
 from pathlib import Path
 
 from . import theme
@@ -17,11 +18,14 @@ __all__ = ["NAV_ICON_NAMES", "load_icon", "nav_icon", "tinted_pixmap"]
 
 _ICONS_DIR = Path(__file__).resolve().parent.parent / "assets" / "icons"
 
+#: path 级显式 fill 会覆盖根元素注入的主题色（iconfont 原始件常见），着色前剥除
+_FILL_ATTR_RE = re.compile(r'\sfill="[^"]*"')
+
 #: 像素图缓存（name, tint, size）-> QPixmap；主题色随主题变化天然分键
 _PIXMAP_CACHE: dict[tuple[str, str, int], QPixmap] = {}
 
 #: 侧边栏页序对应的图标文件基名（与 MainWindow 页序一致）
-NAV_ICON_NAMES = ("console", "analysis", "about")
+NAV_ICON_NAMES = ("notebook", "analysis", "about")
 
 
 def load_icon(name: str, size: int = 16) -> QIcon:
@@ -69,8 +73,8 @@ def nav_icon(name: str, color: str | None = None) -> QIcon:
         return QIcon()
     pal = theme.current_palette()
     tint = color if color is not None else pal.nav_text
-    # 根元素注入 fill（可继承）；仅首个 <svg 出现处插入，path 无显式 fill 时生效
-    tinted = text.replace("<svg ", f'<svg fill="{tint}" ', 1)
+    # 剥除 path 级显式 fill（iconfont 原始件残留会覆盖继承）后于根元素注入主题色
+    tinted = _FILL_ATTR_RE.sub("", text).replace("<svg ", f'<svg fill="{tint}" ', 1)
     pixmap = QPixmap()
     if not pixmap.loadFromData(QByteArray(tinted.encode("utf-8")), "SVG"):
         return QIcon()
@@ -100,7 +104,7 @@ def tinted_pixmap(name: str, color: str, size: int = 16) -> QPixmap:
         text = svg_path.read_text(encoding="utf-8")
     except OSError:
         return QPixmap()
-    tinted = text.replace("<svg ", f'<svg fill="{color}" ', 1)
+    tinted = _FILL_ATTR_RE.sub("", text).replace("<svg ", f'<svg fill="{color}" ', 1)
     pixmap = QPixmap()
     if not pixmap.loadFromData(QByteArray(tinted.encode("utf-8")), "SVG"):
         return QPixmap()

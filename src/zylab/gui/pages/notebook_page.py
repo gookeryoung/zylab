@@ -113,8 +113,8 @@ class CellWidget(QFrame):
     #: 单元级动作请求（"run"/"up"/"down"/"insert"/"delete"，页面解析执行）
     action_requested = Signal(str)
 
-    #: 工具条按钮（符号, 动作名）——悬停卡片时浮现
-    _TOOL_ITEMS = (("\u25b6", "run"), ("\u2191", "up"), ("\u2193", "down"), ("\uff0b", "insert"), ("\u2715", "delete"))
+    #: 工具条按钮（图标基名, 动作名）——悬停卡片时浮现
+    _TOOL_ITEMS = (("play", "run"), ("arrow_up", "up"), ("arrow_down", "down"), ("plus", "insert"), ("trash", "delete"))
 
     def __init__(self, cell: NotebookCell, parent: QWidget | None = None) -> None:
         """初始化卡片并装载单元源码与既有输出.
@@ -152,15 +152,17 @@ class CellWidget(QFrame):
         tool_layout = QVBoxLayout(toolbar)
         tool_layout.setContentsMargins(0, 0, 0, 0)
         tool_layout.setSpacing(2)
-        for symbol, action in self._TOOL_ITEMS:
-            button = QPushButton(symbol, objectName="cellToolButton")
+        for _icon_name, action in self._TOOL_ITEMS:
+            button = QPushButton(objectName="cellToolButton")
             button.setFixedSize(26, 22)
+            button.setIconSize(QSize(12, 12))
             button.setToolTip(_TOOL_TIPS[action])
             button.setVisible(False)
             button.clicked.connect(lambda _checked=False, name=action: self.action_requested.emit(name))
             tool_layout.addWidget(button)
             self._tool_buttons.append(button)
         tool_layout.addStretch(1)
+        self.refresh_icons()
 
         row = QHBoxLayout(self)
         row.setContentsMargins(0, 0, 0, 0)
@@ -172,6 +174,13 @@ class CellWidget(QFrame):
         self._editor.setMinimumHeight(56)
         self._update_count_label()
         self.render_outputs()
+
+    def refresh_icons(self) -> None:
+        """按当前主题重绘单元级工具条图标（删除动作用危险色区分）."""
+        pal = theme.current_palette()
+        for (icon_name, _action), button in zip(self._TOOL_ITEMS, self._tool_buttons):
+            color = pal.danger_text if icon_name == "trash" else pal.text_secondary
+            button.setIcon(nav_icon(icon_name, color))
 
     def enterEvent(self, event) -> None:  # Qt 命名约定
         """鼠标进入卡片：浮现单元级工具条."""
@@ -385,6 +394,7 @@ class NotebookPage(QWidget):
         self._refresh_tool_icons()
         self._refresh_var_icon()
         for widget in self._widgets:
+            widget.refresh_icons()
             widget.render_outputs()
 
     def restart_kernel(self) -> None:

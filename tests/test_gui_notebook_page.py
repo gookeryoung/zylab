@@ -51,6 +51,18 @@ def status_messages(page: NotebookPage) -> list[str]:
 
 
 @pytest.mark.gui
+def test_cell_tool_buttons_use_icons(page: NotebookPage) -> None:
+    """单元级悬停工具条为 SVG 图标按钮（空文字、非空图标），主题切换后重着色."""
+    widget = page._widgets[0]
+    for button in widget._tool_buttons:
+        assert button.text() == ""
+        assert not button.icon().isNull()
+    page.refresh_theme()
+    for button in widget._tool_buttons:
+        assert not button.icon().isNull()
+
+
+@pytest.mark.gui
 def test_initial_page_has_welcome_cell(page: NotebookPage) -> None:
     """新建页面应含一个演示首格，未执行无输出."""
     assert len(page._widgets) == 1

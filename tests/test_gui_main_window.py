@@ -81,14 +81,28 @@ def test_load_icon_renders_and_falls_back(qtbot) -> None:
 
 @pytest.mark.gui
 def test_nav_icon_background_transparent(qtbot) -> None:
-    """图标角落像素应全透明（无背景色块）."""
+    """图标角落像素应全透明（无背景色块；采样图标四角均无笔画）."""
     from zylab.gui.icons import nav_icon
 
-    icon = nav_icon("console")
+    icon = nav_icon("run_all")
     assert not icon.isNull()
     image = icon.pixmap(32, 32).toImage()
-    corner = image.pixelColor(1, 1)
-    assert corner.alpha() == 0, f"左上角存在非透明背景: alpha={corner.alpha()}"
+    for x, y in ((1, 1), (30, 1), (1, 30), (30, 30)):
+        corner = image.pixelColor(x, y)
+        assert corner.alpha() == 0, f"({x}, {y}) 存在非透明背景: alpha={corner.alpha()}"
+
+
+@pytest.mark.gui
+def test_nav_icon_overrides_embedded_fill(qtbot) -> None:
+    """iconfont 原始件残留的 path 级 fill 应被剥除，主题着色始终生效."""
+    from zylab.gui import icons
+    from zylab.gui.icons import nav_icon
+
+    for name in ("run_all", "rerun", "open_file", "cross"):  # 曾带显式 fill 的图标
+        svg = (icons._ICONS_DIR / f"{name}.svg").read_text("utf-8")
+        assert "fill=" not in svg, f"{name}.svg 仍含显式 fill"
+    assert icons._FILL_ATTR_RE.sub("", '<path d="M0 0" fill="#666"></path>') == '<path d="M0 0"></path>'
+    assert not nav_icon("run_all", "#123456").isNull()
 
 
 @pytest.mark.gui
