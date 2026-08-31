@@ -37,6 +37,7 @@ from .. import theme
 from ..highlight import PythonHighlighter
 from ..icons import nav_icon
 from ..qt_compat import (
+    QApplication,
     QFileDialog,
     QFrame,
     QHBoxLayout,
@@ -46,6 +47,7 @@ from ..qt_compat import (
     QLabel,
     QMessageBox,
     QPlainTextEdit,
+    QPoint,
     QPushButton,
     QScrollArea,
     QShortcut,
@@ -53,6 +55,7 @@ from ..qt_compat import (
     QSplitter,
     Qt,
     QTableView,
+    QTimer,
     QVBoxLayout,
     QWidget,
     Signal,
@@ -568,6 +571,7 @@ class NotebookPage(QWidget):
         scroll.setWidgetResizable(True)
         scroll.setWidget(self._cells_host)
         scroll.setFrameShape(QFrame.NoFrame)
+        self._scroll = scroll  # 运行后自动下滚依赖此引用
 
         # 变量侧栏：默认收起，单元流占满全宽；展开时 4:1（jupyterlab 侧栏语义）
         self._var_model = VarTableModel(self)
@@ -732,7 +736,7 @@ class NotebookPage(QWidget):
                 self.insert_at(index + 1)
 
     def _run_at(self, index: int) -> None:
-        """执行指定格：同步源码 → 内核执行 → 回写输出 → 刷新变量."""
+        """执行指定格：同步源码 → 内核执行 → 回写输出 → 刷新变量 → 自动下滚."""
         if not 0 <= index < len(self._widgets):
             return
         widget = self._widgets[index]
@@ -743,6 +747,19 @@ class NotebookPage(QWidget):
         widget.render_outputs()
         self._dirty = True
         self.refresh_vars()
+        # 布局在事件循环下一次迭代才落定，延迟一拍后滚至格底（jupyter 语义）
+        QTimer.singleShot(0, lambda: self._scroll_widget_into_view(widget))
+
+    def _scroll_widget_into_view(self, widget: QWidget) -> None:
+        """滚动单元流使格底边（输出区）进入视口（超视口时贴底对齐）."""
+        if widget not in self._widgets or not widget.isVisible():
+            return
+        QApplication.processEvents()  # 渲染后布局事件先落定，确保几何与滚动范围度量准确
+        bar = self._scroll.verticalScrollBar()
+        bottom = widget.mapTo(self._cells_host, QPoint(0, widget.height())).y() + theme.SPACING_MD
+        viewport_bottom = bar.value() + self._scroll.viewport().height()
+        if bottom > viewport_bottom:
+            bar.setValue(bottom - self._scroll.viewport().height())
 
     def _focus_index(self, index: int) -> None:
         """聚焦指定格编辑器（滚动到可见由 QScrollArea 自动处理）."""

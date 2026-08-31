@@ -117,6 +117,26 @@ def test_run_from_current(page: NotebookPage) -> None:
 
 
 @pytest.mark.gui
+def test_run_auto_scrolls_to_cell_bottom(page: NotebookPage, qtbot) -> None:
+    """运行后内容超出视口应自动下滚，使运行格底边（输出区）进入视口."""
+    from zylab.gui import theme
+    from zylab.gui.qt_compat import QPoint
+
+    page.resize(700, 300)  # 压低视口使内容必然溢出
+    page.show()
+    qtbot.wait(20)  # 布局落定
+    page._widgets[0].editor.setPlainText("for i in range(40):\n    print('line', i)")
+    page.run_current()
+    qtbot.wait(50)  # 延迟一拍的滚动落定
+    bar = page._scroll.verticalScrollBar()
+    assert bar.maximum() > 0  # 内容确已溢出
+    widget = page._widgets[0]
+    bottom = widget.mapTo(page._cells_host, QPoint(0, widget.height())).y() + theme.SPACING_MD
+    assert bar.value() + page._scroll.viewport().height() >= bottom  # 格底可见
+    assert bar.value() > 0  # 确实发生了下滚
+
+
+@pytest.mark.gui
 def test_edit_invalidates_outputs(page: NotebookPage) -> None:
     """编辑已执行格应清空旧输出并重置计数（结果失效）."""
     page._widgets[0].editor.setPlainText("1 + 1")
