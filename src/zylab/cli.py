@@ -11,6 +11,7 @@
 from __future__ import annotations
 
 import argparse
+import contextlib
 import sys
 from pathlib import Path
 from typing import Sequence
@@ -49,6 +50,7 @@ def build_parser() -> argparse.ArgumentParser:
 
 def main(argv: Sequence[str] | None = None) -> int:
     """CLI 主入口：按参数分发子命令；无子命令启动 GUI."""
+    _safe_console_encoding()
     parser = build_parser()
     args = parser.parse_args(argv)
     if args.command == "run":
@@ -181,3 +183,15 @@ def _parse_scan(raw: str) -> tuple[str, tuple[float, ...]]:
 def _report_progress(progress: float, message: str) -> None:
     """进度回调：单行打印到 stderr（不污染 stdout 的结果摘要流）."""
     print(f"\r[{progress:5.0%}] {message}", end="", file=sys.stderr, flush=True)
+
+
+def _safe_console_encoding() -> None:
+    """输出流兜底为 errors=replace（中文 Windows GBK 控制台遇 '²' 等字符不再崩溃）."""
+    with contextlib.suppress(OSError, ValueError):
+        for stream in (sys.stdout, sys.stderr):
+            if hasattr(stream, "reconfigure"):
+                stream.reconfigure(errors="replace")
+
+
+if __name__ == "__main__":  # python -m zylab.cli / fspack run_module 入口
+    raise SystemExit(main())

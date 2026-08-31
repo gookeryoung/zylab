@@ -125,6 +125,20 @@ class TestTemplatesCommand:
         assert "悬臂梁静力分析" in out
 
 
+class TestModuleEntry:
+    """``python -m zylab.cli`` 模块入口（fspack run_module 打包入口同路径）."""
+
+    def test_run_module_invokes_main(self, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]) -> None:
+        """以 __main__ 运行模块应执行 main（回归：缺失守卫时静默退出码 0）."""
+        import runpy
+
+        monkeypatch.setattr(sys, "argv", ["zylab", "templates"])
+        with pytest.raises(SystemExit) as exc_info:
+            runpy.run_module("zylab.cli", run_name="__main__", alter_sys=True)
+        assert exc_info.value.code == 0
+        assert "structural.cantilever_static" in capsys.readouterr().out
+
+
 class TestParsers:
     """CLI 参数解析单元."""
 
