@@ -27,7 +27,6 @@ from zylab.sci import (
     PlotOutput,
     ResultOutput,
     StreamOutput,
-    VarInfo,
     load_notebook,
     new_cell,
     save_notebook,
@@ -38,10 +37,7 @@ from .. import theme
 from ..highlight import PythonHighlighter
 from ..icons import nav_icon
 from ..qt_compat import (
-    QAbstractTableModel,
-    QColor,
     QFileDialog,
-    QFont,
     QFrame,
     QHBoxLayout,
     QHeaderView,
@@ -49,7 +45,6 @@ from ..qt_compat import (
     QKeySequence,
     QLabel,
     QMessageBox,
-    QModelIndex,
     QPlainTextEdit,
     QPushButton,
     QScrollArea,
@@ -61,11 +56,11 @@ from ..qt_compat import (
     QVBoxLayout,
     QWidget,
     Signal,
+    exec_dialog,
 )
+from .var_browser import VarDetailDialog, VarTableModel, VarTagDelegate, mono_font
 
-__all__ = ["CellEditor", "CellWidget", "NotebookPage", "VarTableModel"]
-
-_INVALID_INDEX = QModelIndex()
+__all__ = ["CellEditor", "CellWidget", "NotebookPage", "VarTableModel"]  # VarTableModel 经 var_browser re-export
 
 # 新笔记本默认首格（演示单元执行与内嵌绘图）
 _WELCOME_SOURCE = """\
@@ -88,49 +83,6 @@ _TOOL_TIPS = {
     "insert": "下方插入 (Alt+Enter)",
     "delete": "删除本格",
 }
-
-
-class VarTableModel(QAbstractTableModel):
-    """变量浏览器数据模型（列：名称/类型/形状/元素类型/字节数/预览）."""
-
-    _HEADERS = ("名称", "类型", "形状", "元素类型", "字节数", "预览")
-
-    def __init__(self, parent: QWidget | None = None) -> None:
-        """初始化空模型."""
-        super().__init__(parent)
-        self._vars: list[VarInfo] = []
-
-    def set_vars(self, infos: list[VarInfo]) -> None:
-        """整体替换变量列表并刷新视图."""
-        self.beginResetModel()
-        self._vars = list(infos)
-        self.endResetModel()
-
-    def rowCount(self, parent: QModelIndex = _INVALID_INDEX) -> int:
-        """行数（顶层）."""
-        return 0 if parent.isValid() else len(self._vars)
-
-    def columnCount(self, _parent: QModelIndex = _INVALID_INDEX) -> int:
-        """列数."""
-        return len(self._HEADERS)
-
-    def data(self, index: QModelIndex, role: int = Qt.DisplayRole) -> object:
-        """单元格数据：内置符号行用次级色区分用户变量."""
-        if not index.isValid():
-            return None
-        info = self._vars[index.row()]
-        if role == Qt.DisplayRole:
-            return (info.name, info.type_name, info.shape, info.dtype, str(info.nbytes), info.preview)[index.column()]
-        if role == Qt.ForegroundRole:
-            pal = theme.current_palette()
-            return QColor(pal.text_secondary if info.builtin else pal.text_primary)
-        return None
-
-    def headerData(self, section: int, orientation: Qt.Orientation, role: int = Qt.DisplayRole) -> object:
-        """表头数据."""
-        if role == Qt.DisplayRole and orientation == Qt.Horizontal:
-            return self._HEADERS[section]
-        return None
 
 
 class CellEditor(QPlainTextEdit):
@@ -174,7 +126,7 @@ class CellWidget(QFrame):
         self._cell = cell
         self._editor = CellEditor(objectName="cellEditor")
         self._editor.setPlainText(cell.source)
-        self._editor.setFont(_mono_font())
+        self._editor.setFont(mono_font())
         self._highlighter = PythonHighlighter(self._editor.document())
         self._editor.textChanged.connect(self._on_text_changed)
         self._output_host = QWidget()
@@ -189,7 +141,7 @@ class CellWidget(QFrame):
         body.addWidget(self._output_host)
 
         self._count_label = QLabel(objectName="cellCount")
-        self._count_label.setFont(_mono_font())
+        self._count_label.setFont(mono_font())
         self._count_label.setAlignment(Qt.AlignRight | Qt.AlignTop)
         self._count_label.setFixedWidth(64)
 
@@ -304,7 +256,7 @@ class CellWidget(QFrame):
         pal = theme.current_palette()
         color = pal.danger_text if out.name == "stderr" else pal.text_primary
         label = QLabel(objectName="cellStream")
-        label.setFont(_mono_font())
+        label.setFont(mono_font())
         label.setTextFormat(Qt.RichText)
         label.setWordWrap(True)
         label.setText(f'<pre style="margin:0">{html.escape(out.text.rstrip())}</pre>')
@@ -315,7 +267,7 @@ class CellWidget(QFrame):
         """表达式结果：Out[n] 前缀 + repr + 类型/形状摘要."""
         pal = theme.current_palette()
         label = QLabel(objectName="cellResult")
-        label.setFont(_mono_font())
+        label.setFont(mono_font())
         label.setTextFormat(Qt.RichText)
         label.setWordWrap(True)
         summary = f" · {out.type_name} {out.shape}" if out.type_name else ""
@@ -331,7 +283,7 @@ class CellWidget(QFrame):
         """错误输出：ename 粗体 + 回溯等宽文本（危险色）."""
         pal = theme.current_palette()
         label = QLabel(objectName="cellError")
-        label.setFont(_mono_font())
+        label.setFont(mono_font())
         label.setTextFormat(Qt.RichText)
         label.setWordWrap(True)
         label.setText(
@@ -600,15 +552,19 @@ class NotebookPage(QWidget):
         self._var_model = VarTableModel(self)
         self._var_view = QTableView(objectName="varBrowser")
         self._var_view.setModel(self._var_model)
+        self._var_view.setItemDelegate(VarTagDelegate(self._var_view))
         self._var_view.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
         self._var_view.verticalHeader().setVisible(False)
         self._var_view.setVisible(False)
+        # 双击打开 MATLAB 风格变量详情对话框
+        self._var_view.doubleClicked.connect(self._open_var_detail)
 
         splitter = QSplitter(Qt.Horizontal)
         splitter.addWidget(scroll)
         splitter.addWidget(self._var_view)
         splitter.setStretchFactor(0, 4)
         splitter.setStretchFactor(1, 1)
+        self._splitter = splitter
 
         root = QVBoxLayout(self)
         root.setContentsMargins(0, theme.SPACING_SM, theme.SPACING_MD, theme.SPACING_MD)
@@ -691,8 +647,30 @@ class NotebookPage(QWidget):
         self._refresh_var_icon()
 
     def _toggle_vars(self, visible: bool) -> None:
-        """切换变量侧栏显示（jupyterlab 侧栏收起/展开）."""
+        """切换变量侧栏显示（jupyterlab 侧栏收起/展开；展开宽度不超过内容区 1/4）."""
+        self._update_var_max_width()
         self._var_view.setVisible(visible)
+        if visible:
+            total = self._splitter.width()
+            quarter = min(total // 4, self._var_view.maximumWidth())
+            self._splitter.setSizes([total - quarter, quarter])
+
+    def _update_var_max_width(self) -> None:
+        """变量侧栏最宽不超过页面 1/4（保底 220px，避免过窄不可用）."""
+        self._var_view.setMaximumWidth(max(220, self.width() // 4))
+
+    def resizeEvent(self, event) -> None:  # Qt 命名约定
+        """页面尺寸变化时同步变量侧栏宽度上限（≤1/4）."""
+        super().resizeEvent(event)
+        self._update_var_max_width()
+
+    def _open_var_detail(self, index) -> None:
+        """双击变量行：弹出 MATLAB 风格详情对话框（只读）."""
+        info = self._var_model.info_at(index.row())
+        if info is None:
+            return
+        value = self._kernel.namespace.get(info.name)
+        exec_dialog(VarDetailDialog(info, value, self))
 
     def _refresh_tool_icons(self) -> None:
         """按当前主题重绘文档级工具按钮图标（单色剪影随按钮文字色着色）."""
@@ -797,8 +775,3 @@ class NotebookPage(QWidget):
         self._dirty = False
         self._set_status(f"已保存: {path.name}")
         return True
-
-
-def _mono_font() -> QFont:
-    """等宽字体（与脚本页一致）."""
-    return QFont(theme.FONT_MONO.strip('"').split(",")[0], 10)

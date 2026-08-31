@@ -436,20 +436,166 @@ def test_toolbar_only_document_level_buttons(page: NotebookPage) -> None:
 
 @pytest.mark.gui
 def test_var_table_model_data_roles(qtbot) -> None:
-    """变量模型 data/headerData 各角色取值."""
+    """变量模型 data/headerData 各角色取值（三列：名称/类型/字节数）."""
     from zylab.gui.qt_compat import QColor, QModelIndex, Qt
     from zylab.sci import VarInfo
 
     model = VarTableModel()
     model.set_vars([VarInfo(name="x", type_name="int", shape="", dtype="", nbytes=28, preview="5")])
+    assert model.columnCount() == 3
     assert model.data(model.index(0, 0)) == "x"
     assert model.data(model.index(0, 1)) == "int"
+    assert model.data(model.index(0, 2)) == "28"
     assert isinstance(model.data(model.index(0, 0), Qt.ForegroundRole), QColor)
-    assert model.data(model.index(0, 0), Qt.UserRole) is None
     assert model.data(QModelIndex()) is None
     assert model.headerData(0, Qt.Horizontal) == "名称"
     assert model.headerData(0, Qt.Vertical) is None
     assert model.headerData(0, Qt.Horizontal, Qt.UserRole) is None
+
+
+@pytest.mark.gui
+def test_var_table_model_tags_role(qtbot) -> None:
+    """类型列经 TAGS_ROLE 提供元素类型/形状标签（空项省略，仅类型列有效）."""
+    from zylab.sci import VarInfo
+
+    model = VarTableModel()
+    model.set_vars(
+        [
+            VarInfo(name="a", type_name="ndarray", shape="3x4", dtype="float64", nbytes=96, preview=""),
+            VarInfo(name="n", type_name="int", shape="", dtype="", nbytes=28, preview=""),
+        ]
+    )
+    assert model.data(model.index(0, 1), model.TAGS_ROLE) == ("float64", "3x4")
+    assert model.data(model.index(1, 1), model.TAGS_ROLE) == ()
+    assert model.data(model.index(0, 0), model.TAGS_ROLE) is None
+    assert model.info_at(0).name == "a"
+    assert model.info_at(5) is None
+
+
+# ------------------------------------------------ 变量详情对话框（MATLAB 风格）
+
+
+@pytest.mark.gui
+def test_var_detail_dialog_matrix_shapes(qtbot) -> None:
+    """详情对话框：一维列向量/二维矩阵/多维切片导航均正确呈现."""
+    import numpy as np
+
+    from zylab.gui.pages.var_browser import VarDetailDialog
+    from zylab.sci import VarInfo
+
+    # 一维：索引 + 值 两列（列向量）
+    info1 = VarInfo(name="v", type_name="ndarray", shape="3", dtype="float64", nbytes=24, preview="")
+    d1 = VarDetailDialog(info1, np.array([1.0, 2.5, 3.0]))
+    qtbot.addWidget(d1)
+    assert d1._table.rowCount() == 3
+    assert d1._table.columnCount() == 1
+    assert d1._table.item(1, 0).text() == "2.5"
+    # 二维：行列索引表头
+    info2 = VarInfo(name="m", type_name="ndarray", shape="2x3", dtype="float64", nbytes=48, preview="")
+    d2 = VarDetailDialog(info2, np.arange(6.0).reshape(2, 3))
+    qtbot.addWidget(d2)
+    assert d2._table.rowCount() == 2
+    assert d2._table.columnCount() == 3
+    assert d2._table.item(1, 2).text() == "5"
+    # 三维：前置维索引条 + 后两维切片
+    cube = np.arange(8.0).reshape(2, 2, 2)
+    info3 = VarInfo(name="c", type_name="ndarray", shape="2x2x2", dtype="float64", nbytes=64, preview="")
+    d3 = VarDetailDialog(info3, cube)
+    qtbot.addWidget(d3)
+    assert len(d3._ndim_spinners) == 1
+    assert d3._table.item(0, 0).text() == "0"
+    d3._ndim_spinners[0].setValue(1)
+    assert d3._table.item(0, 0).text() == "4"
+    # 摘要含统计（最小/最大/均值）
+    assert "最大 7" in d3._build_summary().text()
+
+
+@pytest.mark.gui
+def test_var_detail_dialog_non_array(qtbot) -> None:
+    """非数组变量（标量/字符串等）详情用等宽文本 repr 呈现."""
+    from zylab.gui.pages.var_browser import VarDetailDialog
+    from zylab.sci import VarInfo
+
+    info = VarInfo(name="s", type_name="str", shape="", dtype="", nbytes=52, preview="'hello'")
+    dialog = VarDetailDialog(info, "hello")
+    qtbot.addWidget(dialog)
+    assert "hello" in dialog._build_summary().text() or dialog._build_summary().text().startswith("名称 s")
+    # 超大数组截断保护（200 行上限）
+    import numpy as np
+
+    info_big = VarInfo(name="b", type_name="ndarray", shape="500", dtype="float64", nbytes=4000, preview="")
+    d_big = VarDetailDialog(info_big, np.arange(500.0))
+    qtbot.addWidget(d_big)
+    assert d_big._table.rowCount() == 200
+    assert "仅显示前" in d_big.windowTitle()
+    # 超长 repr 截断保护
+    info_long = VarInfo(name="t", type_name="str", shape="", dtype="", nbytes=3000, preview="x" * 3000)
+    d_long = VarDetailDialog(info_long, "x" * 3000)
+    qtbot.addWidget(d_long)
+    assert "超长截断" in d_long._build_text_view().text()
+    # 非数值数组与全 NaN：统计降级为空，不抛错
+    info_str = VarInfo(name="w", type_name="ndarray", shape="2", dtype="<U3", nbytes=24, preview="")
+    d_str = VarDetailDialog(info_str, np.array(["ab", "cd"]))
+    qtbot.addWidget(d_str)
+    assert "最小" not in d_str._build_summary().text()
+    info_nan = VarInfo(name="nn", type_name="ndarray", shape="2", dtype="float64", nbytes=16, preview="")
+    d_nan = VarDetailDialog(info_nan, np.array([np.nan, np.nan]))
+    qtbot.addWidget(d_nan)
+    assert "最小" not in d_nan._build_summary().text()
+
+
+@pytest.mark.gui
+def test_var_panel_width_capped_to_quarter(page: NotebookPage) -> None:
+    """变量侧栏宽度上限不超过页面 1/4（保底 220px）."""
+    page.resize(1000, 700)
+    page._update_var_max_width()  # 未显示控件收不到 resize 事件，直接触发
+    assert page._var_view.maximumWidth() == 250
+    page.resize(600, 700)
+    page._update_var_max_width()
+    assert page._var_view.maximumWidth() == 220  # 保底
+
+
+@pytest.mark.gui
+def test_var_tag_delegate_paints(qtbot) -> None:
+    """类型列委托渲染：类型名 + 标签 chip 离屏绘制不报错."""
+    from zylab.gui.pages.var_browser import VarTagDelegate
+    from zylab.gui.qt_compat import QPainter, QPixmap, QStyleOptionViewItem, QTableView
+    from zylab.sci import VarInfo
+
+    model = VarTableModel()
+    model.set_vars([VarInfo(name="a", type_name="ndarray", shape="3x4", dtype="float64", nbytes=96, preview="")])
+    view = QTableView()
+    view.setModel(model)
+    qtbot.addWidget(view)
+    view.show()
+    assert not view.grab().isNull()  # 整表渲染（委托 paint 实际执行）
+    # 直接离屏渲染类型列单元格（覆盖 chip 绘制分支）
+    delegate = VarTagDelegate()
+    pixmap = QPixmap(220, 24)
+    painter = QPainter(pixmap)
+    option = QStyleOptionViewItem()
+    option.rect.setRect(0, 0, 220, 24)
+    delegate.paint(painter, option, model.index(0, 1))
+    painter.end()
+    assert not pixmap.isNull()
+
+
+@pytest.mark.gui
+def test_open_var_detail(page: NotebookPage, monkeypatch: pytest.MonkeyPatch) -> None:
+    """双击变量行弹出详情对话框（对话框经 exec_dialog 兼容执行），无效索引安全返回."""
+    from zylab.gui.pages import notebook_page as mod
+
+    opened: list[object] = []
+    monkeypatch.setattr(mod, "exec_dialog", opened.append)
+    page._widgets[0].editor.setPlainText("zz = [1, 2]")
+    page.run_current()
+    page.refresh_vars()
+    row = next(r for r in range(page._var_model.rowCount()) if page._var_model.info_at(r).name == "zz")
+    page._open_var_detail(page._var_model.index(row, 0))
+    assert len(opened) == 1
+    assert opened[0]._info.name == "zz"  # type: ignore[attr-defined]
+    page._open_var_detail(page._var_model.index(-1, 0))  # 无效索引：不弹窗
+    assert len(opened) == 1
 
 
 @pytest.mark.gui
