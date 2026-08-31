@@ -144,6 +144,8 @@ class CellWidget(QFrame):
         self._count_label.setFont(mono_font())
         self._count_label.setAlignment(Qt.AlignRight | Qt.AlignTop)
         self._count_label.setFixedWidth(64)
+        # 顶部偏移对齐 cellEditor 边框(1px)+内边距(8px)，使 In[n] 与代码首行基线一致
+        self._count_label.setContentsMargins(0, 9, 0, 0)
 
         # 单元级工具条：固定占位宽度，悬停时按钮可见（不挤压格宽）
         self._tool_buttons: list[QPushButton] = []
@@ -246,9 +248,18 @@ class CellWidget(QFrame):
             self._update_count_label()
 
     def _update_count_label(self) -> None:
-        """刷新 ``In [n]:`` 序号栏（未运行为 ``In [ ]:``）."""
+        """刷新 ``In [n]:`` 序号栏（未运行为 ``In [ ]:``；已执行态主色高亮）."""
         count = self._cell.execution_count
-        self._count_label.setText(f"In [{count}]:" if count is not None else "In [ ]:")
+        executed = count is not None
+        text = f"In [{count}]:" if executed else "In [ ]:"
+        if self._count_label.text() != text:
+            self._count_label.setText(text)
+        # 动态属性供 QSS 属性选择器着色，变更后需重 polish 生效
+        if self._count_label.property("executed") != executed:
+            self._count_label.setProperty("executed", executed)
+            style = self._count_label.style()
+            style.unpolish(self._count_label)
+            style.polish(self._count_label)
 
     def _clear_outputs(self) -> None:
         """销毁输出区全部子控件（重建式渲染前置）."""

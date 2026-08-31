@@ -27,6 +27,7 @@ try:
         QColor,
         QContextMenuEvent,
         QFont,
+        QFontDatabase,
         QFontMetrics,
         QIcon,
         QKeyEvent,
@@ -110,6 +111,7 @@ except ImportError:  # pragma: no cover（3.8 环境走此分支）
         QColor,
         QContextMenuEvent,
         QFont,
+        QFontDatabase,
         QFontMetrics,  # type: ignore[missing-import]
         QIcon,
         QKeyEvent,
@@ -188,6 +190,7 @@ __all__ = [
     "QEvent",
     "QFileDialog",
     "QFont",
+    "QFontDatabase",
     "QFontMetrics",
     "QFormLayout",
     "QFrame",

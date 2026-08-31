@@ -22,3 +22,14 @@ def test_create_app_reuses_instance(qapp) -> None:
     app = create_app([])
     assert app is QApplication.instance()
     assert app.styleSheet()  # 样式表已应用
+
+
+@pytest.mark.gui
+def test_register_fonts_loads_builtin(qapp) -> None:
+    """内置 DejaVu Sans Mono 注册后应进入应用字体库（重复调用幂等）."""
+    from zylab.gui.app import register_fonts
+    from zylab.gui.qt_compat import QFontDatabase
+
+    assert "DejaVu Sans Mono" in register_fonts()
+    # PySide2 需实例化调用，PySide6 静态/实例均可
+    assert "DejaVu Sans Mono" in QFontDatabase().families()

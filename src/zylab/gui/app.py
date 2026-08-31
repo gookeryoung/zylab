@@ -11,7 +11,7 @@ from pathlib import Path
 from string import Template
 
 from . import theme
-from .qt_compat import QApplication, exec_app
+from .qt_compat import QApplication, QFontDatabase, exec_app
 
 __all__ = [
     "apply_theme",
@@ -19,12 +19,34 @@ __all__ = [
     "load_stylesheet",
     "load_theme_name",
     "main",
+    "register_fonts",
     "save_theme_name",
 ]
 
 logger = logging.getLogger(__name__)
 
 _THEME_FILE = "theme.txt"
+
+#: 内置字体目录（随包分发，当前为 DejaVu Sans Mono 等宽件）
+_FONTS_DIR = Path(__file__).resolve().parent.parent / "assets" / "fonts"
+
+
+def register_fonts() -> list[str]:
+    """注册 assets/fonts 下内置字体到应用字体库，返回已生效的字体家族名.
+
+    重复调用无害（Qt 对同一字体文件幂等）；注册失败（文件缺失/损坏）仅告警，
+    界面回退系统等宽字体，不中断启动。
+    """
+    loaded: list[str] = []
+    for path in sorted(_FONTS_DIR.glob("*.ttf")):
+        font_id = QFontDatabase.addApplicationFont(str(path))
+        if font_id < 0:
+            logger.warning("内置字体注册失败: %s", path.name)
+            continue
+        loaded.extend(QFontDatabase.applicationFontFamilies(font_id))
+    logger.debug("内置字体已注册: %s", loaded or "无")
+    return loaded
+
 
 # 箭头三角形 SVG 模板（QSS image 引用；Qt QSS 不支持 border 画三角，
 # 须用位图/矢量资源），颜色由主题令牌注入
@@ -90,6 +112,7 @@ def create_app(argv: list[str] | None = None, theme_name: str = theme.DEFAULT_TH
     existing = QApplication.instance()
     app = existing if isinstance(existing, QApplication) else QApplication(argv if argv is not None else sys.argv)
     app.setStyle("Fusion")
+    register_fonts()
     apply_theme(app, theme_name)
     return app
 

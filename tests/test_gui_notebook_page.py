@@ -9,6 +9,7 @@ import pytest
 from zylab.console import ReplKernel
 from zylab.core import EventBus
 from zylab.gui.pages.notebook_page import CellEditor, CellWidget, NotebookPage, VarTableModel
+from zylab.gui.pages.var_browser import mono_font
 from zylab.gui.qt_compat import Qt
 from zylab.sci import (
     Notebook,
@@ -257,6 +258,28 @@ def test_cell_widget_renders_error(qtbot) -> None:
     assert widget._count_label.text() == "In [4]:"
     label = widget._output_layout.itemAt(0).widget()
     assert "ZeroDivisionError" in label.text()
+
+
+@pytest.mark.gui
+def test_mono_font_fallback_chain() -> None:
+    """等宽字体回退链：内置 DejaVu Sans Mono 优先，中文回退微软雅黑."""
+    font = mono_font()
+    assert font.families()[0] == "DejaVu Sans Mono"
+    assert "Microsoft YaHei" in font.families()
+    assert font.pointSize() == 10
+
+
+@pytest.mark.gui
+def test_cell_count_executed_property(qtbot) -> None:
+    """In[n] 序号栏按执行状态维护 executed 动态属性（QSS 主色高亮挂钩）."""
+    cell = new_cell("1")
+    widget = CellWidget(cell)
+    qtbot.addWidget(widget)
+    assert widget._count_label.property("executed") is False
+    cell.execution_count = 7
+    widget._update_count_label()
+    assert widget._count_label.text() == "In [7]:"
+    assert widget._count_label.property("executed") is True
 
 
 @pytest.mark.gui

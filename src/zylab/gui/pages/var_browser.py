@@ -47,9 +47,16 @@ _MAX_ROWS = 200
 _MAX_COLS = 60
 
 
+#: 等宽字体回退链：内置 DejaVu Sans Mono 优先，中文经微软雅黑回退保证混排协调
+_MONO_FAMILIES = ("DejaVu Sans Mono", "Consolas", "Microsoft YaHei")
+
+
 def mono_font() -> QFont:
-    """等宽字体（与脚本页一致）."""
-    return QFont(theme.FONT_MONO.strip('"').split(",")[0], 10)
+    """等宽字体（内置 DejaVu Sans Mono 优先；中文回退微软雅黑，数字/字母/汉字混排协调）."""
+    font = QFont()
+    font.setFamilies(list(_MONO_FAMILIES))
+    font.setPointSize(10)
+    return font
 
 
 def _fmt_cell(value: object) -> str:

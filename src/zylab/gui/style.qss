@@ -114,14 +114,24 @@ QLabel#cellCount {
     color: ${QSS_TEXT_SECONDARY};
     font-family: ${FONT_MONO};
 }
+/* 已执行单元的 In[n] 主色高亮（动态属性 executed 由 CellWidget 维护） */
+QLabel#cellCount[executed="true"] { color: ${QSS_PRIMARY}; }
+/* 代码编辑器：弱化外框 + 左侧强调条（聚焦态主色），精炼科技感 */
 QPlainTextEdit#cellEditor {
     font-family: ${FONT_MONO};
     background-color: ${QSS_BG_INPUT};
-    border: 1px solid ${QSS_BORDER};
+    border: 1px solid transparent;
+    border-left: 2px solid ${QSS_BORDER};
     border-radius: ${RADIUS_SM};
-    padding: 6px;
+    padding: 8px 10px;
+    selection-background-color: ${QSS_SELECTION_BG};
 }
-QPlainTextEdit#cellEditor:focus { border: 1px solid ${QSS_PRIMARY}; }
+QPlainTextEdit#cellEditor:hover { border-left-color: ${QSS_BORDER_STRONG}; }
+QPlainTextEdit#cellEditor:focus {
+    border: 1px solid ${QSS_BORDER};
+    border-left: 2px solid ${QSS_PRIMARY};
+    background-color: ${QSS_BG_APP};
+}
 
 /* 单元级工具条（悬停浮现，固定占位不挤压格宽） */
 QWidget#cellToolbar { background: transparent; }

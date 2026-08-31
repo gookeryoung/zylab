@@ -313,7 +313,7 @@ def _relative_luminance(color: str) -> float:
 
 # 排版
 FONT_FAMILY = '"PingFang SC", "Microsoft YaHei", "Segoe UI", "Helvetica Neue", Arial, sans-serif'
-FONT_MONO = '"Consolas", "Cascadia Mono", "JetBrains Mono", monospace'
+FONT_MONO = '"DejaVu Sans Mono", "Consolas", "Cascadia Mono", monospace'
 FONT_TITLE = "18px"
 FONT_HEADING = "15px"
 FONT_BODY = "13px"
