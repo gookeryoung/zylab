@@ -42,6 +42,7 @@ from zylab.studio.nodes import tip_node
 from .. import theme
 from ..icons import nav_icon
 from ..qt_compat import (
+    QApplication,
     QColor,
     QComboBox,
     QEvent,
@@ -50,6 +51,7 @@ from ..qt_compat import (
     QHBoxLayout,
     QHeaderView,
     QLabel,
+    QMenu,
     QPainter,
     QPushButton,
     QSize,
@@ -271,6 +273,7 @@ class ResultView(QWidget):
         # 绘图区子 TAB：「云图」（色条 + 绘图）+「数据」（仅模态/屈曲）；
         # 单页时隐藏页签条（不浪费纵向空间）
         self._plot = pg.PlotWidget(background=theme.current_palette().bg_app)
+        self._setup_plot_menu()
         self._plot.showGrid(x=True, y=True, alpha=0.3)
         self._plot.setAspectLocked(True)
         self._plot.addLegend(offset=(12, 12))
@@ -290,6 +293,28 @@ class ResultView(QWidget):
         layout.addWidget(self._tabs, stretch=1)  # 唯一弹性项：占满剩余全部高度
         # 3D 模式下拦截绘图区拖拽做视角旋转（此时禁用平移）
         self._plot.viewport().installEventFilter(self)
+
+    def _setup_plot_menu(self) -> None:
+        """以精简中文右键菜单替换 pyqtgraph 默认菜单.
+
+        默认菜单为英文且依赖内置功能：Average 项在本主题下渲染为白块遮挡、
+        Downsampling 项对 ScatterPlotItem 触发 setDownsampling 崩溃，故整体
+        关闭 PlotItem 菜单并替换 ViewBox 菜单（保留右键交互习惯）。
+        """
+        plot_item = self._plot.getPlotItem()
+        # 仅关 PlotItem 菜单（enableViewBoxMenu=None 保留 ViewBox 弹出能力）
+        plot_item.setMenuEnabled(False, enableViewBoxMenu=None)
+        menu = QMenu(self._plot)
+        menu.addAction("恢复默认视角", plot_item.autoRange)
+        menu.addAction("复制图像", self._copy_plot)
+        menu.addAction("导出图像 (PNG)", self._on_export_png)
+        menu.addAction("导出数据 (CSV)", self._on_export_csv)
+        plot_item.vb.menu = menu
+
+    def _copy_plot(self) -> None:
+        """当前绘图区截图复制到剪贴板（可直接粘贴到文档）."""
+        QApplication.clipboard().setPixmap(self._plot.grab())
+        self._summary.setText("图像已复制到剪贴板")
 
     # ------------------------------------------------------------------ 公共接口
 

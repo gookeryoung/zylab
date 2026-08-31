@@ -15,6 +15,18 @@ def _beam_bundle():
 
 
 @pytest.mark.gui
+def test_plot_context_menu_replaced(qtbot) -> None:
+    """云图右键菜单替换为精简中文菜单（默认英文菜单整体关闭）."""
+    view = ResultView()
+    qtbot.addWidget(view)
+    plot_item = view._plot.getPlotItem()
+    assert plot_item._menuEnabled is False  # Plot Options/Average/Downsampling 等不再出现
+    assert plot_item.getContextMenus(None) is None
+    texts = [a.text() for a in plot_item.vb.menu.actions()]
+    assert texts == ["恢复默认视角", "复制图像", "导出图像 (PNG)", "导出数据 (CSV)"]
+
+
+@pytest.mark.gui
 def test_show_mesh_preview(qtbot) -> None:
     """模型预览：线框 + 节点散点 + 规模摘要."""
     import pyqtgraph as pg
