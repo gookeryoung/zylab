@@ -132,6 +132,7 @@ class TestModuleEntry:
         """以 __main__ 运行模块应执行 main（回归：缺失守卫时静默退出码 0）."""
         import runpy
 
+        monkeypatch.delitem(sys.modules, "zylab.cli", raising=False)  # 顶层已导入，run_module 会发 RuntimeWarning
         monkeypatch.setattr(sys, "argv", ["zylab", "templates"])
         with pytest.raises(SystemExit) as exc_info:
             runpy.run_module("zylab.cli", run_name="__main__", alter_sys=True)
