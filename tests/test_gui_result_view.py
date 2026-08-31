@@ -318,6 +318,27 @@ def test_colorbar_field_range(qtbot) -> None:
 
 
 @pytest.mark.gui
+def test_colorbar_width_fits_large_values(qtbot) -> None:
+    """大数值刻度（如 3.172e+04）应完整显示：宽度自适应 + 绘制期补偿，不被遮挡截断."""
+    from zylab.gui.qt_compat import QFontMetrics, Qt
+    from zylab.gui.widgets.result_view import ColorBarWidget
+
+    bar = ColorBarWidget()
+    qtbot.addWidget(bar)
+    bar.set_field(np.array([1.0, 2.0]), "jet")  # 短刻度基线
+    w_small = bar.width()
+    bar.set_field(np.array([0.0, 31720.0]), "jet", "℃")  # 大数值长刻度
+    assert bar.width() > w_small  # 自适应放大
+    assert bar.width() <= ColorBarWidget._PAD * 3 + ColorBarWidget._BAR_W + ColorBarWidget._MAX_LABEL_W  # 封顶
+    bar.show()
+    bar.grab()  # 同步触发 paintEvent（按实际画笔字体补偿宽度）
+    metrics = QFontMetrics(bar.font())
+    avail = bar.width() - bar._PAD * 3 - bar._BAR_W
+    for text in bar._labels():  # 刻度全文可容纳，省略号不再截断
+        assert metrics.elidedText(text, Qt.ElideRight, avail) == text
+
+
+@pytest.mark.gui
 def test_unit_switch_rerenders(qtbot) -> None:
     """单位切换（m -> mm）：摘要与标尺刻度乘 1000 并带单位后缀."""
     view = ResultView()

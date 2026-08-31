@@ -81,6 +81,7 @@ class ColorBarWidget(QWidget):
     _BAR_W = 14  # 色带条宽度（像素）
     _PAD = 4  # 内边距
     _MAX_H = 460  # 最大高度（与绘图区同宽列内随高拉伸，超高截断）
+    _MAX_LABEL_W = 120  # 刻度文字最大宽度（超大数值如 3.172e+04，超出省略截断）
 
     def __init__(self, parent: QWidget | None = None) -> None:
         """初始化标尺（初始无场量，隐藏）."""
@@ -103,6 +104,7 @@ class ColorBarWidget(QWidget):
         self._vmax = float(np.max(data))
         self._unit = unit
         self._lut = cmap_lut(cmap)
+        self._fit_width()
         self.setVisible(True)
         self.update()
 
@@ -113,6 +115,19 @@ class ColorBarWidget(QWidget):
     def refresh_theme(self) -> None:
         """主题切换后重绘刻度文字."""
         self.update()
+
+    def _labels(self) -> tuple[str, str, str]:
+        """三档刻度文本（最大/中/最小，最大最小带单位后缀）."""
+        unit = f" {self._unit}" if self._unit else ""
+        mid = (self._vmin + self._vmax) / 2.0
+        return f"{self._vmax:.4g}{unit}", f"{mid:.4g}", f"{self._vmin:.4g}{unit}"
+
+    def _fit_width(self) -> None:
+        """宽度按最宽刻度文本自适应（上限截断），避免文字被绘图区遮挡."""
+        metrics = QFontMetrics(self.font())
+        widest = max(metrics.horizontalAdvance(t) for t in self._labels())
+        text_w = min(widest, self._MAX_LABEL_W)
+        self.setFixedWidth(self._PAD + self._BAR_W + self._PAD + text_w + self._PAD)
 
     def paintEvent(self, event) -> None:  # Qt 命名约定
         """绘制竖向色带（64 段）、三档刻度值与单位后缀."""
@@ -140,14 +155,18 @@ class ColorBarWidget(QWidget):
         metrics = QFontMetrics(painter.font())
         text_h = metrics.height()
         text_x = bar_x + self._BAR_W + self._PAD
-        text_w = self.width() - text_x
-        unit = f" {self._unit}" if self._unit else ""
+        text_w = self.width() - text_x - self._PAD
+        labels = self._labels()
+        # 字体度量晚于宽度自适应生效时（如样式表 13px 在 set_field 之后 polish）
+        # 在此按实际画笔字体补偿一次宽度，保证大数值刻度全文显示而非省略截断
+        widest = max(metrics.horizontalAdvance(t) for t in labels)
+        if text_x + widest + self._PAD > self.width():
+            self.setFixedWidth(min(text_x + widest + self._PAD, text_x + self._MAX_LABEL_W + self._PAD))
+            text_w = self.width() - text_x - self._PAD
         painter.setPen(QColor(pal.text_secondary))
-        painter.drawText(text_x, self._PAD, text_w, text_h, 0, f"{self._vmax:.4g}{unit}")
-        painter.drawText(
-            text_x, int((self.height() - text_h) / 2), text_w, text_h, 0, f"{(self._vmin + self._vmax) / 2.0:.4g}"
-        )
-        painter.drawText(text_x, self.height() - self._PAD - text_h, text_w, text_h, 0, f"{self._vmin:.4g}{unit}")
+        ys = (self._PAD, (self.height() - text_h) // 2, self.height() - self._PAD - text_h)
+        for y, text in zip(ys, labels):
+            painter.drawText(text_x, y, text_w, text_h, 0, metrics.elidedText(text, Qt.ElideRight, text_w))
 
 
 class ResultView(QWidget):
