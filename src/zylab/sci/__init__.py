@@ -28,12 +28,33 @@ from numpy import (
     zeros,
 )
 
+from .notebook import (
+    ErrorOutput,
+    Notebook,
+    NotebookCell,
+    NotebookError,
+    PlotOutput,
+    PlotSeries,
+    ResultOutput,
+    StreamOutput,
+    load_notebook,
+    new_cell,
+    save_notebook,
+)
 from .plotting import TOPIC_PLOT_REQUESTED, PlotRequest, make_plot_function
 from .workspace import VarInfo, format_whos, whos
 
 __all__ = [
     "TOPIC_PLOT_REQUESTED",
+    "ErrorOutput",
+    "Notebook",
+    "NotebookCell",
+    "NotebookError",
+    "PlotOutput",
     "PlotRequest",
+    "PlotSeries",
+    "ResultOutput",
+    "StreamOutput",
     "VarInfo",
     "arange",
     "array",
@@ -45,13 +66,16 @@ __all__ = [
     "format_whos",
     "inf",
     "linspace",
+    "load_notebook",
     "log",
     "log10",
     "make_plot_function",
     "nan",
+    "new_cell",
     "np",
     "ones",
     "pi",
+    "save_notebook",
     "sin",
     "sqrt",
     "tan",

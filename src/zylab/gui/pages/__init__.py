@@ -1,10 +1,14 @@
-"""zylab.gui.pages - 主窗口内容页（控制台/绘图/工作台/脚本）."""
+"""zylab.gui.pages - 主窗口内容页（笔记本/工作台）."""
 
 from __future__ import annotations
 
-from .console_page import ConsolePage, ReplInput, VarTableModel
-from .plot_page import PlotPage
-from .script_page import ScriptPage
+from .notebook_page import CellEditor, CellWidget, NotebookPage, VarTableModel
 from .studio_page import StudioPage
 
-__all__ = ["ConsolePage", "PlotPage", "ReplInput", "ScriptPage", "StudioPage", "VarTableModel"]
+__all__ = [
+    "CellEditor",
+    "CellWidget",
+    "NotebookPage",
+    "StudioPage",
+    "VarTableModel",
+]

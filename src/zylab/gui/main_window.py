@@ -5,13 +5,13 @@ from __future__ import annotations
 import platform
 
 from zylab import __version__
-from zylab.console import CommandHistory, ReplKernel
+from zylab.console import ReplKernel
 from zylab.core import EventBus, default_data_dir
 
 from . import theme
 from .app import apply_theme, save_theme_name
 from .icons import NAV_ICON_NAMES, nav_icon
-from .pages.console_page import ConsolePage
+from .pages.notebook_page import NotebookPage
 from .pages.studio_page import StudioPage
 from .qt_compat import (
     QComboBox,
@@ -51,8 +51,6 @@ class MainWindow(QMainWindow):
 
         self._bus = EventBus()
         self._kernel = ReplKernel(self._bus)
-        self._history = CommandHistory(default_data_dir() / "history.json")
-        self._history.load()
 
         self._build_ui()
         self._connect()
@@ -73,7 +71,7 @@ class MainWindow(QMainWindow):
 
         splitter = QSplitter(Qt.Horizontal)
         self._sidebar = QListWidget(objectName="sidebar")
-        for label in ("控制台", "分析", "关于"):
+        for label in ("笔记本", "分析", "关于"):
             QListWidgetItem(label, self._sidebar)
         self._sidebar.setIconSize(_NAV_ICON_SIZE)
         self._sidebar.setFixedWidth(theme.SIDEBAR_WIDTH)
@@ -81,10 +79,10 @@ class MainWindow(QMainWindow):
         self._refresh_sidebar_icons()
 
         self._stack = QStackedWidget()
-        self._console_page = ConsolePage(self._kernel, self._history, self._bus)
+        self._notebook_page = NotebookPage(self._kernel, self._bus)
         self._studio_page = StudioPage()
         self._about_page = self._build_about_page()
-        self._stack.addWidget(self._console_page)
+        self._stack.addWidget(self._notebook_page)
         self._stack.addWidget(self._studio_page)
         self._stack.addWidget(self._about_page)
 
@@ -154,7 +152,9 @@ class MainWindow(QMainWindow):
         self._sidebar.currentRowChanged.connect(lambda _row: self._refresh_sidebar_icons())
 
     def closeEvent(self, event) -> None:  # Qt 命名约定
-        """关闭时持久化命令历史并终止后台求解执行器."""
-        self._history.save()
+        """关闭前询问保存笔记本，确认后终止后台求解执行器."""
+        if not self._notebook_page.maybe_save():
+            event.ignore()
+            return
         self._studio_page.shutdown()
         super().closeEvent(event)

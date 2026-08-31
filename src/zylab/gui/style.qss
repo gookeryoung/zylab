@@ -103,31 +103,28 @@ QListWidget#sidebar::item:selected {
 }
 QListWidget#sidebar::item:hover { background-color: ${QSS_NAV_BG_HOVER}; }
 
-/* ------------------------------------------------ 选项卡（控制台右侧 变量/绘图） */
-QTabWidget#consoleSideTabs::pane {
+/* ------------------------------------------------ 笔记本页（jupyter 式单元流） */
+QFrame#notebookCell {
+    background-color: ${QSS_BG_APP};
+    border: 1px solid ${QSS_BORDER};
+    border-radius: ${RADIUS_MD};
+}
+QFrame#notebookCell:hover { border-color: ${QSS_BORDER_STRONG}; }
+QLabel#cellCount {
+    color: ${QSS_TEXT_SECONDARY};
+    font-family: ${FONT_MONO};
+}
+QPlainTextEdit#cellEditor {
+    font-family: ${FONT_MONO};
+    background-color: ${QSS_BG_INPUT};
     border: 1px solid ${QSS_BORDER};
     border-radius: ${RADIUS_SM};
-    top: -1px;
-    background-color: ${QSS_BG_APP};
+    padding: 6px;
 }
-QTabWidget#consoleSideTabs::tab-bar { top: 6px; left: 6px; }
-QTabWidget#consoleSideTabs > QTabBar::tab {
-    background-color: ${QSS_BG_MUTED};
+QPlainTextEdit#cellEditor:focus { border: 1px solid ${QSS_PRIMARY}; }
+QLabel#notebookStatus {
     color: ${QSS_TEXT_SECONDARY};
-    padding: 5px 14px;
-    margin-right: 2px;
-    border-top-left-radius: ${RADIUS_SM};
-    border-top-right-radius: ${RADIUS_SM};
-    border: 1px solid ${QSS_BORDER};
-    border-bottom: none;
-}
-QTabWidget#consoleSideTabs > QTabBar::tab:selected {
-    background-color: ${QSS_BG_APP};
-    color: ${QSS_PRIMARY};
-    border-bottom: 2px solid ${QSS_PRIMARY};
-}
-QTabWidget#consoleSideTabs > QTabBar::tab:hover:!selected {
-    background-color: ${QSS_SELECTION_BG};
+    font-size: ${FONT_CAPTION};
 }
 
 /* ------------------------------------------------ 模板选择对话框 */
@@ -286,29 +283,6 @@ QLineEdit:disabled, QTextEdit:disabled, QPlainTextEdit:disabled {
     color: ${QSS_TEXT_DISABLED};
 }
 QLineEdit[error="true"] { border: 1px solid ${QSS_DANGER_TEXT}; }
-
-/* REPL 输出/输入（等宽字体） */
-QPlainTextEdit#replOutput {
-    font-family: ${FONT_MONO};
-    background-color: ${QSS_BG_INPUT};
-    border: 1px solid ${QSS_BORDER};
-    border-radius: ${RADIUS_MD};
-    padding: 8px;
-}
-QPlainTextEdit#replInput {
-    font-family: ${FONT_MONO};
-    background-color: ${QSS_BG_MUTED};
-    border: 1px solid ${QSS_PRIMARY};
-    border-radius: ${RADIUS_MD};
-    padding: 8px;
-}
-QPlainTextEdit#scriptEditor {
-    font-family: ${FONT_MONO};
-    background-color: ${QSS_BG_INPUT};
-    border: 1px solid ${QSS_BORDER};
-    border-radius: ${RADIUS_MD};
-    padding: 8px;
-}
 
 /* 下拉框 */
 QComboBox {

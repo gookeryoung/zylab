@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import builtins
 
+import numpy as np
 import pytest
 
 from zylab.console import ReplKernel
@@ -228,3 +229,104 @@ def test_execute_keyboard_interrupt(monkeypatch: pytest.MonkeyPatch) -> None:
     assert result.error is not None
     assert "KeyboardInterrupt" in result.error
     monkeypatch.setattr(builtins, "exec", real_exec)
+
+
+# ------------------------------------------------------------------ 笔记本单元执行
+
+
+def test_execute_cell_empty_source_no_count() -> None:
+    """空源不执行、不递增计数."""
+    kernel = ReplKernel()
+    execution = kernel.execute_cell("   ")
+    assert execution.outputs == []
+    assert kernel.execution_count == 0
+
+
+def test_execute_cell_count_increments() -> None:
+    """执行序号单调递增（重算同格获得新序号）."""
+    kernel = ReplKernel()
+    assert kernel.execute_cell("x = 1").count == 1
+    assert kernel.execute_cell("x + 1").count == 2
+    assert kernel.execute_cell("x + 1").count == 3  # 重算
+
+
+def test_execute_cell_stdout_and_result() -> None:
+    """语句静默、末表达式回显：stdout 先于结果输出."""
+    kernel = ReplKernel()
+    execution = kernel.execute_cell("print('你好')\nlinspace(0, 1, 3)")
+    assert [type(o).__name__ for o in execution.outputs] == ["StreamOutput", "ResultOutput"]
+    assert execution.outputs[0].text == "你好\n"
+    result = execution.outputs[1]
+    assert result.type_name == "ndarray"
+    assert result.shape == "(3,)"
+    assert result.repr_text.startswith("array([0.")
+    assert kernel.namespace["ans"].shape == (3,)
+
+
+def test_execute_cell_multiline_no_trailing_expr() -> None:
+    """多行语句块无末表达式：无结果输出（jupyter 语义）."""
+    kernel = ReplKernel()
+    execution = kernel.execute_cell("for i in range(3):\n    print(i)\n")
+    assert [type(o).__name__ for o in execution.outputs] == ["StreamOutput"]
+    assert execution.outputs[0].text == "0\n1\n2\n"
+
+
+def test_execute_cell_error_translated() -> None:
+    """运行异常翻译为 ErrorOutput（ename + 回溯），stdout 仍保留."""
+    kernel = ReplKernel()
+    execution = kernel.execute_cell("print('前')\n1 / 0")
+    kinds = [type(o).__name__ for o in execution.outputs]
+    assert kinds == ["StreamOutput", "ErrorOutput"]
+    assert execution.outputs[0].text == "前\n"
+    error = execution.outputs[1]
+    assert error.ename == "ZeroDivisionError"
+    assert 'File "<cell>", line 2' in error.traceback_text  # 定位到单元第 2 行
+
+
+def test_execute_cell_syntax_error() -> None:
+    """语法错误翻译为 ErrorOutput（ename=SyntaxError）."""
+    kernel = ReplKernel()
+    execution = kernel.execute_cell("def broken(:")
+    assert [type(o).__name__ for o in execution.outputs] == ["ErrorOutput"]
+    assert execution.outputs[0].ename == "SyntaxError"
+
+
+def test_execute_cell_captures_plot_requests() -> None:
+    """单元执行期间 plot() 请求被捕获并快照为 PlotOutput（多请求合并单图）."""
+    kernel = ReplKernel()
+    source = "x = linspace(0, pi, 4)\nplot(x, sin(x), title='正弦', xlabel='t')\nplot(x, cos(x))\ncos(x)"
+    execution = kernel.execute_cell(source)
+    kinds = [type(o).__name__ for o in execution.outputs]
+    assert kinds == ["PlotOutput", "ResultOutput"]
+    plot = execution.outputs[0]
+    assert plot.title == "正弦"
+    assert len(plot.series) == 2
+    assert plot.series[0].x == [0.0, np.pi / 3, 2 * np.pi / 3, np.pi]
+    assert len(plot.series[1].y) == 4
+    # 执行后总线订阅已清理（临时捕获器不留残留）
+    assert kernel.bus.subscriber_count("sci.plot.requested") == 0
+
+
+def test_execute_cell_plot_snapshot_isolated() -> None:
+    """绘图快照与命名空间数组解耦：执行后修改变量不影响已捕获输出."""
+    kernel = ReplKernel()
+    kernel.execute_cell("x = linspace(0, 1, 3)")
+    execution = kernel.execute_cell("plot(x, x * 2)")
+    kernel.namespace["x"] *= 100  # 原数组原地变异
+    assert execution.outputs[0].series[0].y == [0.0, 1.0, 2.0]
+
+
+def test_execute_cell_result_none_not_emitted() -> None:
+    """末表达式求值为 None 不产生结果输出（jupyter 语义）."""
+    kernel = ReplKernel()
+    execution = kernel.execute_cell("print('v')\nNone")
+    assert [type(o).__name__ for o in execution.outputs] == ["StreamOutput"]
+
+
+def test_execute_cell_stderr_emitted() -> None:
+    """stderr 翻译为 StreamOutput(name='stderr')（print(file=stderr) 返回 None 无回显）."""
+    kernel = ReplKernel()
+    execution = kernel.execute_cell("import sys\nprint('warn', file=sys.stderr)")
+    assert [type(o).__name__ for o in execution.outputs] == ["StreamOutput"]
+    assert execution.outputs[0].name == "stderr"
+    assert "warn" in execution.outputs[0].text

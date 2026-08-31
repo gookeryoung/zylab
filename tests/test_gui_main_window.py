@@ -27,25 +27,28 @@ def test_main_window_builds(qtbot, isolated_data_dir: Path) -> None:
 
 
 @pytest.mark.gui
-def test_main_window_plot_stays_in_console(qtbot, isolated_data_dir: Path) -> None:
-    """plot 命令应在控制台页内渲染并切到绘图选项卡，不离开当前页."""
+def test_main_window_plot_renders_in_notebook(qtbot, isolated_data_dir: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """笔记本页运行绘图单元应内嵌渲染，不离开当前页."""
+    from zylab.gui.qt_compat import QMessageBox
+
+    monkeypatch.setattr(QMessageBox, "question", staticmethod(lambda *_args, **_kw: QMessageBox.Discard))
     win = MainWindow()
     qtbot.addWidget(win)
-    result = win.kernel.execute("plot([1, 2, 3])")
-    assert result.error is None
+    editor = win._notebook_page._widgets[0].editor
+    editor.setPlainText("import numpy as np\nxv = np.arange(4)\nplot(xv, xv + 1)\nxv")
+    win._notebook_page.run_current()
     assert win._sidebar.currentRow() == 0
     assert win._stack.currentIndex() == 0
-    assert win._console_page._side_tabs.currentIndex() == 1
+    assert win._notebook_page._widgets[0].cell.execution_count == 1
 
 
 @pytest.mark.gui
-def test_main_window_close_saves_history(qtbot, isolated_data_dir: Path) -> None:
-    """关闭窗口应持久化命令历史."""
+def test_main_window_close_prompts_notebook_save(qtbot, isolated_data_dir: Path) -> None:
+    """无未保存修改时关闭应直接放行（不弹保存询问）."""
     win = MainWindow()
     qtbot.addWidget(win)
-    win._history.add("plot(x)")
     win.close()
-    assert (isolated_data_dir / "history.json").exists()
+    assert not win.isVisible()
 
 
 @pytest.mark.gui
