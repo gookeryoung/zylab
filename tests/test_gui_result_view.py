@@ -24,6 +24,8 @@ def test_plot_context_menu_replaced(qtbot) -> None:
     assert plot_item.getContextMenus(None) is None
     texts = [a.text() for a in plot_item.vb.menu.actions()]
     assert texts == ["恢复默认视角", "复制图像", "导出图像 (PNG)", "导出数据 (CSV)"]
+    # 场景级菜单（GraphicsScene 内置 "Export..." 英文项）已置空，无漏网英文
+    assert view._plot.scene().contextMenu == []
 
 
 @pytest.mark.gui

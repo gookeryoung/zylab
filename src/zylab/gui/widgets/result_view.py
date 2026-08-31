@@ -329,6 +329,8 @@ class ResultView(QWidget):
         plot_item = self._plot.getPlotItem()
         # 仅关 PlotItem 菜单（enableViewBoxMenu=None 保留 ViewBox 弹出能力）
         plot_item.setMenuEnabled(False, enableViewBoxMenu=None)
+        # 场景级菜单（GraphicsScene 内置 "Export..." 英文项）整体置空，杜绝漏网英文
+        self._plot.scene().contextMenu = []
         menu = QMenu(self._plot)
         menu.addAction("恢复默认视角", plot_item.autoRange)
         menu.addAction("复制图像", self._copy_plot)
