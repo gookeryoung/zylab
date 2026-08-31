@@ -15,7 +15,7 @@ from typing import Sequence
 import numpy as np
 
 from .buckling import BucklingSolution
-from .electrothermal import ElectroThermalSolution
+from .electrothermal import ElectroThermalSolution, ElectroThermalTransientSolution
 from .harmonic import HarmonicResponse
 from .modal import ModalSolution
 from .nonlinear import NonlinearSolution
@@ -48,6 +48,8 @@ def export_csv(solution: object, path: Path) -> Path:
         rows = _nonlinear_rows(solution)
     elif isinstance(solution, ElectroThermalSolution):
         rows = _electrothermal_rows(solution)
+    elif isinstance(solution, ElectroThermalTransientSolution):
+        rows = _electrothermal_transient_rows(solution)
     else:
         raise ValueError(f"不支持导出的结果类型: {type(solution).__name__}")
     with path.open("w", newline="", encoding="utf-8") as handle:
@@ -117,4 +119,13 @@ def _electrothermal_rows(solution: ElectroThermalSolution) -> tuple[Sequence[obj
     rows: list[Sequence[object]] = [("node", "voltage", "temperature")]
     for node in range(solution.mesh.n_nodes):
         rows.append([node, f"{solution.voltages[node]:.10g}", f"{solution.temperatures[node]:.10g}"])
+    return tuple(rows)
+
+
+def _electrothermal_transient_rows(solution: ElectroThermalTransientSolution) -> tuple[Sequence[object], ...]:
+    """瞬态电-热耦合：时间站点 / 全场温度峰值与谷值时程（电压常值不随时间变）."""
+    rows: list[Sequence[object]] = [("t", "t_max", "t_min")]
+    thermal = solution.thermal
+    for t, frame in zip(thermal.times, thermal.temperatures):
+        rows.append([f"{t:.10g}", f"{float(frame.max()):.10g}", f"{float(frame.min()):.10g}"])
     return tuple(rows)

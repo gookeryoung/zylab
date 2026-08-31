@@ -1,0 +1,69 @@
+{
+  "id": "structural.truss_nonlinear_linked",
+  "name": "两杆桁架非线性（静力初态链接）",
+  "discipline": "structural",
+  "description": "静力节点产出初态位移，非线性节点经 initial 端口从初态起算，演示模块 Link 连接。",
+  "tags": [
+    "非线性",
+    "链接"
+  ],
+  "nodes": [
+    {
+      "id": "model",
+      "type": "example.truss2_two_bar",
+      "params": {},
+      "inputs": {}
+    },
+    {
+      "id": "static",
+      "type": "analysis.static",
+      "params": {},
+      "inputs": {
+        "model": "model.model"
+      }
+    },
+    {
+      "id": "nonlinear",
+      "type": "analysis.nonlinear",
+      "params": {},
+      "inputs": {
+        "model": "model.model",
+        "initial": "static.solution"
+      }
+    }
+  ],
+  "ui": {
+    "param_groups": [
+      {
+        "title": "几何",
+        "params": [
+          "model.half_span",
+          "model.rise"
+        ]
+      },
+      {
+        "title": "材料与截面",
+        "params": [
+          "model.e_modulus",
+          "model.area"
+        ]
+      },
+      {
+        "title": "载荷",
+        "params": [
+          "model.apex_load"
+        ]
+      },
+      {
+        "title": "分析",
+        "params": [
+          "nonlinear.n_increments"
+        ]
+      }
+    ],
+    "results": [
+      "static",
+      "nonlinear"
+    ]
+  }
+}

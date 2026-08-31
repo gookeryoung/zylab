@@ -96,6 +96,31 @@ class TestSolveElectric:
         progresses = [p for p, _ in events]
         assert progresses == sorted(progresses)
 
+    def test_insulator_floating_nodes_grounded(self) -> None:
+        """绝缘块（σ 极小）浮动节点自动接地 0V，导体区电压场不受影响."""
+        length, v0 = 2.0, 1.0
+        plate = _plate(2, 1, length, 1.0)
+        # 绝缘区远置（节点 6-9），与导体区无共享节点
+        ins_coords = np.array([[10.0, 0.0], [11.0, 0.0], [11.0, 1.0], [10.0, 1.0]])
+        coords = np.vstack([plate.coords, ins_coords])
+        conductor = ElementBlock(etype=ElementType.QUAD4, conn=plate.blocks[0].conn, material=0, section=0)
+        insulator = ElementBlock(etype=ElementType.QUAD4, conn=np.arange(6, 10)[None, :], material=1, section=0)
+        mesh = Mesh(coords, (conductor, insulator))
+        # 电极仅作用于导体区左右边界（绝缘区不加电压，留给浮动节点逻辑）
+        left = np.flatnonzero(plate.coords[:, 0] <= 0.0)
+        right = np.flatnonzero(plate.coords[:, 0] >= length - 1e-9)
+        case = ElectricCase(
+            voltages=(*(NodalValue(int(n), 0.0) for n in left), *(NodalValue(int(n), v0) for n in right)),
+        )
+        mats = (MAT, ConductionMaterial(electric_sigma=1.0e-12, thermal_k=1.0))
+        solution = solve_electric(mesh, mats, (UNIT,), case)
+        # 导体区电压线性分布
+        np.testing.assert_allclose(solution.voltages[:6], v0 * plate.coords[:, 0] / length, rtol=1e-11)
+        # 浮动节点接地 0V，绝缘块零功率
+        np.testing.assert_allclose(solution.voltages[6:], np.zeros(4), atol=1e-12)
+        insulator_power = solution.element_power[plate.n_elements :]
+        np.testing.assert_allclose(insulator_power, np.zeros(1), atol=1e-24)
+
 
 class TestElectricCaseValidation:
     """电学工况校验."""

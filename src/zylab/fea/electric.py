@@ -22,7 +22,7 @@ from .conduction import (
 )
 from .errors import MeshError
 from .material import Section
-from .mesh import Mesh
+from .mesh import ElementType, Mesh
 from .solve import solve_system
 
 __all__ = ["ElectricCase", "ElectricSolution", "solve_electric"]
@@ -56,7 +56,7 @@ class ElectricSolution:
     Attributes:
         mesh: 参与求解的网格。
         voltages: 节点电压 ``(n_nodes,)``。
-        element_gradients: 逐单元电场梯度 ``∇V (n_elements, 2)``（块序 + 块内序展开）。
+        element_gradients: 逐单元电场梯度 ``∇V (n_elements, dim)``（块序 + 块内序展开）。
         element_power: 逐单元 Joule 耗散功率 ``(n_elements,)``（W）。
         total_power: 总耗散功率（W，恒等于输入电功率）。
     """
@@ -78,14 +78,16 @@ def solve_electric(
     """稳态电传导分析主流程.
 
     Args:
-        mesh: 网格（v1 限 2D 连续体 TRIA3/QUAD4）。
-        materials: 传导材料表（ElementBlock.material 索引引用）。
-        sections: 截面表（平面单元取厚度）。
+        mesh: 网格（2D 连续体 TRIA3/QUAD4，或 3D 六面体 HEX8）。
+        materials: 传导材料表（ElementBlock.material 索引引用；绝缘块电导率
+            低于阈值时电场装配自动跳过）。
+        sections: 截面表（平面单元取厚度，HEX8 忽略）。
         case: 电学工况（给定电压 + 注入电流）。
         report: 进度回调 ``(progress, message)``（进程执行器自动注入）。
 
     Returns:
         :class:`ElectricSolution`，含节点电压、单元电场与耗散功率。
+        仅与绝缘块相连的浮动节点自动接地 0V（陶瓷基底等绝缘域无电流）。
     """
     progress = report if report is not None else _no_report
     progress(0.1, "校验电学工况")
@@ -98,6 +100,10 @@ def solve_electric(
     seen: dict[int, float] = {}
     for prescribed in case.voltages:
         seen.setdefault(prescribed.node, prescribed.value)
+    # 浮动节点（传导矩阵对角为零，即仅与绝缘块相连）自动接地 0V
+    floating = np.flatnonzero(np.abs(k_electric.diagonal()) < 1.0e-30)
+    for node in floating:
+        seen.setdefault(int(node), 0.0)
     fixed = np.fromiter(seen.keys(), dtype=np.intp)
     values = np.fromiter(seen.values(), dtype=float)
 
@@ -109,20 +115,20 @@ def solve_electric(
     powers: list[np.ndarray] = []
     for block in mesh.blocks:
         material = materials[block.material]
-        thickness = sections[block.section].thickness
         coords_b = mesh.coords[block.conn]
         grads = _batch_gradients(block.etype, coords_b, v[block.conn])
-        # 单元耗散功率 = σ|∇V|² × 体积（2D 度量 × 厚度），块内向量化
+        # 单元耗散功率 = σ|∇V|² × 体积（2D 面积度量 × 厚度；HEX8 度量即体积）
         measures = _batch_measures(block.etype, coords_b)
         gradients.append(grads)
-        powers.append(material.electric_sigma * np.einsum("ni,ni->n", grads, grads) * measures * thickness)
+        volume = measures if block.etype is ElementType.HEX8 else measures * sections[block.section].thickness
+        powers.append(material.electric_sigma * np.einsum("ni,ni->n", grads, grads) * volume)
     element_power = np.concatenate(powers) if powers else np.empty(0)
     total = float(element_power.sum())
     progress(1.0, "电场求解完成")
     return ElectricSolution(
         mesh=mesh,
         voltages=v,
-        element_gradients=np.concatenate(gradients) if gradients else np.empty((0, 2)),
+        element_gradients=np.concatenate(gradients) if gradients else np.empty((0, mesh.dim)),
         element_power=element_power,
         total_power=total,
     )

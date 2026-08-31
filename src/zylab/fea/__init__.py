@@ -16,7 +16,8 @@
 - :mod:`zylab.fea.conduction`：标量场传导内核（电/热共用，每节点 1 DOF）；
 - :mod:`zylab.fea.electric`：稳态电传导分析（电压场/电场/耗散功率）；
 - :mod:`zylab.fea.thermal`：稳态热传导分析（温度场/热流/对流边界）；
-- :mod:`zylab.fea.electrothermal`：电-热耦合（Joule 热顺序耦合）；
+- :mod:`zylab.fea.electrothermal`：电-热耦合（Joule 热顺序耦合，稳态/瞬态）；
+- :mod:`zylab.fea.thermal_transient`：瞬态热传导（backward Euler + 一致热容）；
 - :mod:`zylab.fea.export`：结果 CSV 导出（六类解，GUI 与 CLI 共用）。
 """
 
@@ -29,13 +30,19 @@ from .conduction import (
     ConductionMaterial,
     NodalSource,
     NodalValue,
+    assemble_capacity,
     assemble_conduction,
     element_conductance,
     element_field_load,
     element_scalar_gradient,
 )
 from .electric import ElectricCase, ElectricSolution, solve_electric
-from .electrothermal import ElectroThermalSolution, solve_electrothermal
+from .electrothermal import (
+    ElectroThermalSolution,
+    ElectroThermalTransientSolution,
+    solve_electrothermal,
+    solve_electrothermal_transient,
+)
 from .elements import (
     element_geometric_stiffness,
     element_mass,
@@ -55,6 +62,7 @@ from .modal import ModalSolution, solve_modal
 from .nonlinear import NonlinearSolution, solve_nonlinear_static
 from .static import ElementResult, StaticSolution, solve_static
 from .thermal import Convection, ThermalCase, ThermalSolution, solve_thermal
+from .thermal_transient import ThermalTransientSolution, solve_thermal_transient
 from .transient import TransientSolution, solve_transient
 
 __all__ = [
@@ -67,6 +75,7 @@ __all__ = [
     "ElectricCase",
     "ElectricSolution",
     "ElectroThermalSolution",
+    "ElectroThermalTransientSolution",
     "ElementBlock",
     "ElementError",
     "ElementResult",
@@ -87,7 +96,9 @@ __all__ = [
     "StressState",
     "ThermalCase",
     "ThermalSolution",
+    "ThermalTransientSolution",
     "TransientSolution",
+    "assemble_capacity",
     "assemble_conduction",
     "assemble_geometric",
     "assemble_loads",
@@ -107,11 +118,13 @@ __all__ = [
     "solve_buckling",
     "solve_electric",
     "solve_electrothermal",
+    "solve_electrothermal_transient",
     "solve_harmonic",
     "solve_modal",
     "solve_nonlinear_static",
     "solve_static",
     "solve_thermal",
+    "solve_thermal_transient",
     "solve_transient",
     "truss2_internal_force",
     "truss2_tangent_stiffness",

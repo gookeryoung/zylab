@@ -434,7 +434,7 @@ def test_save_template_as(qtbot, tmp_path) -> None:
     assert template is not None
     assert template.id == "user.我的悬臂梁"
     assert template.node("model").params["nx"] == 12  # 当前参数已内嵌
-    assert (tmp_path / "templates" / "user.我的悬臂梁.json").exists()
+    assert (tmp_path / "templates" / "structural" / "user.我的悬臂梁.json").exists()
     assert page._template_combo.count() == before + 1
     # 重名自动加后缀
     again = page._save_template_as("我的悬臂梁")

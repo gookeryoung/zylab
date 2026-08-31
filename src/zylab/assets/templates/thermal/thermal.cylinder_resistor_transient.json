@@ -1,0 +1,73 @@
+{
+  "id": "thermal.cylinder_resistor_transient",
+  "name": "圆柱电阻瞬态电-热分析",
+  "discipline": "thermal",
+  "description": "HEX8 圆柱电阻通电升温过程：稳态电场 Joule 热 + backward Euler 瞬态温度场，观察冷启动到热平衡的温度时程与峰值演化。",
+  "tags": [
+    "电-热",
+    "瞬态",
+    "三维"
+  ],
+  "nodes": [
+    {
+      "id": "model",
+      "type": "example.cylinder_resistor_3d",
+      "params": {},
+      "inputs": {}
+    },
+    {
+      "id": "solve",
+      "type": "analysis.electrothermal_transient",
+      "params": {},
+      "inputs": {
+        "model": "model.model"
+      }
+    }
+  ],
+  "ui": {
+    "param_groups": [
+      {
+        "title": "几何与网格",
+        "params": [
+          "model.radius",
+          "model.length",
+          "model.n_theta",
+          "model.n_r",
+          "model.n_z"
+        ]
+      },
+      {
+        "title": "材料",
+        "params": [
+          "model.electric_sigma",
+          "model.thermal_k",
+          "model.rho_cp"
+        ]
+      },
+      {
+        "title": "电学边界",
+        "params": [
+          "model.voltage"
+        ]
+      },
+      {
+        "title": "热边界",
+        "params": [
+          "model.h_conv",
+          "model.t_ambient"
+        ]
+      },
+      {
+        "title": "瞬态设置",
+        "params": [
+          "solve.t_init",
+          "solve.duration",
+          "solve.n_steps"
+        ]
+      }
+    ],
+    "results": [
+      "solve"
+    ]
+  }
+}

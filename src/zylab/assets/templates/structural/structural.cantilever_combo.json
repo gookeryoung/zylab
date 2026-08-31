@@ -1,0 +1,72 @@
+{
+  "id": "structural.cantilever_combo",
+  "name": "悬臂梁静力 + 模态联合分析",
+  "discipline": "structural",
+  "description": "同一模型共享驱动静力与模态两路分析，演示多学科模块的 Share 连接模式。",
+  "tags": [
+    "入门",
+    "组合"
+  ],
+  "nodes": [
+    {
+      "id": "model",
+      "type": "example.cantilever_q4",
+      "params": {},
+      "inputs": {}
+    },
+    {
+      "id": "static",
+      "type": "analysis.static",
+      "params": {},
+      "inputs": {
+        "model": "model.model"
+      }
+    },
+    {
+      "id": "modal",
+      "type": "analysis.modal",
+      "params": {},
+      "inputs": {
+        "model": "model.model"
+      }
+    }
+  ],
+  "ui": {
+    "param_groups": [
+      {
+        "title": "几何与网格",
+        "params": [
+          "model.length",
+          "model.height",
+          "model.nx",
+          "model.ny"
+        ]
+      },
+      {
+        "title": "材料",
+        "params": [
+          "model.e_modulus",
+          "model.poisson",
+          "model.thickness",
+          "model.density"
+        ]
+      },
+      {
+        "title": "载荷",
+        "params": [
+          "model.tip_load"
+        ]
+      },
+      {
+        "title": "分析",
+        "params": [
+          "modal.n_modes"
+        ]
+      }
+    ],
+    "results": [
+      "static",
+      "modal"
+    ]
+  }
+}

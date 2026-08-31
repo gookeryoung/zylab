@@ -1,0 +1,100 @@
+{
+  "id": "thermal.vfilm_resistor_transient",
+  "name": "V 形薄膜电阻瞬态电-热分析",
+  "discipline": "thermal",
+  "description": "微米级 V 形薄膜电阻（陶瓷基底）通电升温过程：稳态电场 Joule 热 + backward Euler 瞬态温度场，观察薄膜热点升温时程与陶瓷基底热扩散。",
+  "tags": [
+    "电-热",
+    "瞬态",
+    "三维",
+    "薄膜电阻"
+  ],
+  "nodes": [
+    {
+      "id": "model",
+      "type": "example.vfilm_resistor_3d",
+      "params": {},
+      "inputs": {}
+    },
+    {
+      "id": "solve",
+      "type": "analysis.electrothermal_transient",
+      "params": {},
+      "inputs": {
+        "model": "model.model"
+      }
+    }
+  ],
+  "ui": {
+    "param_groups": [
+      {
+        "title": "薄膜几何",
+        "params": [
+          "model.span",
+          "model.depth",
+          "model.width",
+          "model.thickness"
+        ]
+      },
+      {
+        "title": "基底与电极",
+        "params": [
+          "model.substrate_h",
+          "model.lead_len"
+        ]
+      },
+      {
+        "title": "网格",
+        "params": [
+          "model.n_lead",
+          "model.n_diag",
+          "model.n_width",
+          "model.n_sub"
+        ]
+      },
+      {
+        "title": "薄膜与电极材料",
+        "params": [
+          "model.sigma_film",
+          "model.sigma_electrode",
+          "model.k_film",
+          "model.k_electrode",
+          "model.rho_cp_film",
+          "model.rho_cp_electrode"
+        ]
+      },
+      {
+        "title": "陶瓷基底材料",
+        "params": [
+          "model.k_ceramic",
+          "model.rho_cp_ceramic"
+        ]
+      },
+      {
+        "title": "电学边界",
+        "params": [
+          "model.voltage"
+        ]
+      },
+      {
+        "title": "热边界",
+        "params": [
+          "model.t_base",
+          "model.h_conv",
+          "model.t_ambient"
+        ]
+      },
+      {
+        "title": "瞬态设置",
+        "params": [
+          "solve.t_init",
+          "solve.duration",
+          "solve.n_steps"
+        ]
+      }
+    ],
+    "results": [
+      "solve"
+    ]
+  }
+}

@@ -25,6 +25,7 @@ from zylab.fea.viewdata import (
     edge_segments,
     mesh_edges,
     nodal_stress_field,
+    project3d,
     scalar_colors,
 )
 
@@ -168,3 +169,55 @@ def test_scalar_colors_cmap_variant() -> None:
     assert not np.allclose(jet, gray)
     with pytest.raises(ValueError, match="未知色带"):
         scalar_colors(values, cmap="nope")
+
+
+# ------------------------------------------------------------------ 3D 投影
+
+_CUBE: np.ndarray = np.array(
+    [
+        [0.0, 0.0, 0.0],
+        [1.0, 0.0, 0.0],
+        [1.0, 1.0, 0.0],
+        [0.0, 1.0, 0.0],
+        [0.0, 0.0, 1.0],
+        [1.0, 0.0, 1.0],
+        [1.0, 1.0, 1.0],
+        [0.0, 1.0, 1.0],
+    ]
+)
+
+
+def test_project3d_shape_and_axes() -> None:
+    """投影形状保持；方位角/仰角均为 0 时屏幕 = (x, z)、深度 = y（大者远）."""
+    xy, depth = project3d(_CUBE, azimuth=0.0, elevation=0.0)
+    assert xy.shape == (8, 2)
+    assert depth.shape == (8,)
+    np.testing.assert_allclose(xy[:, 0], _CUBE[:, 0], atol=1e-12)
+    np.testing.assert_allclose(xy[:, 1], _CUBE[:, 2], atol=1e-12)
+    np.testing.assert_allclose(depth, _CUBE[:, 1], atol=1e-12)
+    assert depth[6] > depth[0]  # y=1 的点比 y=0 的点远
+
+
+def test_project3d_top_view() -> None:
+    """仰角 90° 俯视：屏幕 = (x, y)、深度 = -z（高处离观察者更近）."""
+    xy, depth = project3d(_CUBE, azimuth=0.0, elevation=90.0)
+    np.testing.assert_allclose(xy, _CUBE[:, :2], atol=1e-12)
+    np.testing.assert_allclose(depth, -_CUBE[:, 2], atol=1e-12)
+    assert depth[0] > depth[4]  # z=1 的点更近（深度更小）
+
+
+def test_project3d_orthogonal_invariant() -> None:
+    """屏幕平面 + 深度构成正交基：任意两点总距离模长与 3D 一致."""
+    xy, depth = project3d(_CUBE, azimuth=45.0, elevation=30.0)
+    for i, j in ((0, 6), (1, 7), (2, 5), (3, 4), (0, 3)):
+        dist3 = float(np.linalg.norm(_CUBE[i] - _CUBE[j]))
+        dist2 = float(np.hypot(np.linalg.norm(xy[i] - xy[j]), depth[i] - depth[j]))
+        np.testing.assert_allclose(dist2, dist3, atol=1e-12)
+
+
+def test_project3d_invalid_shape() -> None:
+    """非 (n, 3) 形状抛 ValueError."""
+    with pytest.raises(ValueError, match=r"\(n, 3\)"):
+        project3d(np.zeros((4, 2)))
+    with pytest.raises(ValueError, match=r"\(n, 3\)"):
+        project3d(np.zeros((2, 2, 3)))

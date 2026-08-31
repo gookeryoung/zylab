@@ -7,7 +7,8 @@
   （单元：运行到此 / 强制重跑 / 查看结果；空白：运行全部）；
 - 右侧参数表单：单击环节只显示该环节参数，全选显示全部参数；
 - 底部状态栏：状态文本 + 进度条 + 取消按钮（进度条右侧）；
-- 模板另存（用户模板存 data_dir/templates/*.json）、工程保存/打开（.zprj 内嵌模板+参数）。
+- 模板另存（用户模板按学科存 data_dir/templates/<学科>/*.json）、
+  工程保存/打开（.zprj 人类可读 JSON 内嵌模板+参数，兼容旧 HDF5）。
 """
 
 from __future__ import annotations
@@ -21,22 +22,21 @@ from typing import Callable
 
 import numpy as np
 
-from zylab import __version__
 from zylab.core import default_data_dir
-from zylab.core.errors import ProjectFileError
 from zylab.core.executor import EventKind
-from zylab.core.project import Project
 from zylab.studio import (
     ConductionBundle,
     ModelBundle,
     NodeRunEvent,
     NodeState,
+    ProjectIOError,
     Template,
-    TemplateError,
     TemplateRegistry,
     WorkflowGraph,
     WorkflowRunner,
+    load_workflow,
     save_template,
+    save_workflow,
 )
 
 from .. import theme
@@ -384,25 +384,23 @@ class StudioPage(QWidget):
             param_groups=current.param_groups,
             results=current.results,
         )
-        save_template(template, self._data_dir / "templates" / f"{candidate}.json")
+        # 用户模板按学科子目录归类（与 assets/templates 布局一致），save_template 自动建目录
+        save_template(template, self._data_dir / "templates" / template.discipline / f"{candidate}.json")
         self._registry.register(template)
         self._reload_template_list(select_id=template.id)
         return template
 
     def _save_project(self, path: Path) -> None:
-        """保存工程：模板（含当前参数）内嵌 .zprj（自包含，不依赖模板库）."""
+        """保存工程：模板（含当前参数）内嵌 .zprj（人类可读 JSON，自包含不依赖模板库）."""
         template = self._template_with_current_params()
-        with Project.create(path, name=template.name, app_version=__version__) as proj:
-            proj.write_json("model", "workflow", template.to_dict())
+        save_workflow(path, template)
         self._status_label.setText(f"工程已保存: {path.name}")
 
     def _load_project(self, path: Path) -> None:
-        """打开工程：内嵌模板注册并实例化."""
+        """打开工程（JSON 现行格式 / 旧版 HDF5 自动识别）：内嵌模板注册并实例化."""
         try:
-            with Project.open(path) as proj:
-                data = proj.read_json("model", "workflow")
-            template = Template.from_dict(data)
-        except (ProjectFileError, TemplateError) as exc:
+            template = load_workflow(path)
+        except ProjectIOError as exc:
             self._status_label.setText(f"工程打开失败: {exc}")
             return
         self._registry.register(template, replace=True)

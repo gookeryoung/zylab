@@ -17,6 +17,7 @@ import pyqtgraph as pg
 from zylab.fea import (
     BucklingSolution,
     ElectroThermalSolution,
+    ElectroThermalTransientSolution,
     HarmonicResponse,
     Mesh,
     ModalSolution,
@@ -32,6 +33,7 @@ from zylab.fea.viewdata import (
     deformed_coords,
     edge_segments,
     mesh_edges,
+    project3d,
     scalar_colors,
 )
 from zylab.studio import ConductionBundle, ModelBundle
@@ -42,6 +44,7 @@ from ..icons import nav_icon
 from ..qt_compat import (
     QColor,
     QComboBox,
+    QEvent,
     QFileDialog,
     QFontMetrics,
     QHBoxLayout,
@@ -156,15 +159,28 @@ class ResultView(QWidget):
         self._nonlinear: NonlinearSolution | None = None
         self._transient: TransientSolution | None = None
         self._electrothermal: ElectroThermalSolution | None = None
+        self._et_transient: ElectroThermalTransientSolution | None = None
         self._reference_load = 1.0
         self._solution: object | None = None
+        self._mesh_bundle: ModelBundle | ConductionBundle | None = None
         self._cmap = "jet"
         self._unit = "m"
+        # 3D 视角状态：等轴测方位角/仰角（拖拽旋转更新，重绘时投影）
+        self._azim = 30.0
+        self._elev = 25.0
+        self._is3d = False
+        self._dragging = False
+        self._drag_pos: tuple[int, int] | None = None
         # 动画状态：帧序列（位移数组, 标签）+ 统一变形放大系数
         self._frames: list[tuple[np.ndarray, str]] = []
         self._frame_index = 0
         self._anim_mesh: Mesh | None = None
         self._anim_scale = 1.0
+        # 标量场动画状态（瞬态温度云图）：帧序列（场数组, 标签）
+        self._scalar_frames: list[tuple[np.ndarray, str]] = []
+        self._scalar_mesh: Mesh | None = None
+        self._scalar_label = ""
+        self._scalar_unit = ""
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
@@ -272,16 +288,20 @@ class ResultView(QWidget):
         self._tabs.addTab(self._plot_row, "云图")
         self._tabs.tabBar().setVisible(False)
         layout.addWidget(self._tabs, stretch=1)  # 唯一弹性项：占满剩余全部高度
+        # 3D 模式下拦截绘图区拖拽做视角旋转（此时禁用平移）
+        self._plot.viewport().installEventFilter(self)
 
     # ------------------------------------------------------------------ 公共接口
 
     def show_mesh(self, bundle: ModelBundle | ConductionBundle) -> None:
-        """渲染模型网格预览（未变形线框 + 节点散点 + 规模摘要）."""
+        """渲染模型网格预览（未变形线框 + 节点散点 + 规模摘要；3D 等轴测投影）."""
         self._reset_controls()
+        self._mesh_bundle = bundle
         mesh = bundle.mesh
         self._restore_mesh_view()
+        xy, depth = self._project(mesh.coords)
         edges = mesh_edges(mesh)
-        segments = edge_segments(mesh.coords, edges)
+        segments = edge_segments(xy, edges)
         self._plot.clear()
         self._plot.plot(
             segments[:, :, 0].ravel(),
@@ -290,17 +310,18 @@ class ResultView(QWidget):
             pen=pg.mkPen(theme.current_palette().border_strong, width=2),
             name="未变形",
         )
-        # 节点散点（杆系模型一条线时节点分布也清晰可辨）
+        # 节点散点（杆系模型一条线时节点分布也清晰可辨；3D 按深度排序遮挡）
         self._plot.addItem(
             pg.ScatterPlotItem(
-                x=mesh.coords[:, 0],
-                y=mesh.coords[:, 1],
+                **self._scatter_kwargs(xy, depth, len(mesh.coords)),
                 size=5,
                 brush=pg.mkBrush(theme.current_palette().primary),
                 pen=None,
             )
         )
-        self._summary.setText(f"模型预览 · {mesh.n_nodes} 节点 · {mesh.n_elements} 单元")
+        self._summary.setText(
+            f"模型预览 · {mesh.n_nodes} 节点 · {mesh.n_elements} 单元" + ("（拖拽旋转视角）" if self._is3d else "")
+        )
         self._set_error(False)
 
     def show_solution(self, solution: object, reference_load: float = 1.0) -> None:
@@ -325,6 +346,9 @@ class ResultView(QWidget):
         elif isinstance(solution, ElectroThermalSolution):
             self._electrothermal = solution
             self._render_electrothermal(solution)
+        elif isinstance(solution, ElectroThermalTransientSolution):
+            self._et_transient = solution
+            self._render_et_transient(solution)
         elif isinstance(solution, StaticSolution):
             self._render_deformation(solution.mesh, solution.displacements)
             max_u = float(np.max(np.linalg.norm(solution.displacements, axis=1)))
@@ -366,10 +390,14 @@ class ResultView(QWidget):
         self._nonlinear = None
         self._transient = None
         self._electrothermal = None
+        self._et_transient = None
         self._solution = None
+        self._mesh_bundle = None
         self._stop_anim()
         self._frames = []
         self._anim_mesh = None
+        self._scalar_frames = []
+        self._scalar_mesh = None
         self._remove_data_tab()
         self._mode_spin.setVisible(False)
         self._view_combo.setVisible(False)
@@ -408,6 +436,58 @@ class ResultView(QWidget):
         style = self._summary.style()
         style.unpolish(self._summary)
         style.polish(self._summary)
+
+    # ------------------------------------------------------------------ 3D 视角
+
+    def _project(self, coords: np.ndarray) -> tuple[np.ndarray, np.ndarray | None]:
+        """坐标投影到屏幕平面（2D 直通；3D 等轴测投影并返回观察深度）.
+
+        3D 时切换交互模式（禁平移 + 标记可拖拽旋转），2D 时恢复。
+        """
+        is3d = coords.shape[1] >= 3
+        if is3d != self._is3d:
+            self._is3d = is3d
+            self._plot.setMouseEnabled(x=not is3d, y=not is3d)
+        if not is3d:
+            return coords[:, :2], None
+        xy, depth = project3d(coords[:, :3], self._azim, self._elev)
+        return xy, depth
+
+    @staticmethod
+    def _scatter_kwargs(xy: np.ndarray, depth: np.ndarray | None, n: int) -> dict[str, np.ndarray]:
+        """散点绘制参数（3D 按深度排序：远者先画近者覆盖，形成遮挡）."""
+        if depth is None or n == 0:
+            return {"x": xy[:, 0], "y": xy[:, 1]}
+        order = np.argsort(depth, kind="stable")
+        return {"x": xy[order, 0], "y": xy[order, 1]}
+
+    def eventFilter(self, obj, event) -> bool:  # Qt 命名约定
+        """3D 模式下拦截绘图区拖拽旋转视角（方位角/仰角），其余事件放行."""
+        if not self._is3d:
+            return super().eventFilter(obj, event)
+        if event.type() == QEvent.MouseButtonPress and event.buttons() & Qt.LeftButton:
+            self._dragging = True
+            self._drag_pos = (event.pos().x(), event.pos().y())
+            return True
+        if event.type() == QEvent.MouseMove and self._dragging and self._drag_pos is not None:
+            dx = event.pos().x() - self._drag_pos[0]
+            dy = event.pos().y() - self._drag_pos[1]
+            self._drag_pos = (event.pos().x(), event.pos().y())
+            self._azim = (self._azim + 0.5 * dx) % 360.0
+            self._elev = float(np.clip(self._elev - 0.5 * dy, -89.0, 89.0))
+            self._rerender_3d()
+            return True
+        if event.type() in (QEvent.MouseButtonRelease, QEvent.Leave):
+            self._dragging = False
+            self._drag_pos = None
+        return super().eventFilter(obj, event)
+
+    def _rerender_3d(self) -> None:
+        """视角变化后按当前内容重投影（解态重渲染，预览态重画网格）."""
+        if self._solution is not None:
+            self._rerender_current()
+        elif self._mesh_bundle is not None:
+            self.show_mesh(self._mesh_bundle)
 
     def _restore_mesh_view(self) -> None:
         """恢复云图视图状态（锁纵横比 + 线性轴，清除曲线的视图残留）."""
@@ -462,6 +542,8 @@ class ResultView(QWidget):
             frames: ``[(位移数组, 帧标签), ...]``。
             first_index: 初始显示帧（结果态默认末帧，振型默认当前阶）。
         """
+        self._scalar_frames = []  # 位移帧与标量帧互斥（同一时刻仅一类动画）
+        self._scalar_mesh = None
         self._frames = frames
         self._anim_mesh = mesh
         if len(frames) <= 1:
@@ -479,17 +561,65 @@ class ResultView(QWidget):
         self._show_frame(first_index)
 
     def _show_frame(self, index: int) -> None:
-        """显示指定帧（云图重绘 + 滑块/标签联动）."""
-        if not self._frames or not (0 <= index < len(self._frames)) or self._anim_mesh is None:
+        """显示指定帧（位移/标量帧分发重绘 + 滑块/标签联动）."""
+        if self._scalar_frames:  # 标量帧（瞬态温度云图）
+            if not (0 <= index < len(self._scalar_frames)) or self._scalar_mesh is None:
+                return
+            self._frame_index = index
+            field, label = self._scalar_frames[index]
+            self._render_scalar_field(self._scalar_mesh, field, self._scalar_label, self._scalar_unit)
+            self._frame_label.setText(label)
+        elif self._frames and self._anim_mesh is not None and 0 <= index < len(self._frames):
+            self._frame_index = index
+            disp, label = self._frames[index]
+            self._draw_deformed(self._anim_mesh, disp, self._anim_scale, label)
+            self._frame_label.setText(label)
+        else:
             return
-        self._frame_index = index
-        disp, label = self._frames[index]
-        self._draw_deformed(self._anim_mesh, disp, self._anim_scale, label)
-        self._frame_label.setText(label)
         if self._frame_slider.value() != index:
             self._frame_slider.blockSignals(True)
             self._frame_slider.setValue(index)
             self._frame_slider.blockSignals(False)
+
+    def _start_scalar_anim(
+        self,
+        mesh: Mesh,
+        frames: list[tuple[np.ndarray, str]],
+        label: str,
+        unit: str,
+        *,
+        first_index: int = 0,
+    ) -> None:
+        """绑定标量场帧序列（复用播放/滑块控件；帧数 <= 1 时退化为静态云图）.
+
+        Args:
+            mesh: 云图网格（场数组的形状上下文）。
+            frames: ``[(场数组, 帧标签), ...]``（逐帧节点标量，如各时刻温度）。
+            label: 场名（图例与标尺标题，如「温度 T」）。
+            unit: 场单位（标尺刻度后缀，如 K）。
+            first_index: 初始显示帧（结果态默认末帧）。
+        """
+        self._frames = []  # 位移帧与标量帧互斥（同一时刻仅一类动画）
+        self._anim_mesh = None
+        self._scalar_mesh = mesh
+        self._scalar_label = label
+        self._scalar_unit = unit
+        self._scalar_frames = frames
+        if len(frames) <= 1:
+            self._stop_anim()
+            if frames:  # 单帧：仍渲染静态云图并显示帧标签
+                field, text = frames[0]
+                self._render_scalar_field(mesh, field, label, unit)
+                self._frame_label.setText(text)
+            return
+        self._frame_slider.blockSignals(True)
+        self._frame_slider.setRange(0, len(self._scalar_frames) - 1)
+        self._frame_slider.setValue(first_index)
+        self._frame_slider.blockSignals(False)
+        for widget in (self._play_btn, self._frame_slider, self._frame_label):
+            widget.setVisible(True)
+        self._frame_index = first_index
+        self._show_frame(first_index)
 
     def _on_play_toggled(self) -> None:
         """播放/暂停切换（播放到末帧自动停在末帧）."""
@@ -497,19 +627,25 @@ class ResultView(QWidget):
             self._anim_timer.stop()
             self._set_play_icon(False)
         else:
-            if not self._frames:
+            if not self._frames and not self._scalar_frames:
                 return
-            self._frame_index = 0 if self._frame_index >= len(self._frames) - 1 else self._frame_index
+            self._frame_index = 0 if self._frame_index >= self._active_frame_count() - 1 else self._frame_index
             self._show_frame(self._frame_index)
             self._anim_timer.start()
             self._set_play_icon(True)
 
+    def _active_frame_count(self) -> int:
+        """当前活跃动画帧数（位移帧或标量帧，取在绑者）."""
+        if self._scalar_frames:
+            return len(self._scalar_frames)
+        return len(self._frames)
+
     def _on_anim_tick(self) -> None:
         """定时器驱动逐帧推进（末帧回绕重新播放）."""
-        if not self._frames:
+        if not self._frames and not self._scalar_frames:
             self._stop_anim()
             return
-        self._show_frame((self._frame_index + 1) % len(self._frames))
+        self._show_frame((self._frame_index + 1) % self._active_frame_count())
 
     def _on_frame_slider(self, value: int) -> None:
         """拖动帧滑块：暂停自动播放并显示指定帧."""
@@ -655,12 +791,7 @@ class ResultView(QWidget):
 
     def _render_nonlinear(self, solution: NonlinearSolution) -> None:
         """渲染非线性结果：显示视图切换并默认变形云图."""
-        self._view_combo.setItemText(0, "变形云图")
-        self._view_combo.setItemText(1, "载荷-位移曲线")
-        self._view_combo.blockSignals(True)
-        self._view_combo.setCurrentIndex(0)
-        self._view_combo.blockSignals(False)
-        self._view_combo.setVisible(True)
+        self._set_view_items((("变形云图", "field"), ("载荷-位移曲线", "curve")))
         self._render_nonlinear_deform(solution)
 
     def _render_nonlinear_deform(self, solution: NonlinearSolution) -> None:
@@ -731,10 +862,23 @@ class ResultView(QWidget):
             self._mode_spin.setValue(saved_mode)  # 触发 _render_mode_shape 恢复原阶
         elif saved_frame > 0 and self._frames:
             self._show_frame(min(saved_frame, len(self._frames) - 1))  # 恢复动画帧位置
+        elif saved_frame > 0 and self._scalar_frames:
+            self._show_frame(min(saved_frame, len(self._scalar_frames) - 1))  # 恢复标量帧位置
+
+    def _set_view_items(self, items: tuple[tuple[str, str], ...], current: int = 0) -> None:
+        """重设视图下拉项 ``(text, data)``（清空其他类型遗留项）并选默认项."""
+        self._view_combo.blockSignals(True)
+        while self._view_combo.count():
+            self._view_combo.removeItem(0)
+        for text, data in items:
+            self._view_combo.addItem(text, data)
+        self._view_combo.setCurrentIndex(current)
+        self._view_combo.blockSignals(False)
+        self._view_combo.setVisible(True)
 
     def _on_view_changed(self, index: int) -> None:
-        """切换结果视图（非线性/瞬态/电-热耦合的类型关联双视图）."""
-        curve = self._view_combo.itemData(index) == "curve"
+        """切换结果视图（非线性/瞬态/电-热耦合的类型关联多视图）."""
+        curve = self._view_combo.itemData(index) == "curve" if self._view_combo.count() else False
         if self._nonlinear is not None:
             if curve:
                 self._render_nonlinear_curve(self._nonlinear)
@@ -745,6 +889,14 @@ class ResultView(QWidget):
                 self._render_transient_curve(self._transient)
             else:
                 self._render_transient_deform(self._transient)
+        elif self._et_transient is not None:
+            if index == 1:  # 电压云图（常值场）
+                self._stop_anim()
+                self._render_scalar_field(self._et_transient.mesh, self._et_transient.voltages, "电压 V", "V")
+            elif index == 2:  # 温度时程曲线
+                self._render_et_transient_curve(self._et_transient)
+            else:  # 温度云图（时程动画）
+                self._render_et_transient_field(self._et_transient)
         elif self._electrothermal is not None:
             # 电-热耦合：0 = 温度云图，1 = 电压云图
             field = self._electrothermal.temperatures if index == 0 else self._electrothermal.voltages
@@ -753,10 +905,11 @@ class ResultView(QWidget):
             self._render_scalar_field(self._electrothermal.mesh, field, label, unit)
 
     def _render_scalar_field(self, mesh: Mesh, field: np.ndarray, label: str, unit: str = "") -> None:
-        """渲染标量场云图（未变形线框 + 节点场值着色）."""
+        """渲染标量场云图（未变形线框 + 节点场值着色；3D 等轴测投影）."""
         self._restore_mesh_view()
+        xy, depth = self._project(mesh.coords)
         edges = mesh_edges(mesh)
-        segments = edge_segments(mesh.coords, edges)
+        segments = edge_segments(xy, edges)
         self._plot.clear()
         self._plot.plot(
             segments[:, :, 0].ravel(),
@@ -766,33 +919,81 @@ class ResultView(QWidget):
             name="网格",
         )
         colors = [pg.mkColor(int(r * 255), int(g * 255), int(b * 255)) for r, g, b in scalar_colors(field, self._cmap)]
-        self._plot.addItem(
-            pg.ScatterPlotItem(x=mesh.coords[:, 0], y=mesh.coords[:, 1], size=6, brush=colors, pen=None, name=label)
-        )
+        if depth is not None:  # 3D：深度排序使近侧散点覆盖远侧（遮挡层次）
+            order = np.argsort(depth, kind="stable")
+            spots = [{"pos": (float(xy[i, 0]), float(xy[i, 1])), "brush": colors[i], "size": 6} for i in order]
+            self._plot.addItem(pg.ScatterPlotItem(spots=spots, pen=None, name=label))
+        else:
+            self._plot.addItem(pg.ScatterPlotItem(x=xy[:, 0], y=xy[:, 1], size=6, brush=colors, pen=None, name=label))
         self._colorbar.set_field(field, self._cmap, unit)
 
     def _render_electrothermal(self, solution: ElectroThermalSolution) -> None:
         """渲染电-热耦合结果：显示视图切换并默认温度云图."""
-        self._view_combo.setItemText(0, "温度云图")
-        self._view_combo.setItemText(1, "电压云图")
-        self._view_combo.blockSignals(True)
-        self._view_combo.setCurrentIndex(0)
-        self._view_combo.blockSignals(False)
-        self._view_combo.setVisible(True)
+        self._set_view_items((("温度云图", "field"), ("电压云图", "field")))
         self._render_scalar_field(solution.mesh, solution.temperatures, "温度 T")
         self._summary.setText(
             f"峰值温度 T_max = {solution.t_max:.6g}（最低 {solution.t_min:.6g}） · "
             f"总电功率 P = {solution.total_power:.6g} W（Joule 热源）"
         )
 
+    # ------------------------------------------------------------------ 瞬态电-热
+
+    def _render_et_transient(self, solution: ElectroThermalTransientSolution) -> None:
+        """渲染瞬态电-热耦合结果：三视图（温度云图动画/电压云图/温度时程）."""
+        self._set_view_items((("温度云图", "field"), ("电压云图", "field"), ("温度时程曲线", "curve")))
+        self._render_et_transient_field(solution)
+        thermal = solution.thermal
+        self._summary.setText(
+            f"末帧峰值温度 T_max = {solution.t_max:.6g}（最低 {solution.t_min:.6g}） · "
+            f"总电功率 P = {solution.total_power:.6g} W · 时程：{thermal.times.size - 1} 步"
+            f" · 总时长 = {thermal.total_time:.6g} s"
+        )
+
+    def _render_et_transient_field(self, solution: ElectroThermalTransientSolution) -> None:
+        """渲染瞬态温度云图时程动画（结果态默认末帧，可播放/逐帧回放）."""
+        thermal = solution.thermal
+        frames = [(thermal.temperatures[i], f"t = {t:.4g} s") for i, t in enumerate(thermal.times)]
+        self._start_scalar_anim(solution.mesh, frames, "温度 T", "K", first_index=len(frames) - 1)
+
+    def _render_et_transient_curve(self, solution: ElectroThermalTransientSolution) -> None:
+        """渲染温度时程曲线（末帧热点节点的 T(t)）并标注峰值."""
+        thermal = solution.thermal
+        hotspot = int(np.argmax(thermal.temperatures[-1]))
+        temps = thermal.temperatures[:, hotspot]
+        times = thermal.times
+        self._stop_anim()  # 曲线视图无动画帧
+        self._colorbar.clear()  # 曲线视图无场量
+
+        self._plot.clear()
+        self._plot.setAspectLocked(False)
+        self._plot.showGrid(x=True, y=True, alpha=0.3)
+        self._plot.setLogMode(y=False)
+        self._plot.setLabel("bottom", "时间 t (s)")
+        self._plot.setLabel("left", f"热点节点 {hotspot} T (K)")
+        self._plot.plot(
+            times,
+            temps,
+            pen=pg.mkPen(theme.current_palette().primary, width=3),
+            name=f"节点 {hotspot} T",
+        )
+        peak_index = int(np.argmax(temps))
+        self._plot.addItem(
+            pg.ScatterPlotItem(
+                x=[times[peak_index]],
+                y=[temps[peak_index]],
+                size=10,
+                brush=pg.mkBrush(theme.current_palette().error_text),
+                pen=None,
+                name="峰值",
+            )
+        )
+        self._summary.setText(
+            f"热点峰值 T = {temps[peak_index]:.6g} K @ t = {times[peak_index]:.6g} s（观察节点 {hotspot}）"
+        )
+
     def _render_transient(self, solution: TransientSolution) -> None:
         """渲染瞬态结果：显示视图切换并默认末帧变形云图."""
-        self._view_combo.setItemText(0, "变形云图（末帧）")
-        self._view_combo.setItemText(1, "位移时程曲线")
-        self._view_combo.blockSignals(True)
-        self._view_combo.setCurrentIndex(0)
-        self._view_combo.blockSignals(False)
-        self._view_combo.setVisible(True)
+        self._set_view_items((("变形云图（末帧）", "field"), ("位移时程曲线", "curve")))
         self._render_transient_deform(solution)
 
     def _render_transient_deform(self, solution: TransientSolution) -> None:

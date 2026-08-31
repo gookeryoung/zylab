@@ -1,0 +1,56 @@
+{
+  "id": "structural.cantilever_static",
+  "name": "悬臂梁静力分析",
+  "discipline": "structural",
+  "description": "Q4 平面应力悬臂梁端部受载，输出变形云图与应变能。",
+  "tags": [
+    "入门"
+  ],
+  "nodes": [
+    {
+      "id": "model",
+      "type": "example.cantilever_q4",
+      "params": {},
+      "inputs": {}
+    },
+    {
+      "id": "solve",
+      "type": "analysis.static",
+      "params": {},
+      "inputs": {
+        "model": "model.model"
+      }
+    }
+  ],
+  "ui": {
+    "param_groups": [
+      {
+        "title": "几何与网格",
+        "params": [
+          "model.length",
+          "model.height",
+          "model.nx",
+          "model.ny"
+        ]
+      },
+      {
+        "title": "材料",
+        "params": [
+          "model.e_modulus",
+          "model.poisson",
+          "model.thickness",
+          "model.density"
+        ]
+      },
+      {
+        "title": "载荷",
+        "params": [
+          "model.tip_load"
+        ]
+      }
+    ],
+    "results": [
+      "solve"
+    ]
+  }
+}

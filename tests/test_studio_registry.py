@@ -79,6 +79,40 @@ class TestLoadDir:
         assert registry.load_dir(tmp_path) == 1
         assert registry.get("user.custom").name == "用户模板"
 
+    def test_load_dir_recursive_discipline_subdirs(self, tmp_path: Path) -> None:
+        """按学科子目录归类与顶层平铺布局并存时全部加载."""
+        flat = {
+            "id": "user.legacy",
+            "name": "平铺模板",
+            "nodes": [{"id": "model", "type": "example.truss2_two_bar"}],
+        }
+        nested = {
+            "id": "user.nested",
+            "name": "归类模板",
+            "discipline": "thermal",
+            "nodes": [{"id": "model", "type": "example.joule_plate_2d"}],
+        }
+        self._write(tmp_path, "legacy.json", flat)
+        (tmp_path / "thermal").mkdir()
+        self._write(tmp_path / "thermal", "nested.json", nested)
+        registry = TemplateRegistry()
+        assert registry.load_dir(tmp_path) == 2
+        assert registry.get("user.legacy").name == "平铺模板"
+        assert registry.get("user.nested").discipline == "thermal"
+
+    def test_builtin_templates_loaded_from_assets(self) -> None:
+        """内置模板从 assets/templates/<学科>/*.json 加载且与包内资产一致."""
+        from zylab.studio.builtin import builtin_templates_dir
+
+        assets = builtin_templates_dir()
+        json_files = sorted(assets.glob("*/*.json"))
+        assert len(json_files) == len(BUILTIN_TEMPLATES)
+        by_id = {t.id: t for t in BUILTIN_TEMPLATES}
+        for path in json_files:
+            template = by_id[path.stem]  # 文件名即模板 id
+            assert template.discipline == path.parent.name
+            assert path.parent == assets / template.discipline
+
     def test_load_dir_missing_directory(self, tmp_path: Path) -> None:
         """目录不存在返回 0 且不抛异常."""
         registry = TemplateRegistry()

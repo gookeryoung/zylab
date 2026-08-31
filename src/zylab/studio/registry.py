@@ -71,8 +71,9 @@ class TemplateRegistry:
         return tuple(seen)
 
     def load_dir(self, directory: Path) -> int:
-        """加载目录下全部 ``*.json`` 模板文件，返回成功数量.
+        """加载目录下全部模板 JSON（顶层 ``*.json`` 与 ``<学科>/*.json``），返回成功数量.
 
+        顶层为历史平铺布局，子目录为按学科归类的现行布局；二者并存时全部加载。
         单个文件非法仅记录告警并跳过，不影响其余模板。
         """
         directory = Path(directory)
@@ -80,7 +81,7 @@ class TemplateRegistry:
             logger.warning("模板目录不存在，跳过加载: %s", directory)
             return 0
         count = 0
-        for path in sorted(directory.glob("*.json")):
+        for path in sorted({*directory.glob("*.json"), *directory.glob("*/*.json")}):
             try:
                 template = load_template(path)
                 self.register(template)

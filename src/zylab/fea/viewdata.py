@@ -20,6 +20,7 @@ __all__ = [
     "edge_segments",
     "mesh_edges",
     "nodal_stress_field",
+    "project3d",
     "scalar_colors",
 ]
 
@@ -213,6 +214,41 @@ def nodal_stress_field(solution: StaticSolution, component: int = 0) -> np.ndarr
         counts[conn] += 1.0
     # 悬空节点（不属于任何单元）保持 0
     return np.divide(totals, counts, out=totals, where=counts > 0)
+
+
+def project3d(
+    coords: np.ndarray,
+    azimuth: float = 30.0,
+    elevation: float = 25.0,
+) -> tuple[np.ndarray, np.ndarray]:
+    """三维坐标正交投影（等轴测视角）：屏幕平面 xy + 观察深度.
+
+    先绕 z 轴旋转 ``azimuth``（度），再绕 x 轴旋转 ``elevation``（度），
+    取旋转后坐标的 (x, z) 为屏幕平面、y 为观察深度（数值大者离观察者远，
+    供散点按远近排序绘制遮挡）。
+
+    Args:
+        coords: 节点坐标 ``(n, 3)``。
+        azimuth: 方位角（度，绕 z 轴）。
+        elevation: 仰角（度，绕 x 轴）。
+
+    Returns:
+        ``(xy, depth)``：``xy`` 为 ``(n, 2)`` 屏幕坐标，``depth`` 为 ``(n,)`` 观察深度。
+    """
+    data = np.asarray(coords, dtype=float)
+    if data.ndim != 2 or data.shape[1] < 3:
+        raise ValueError(f"project3d 需要 (n, 3) 坐标，实际形状 {data.shape}")
+    az = np.deg2rad(azimuth)
+    el = np.deg2rad(elevation)
+    ca, sa = np.cos(az), np.sin(az)
+    ce, se = np.cos(el), np.sin(el)
+    x, y, z = data[:, 0], data[:, 1], data[:, 2]
+    # 绕 z：x' = x·ca + y·sa；y' = -x·sa + y·ca（深度轴）；再绕 x 轴抬升仰角
+    u = x * ca + y * sa
+    v = -x * sa + y * ca
+    xy = np.column_stack((u, v * se + z * ce))
+    depth = v * ce - z * se
+    return xy, depth
 
 
 def scalar_colors(values: np.ndarray, cmap: str = "jet") -> np.ndarray:

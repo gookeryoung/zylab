@@ -1,0 +1,69 @@
+{
+  "id": "structural.column_buckling_linked",
+  "name": "压杆屈曲分析（静力参考态链接）",
+  "discipline": "structural",
+  "description": "静力节点产出参考态，屈曲节点经 reference 端口复用其轴力，演示模块 Link 连接。",
+  "tags": [
+    "稳定性",
+    "链接"
+  ],
+  "nodes": [
+    {
+      "id": "model",
+      "type": "example.column_beam2",
+      "params": {},
+      "inputs": {}
+    },
+    {
+      "id": "static",
+      "type": "analysis.static",
+      "params": {},
+      "inputs": {
+        "model": "model.model"
+      }
+    },
+    {
+      "id": "buckling",
+      "type": "analysis.buckling",
+      "params": {},
+      "inputs": {
+        "model": "model.model",
+        "reference": "static.solution"
+      }
+    }
+  ],
+  "ui": {
+    "param_groups": [
+      {
+        "title": "几何与网格",
+        "params": [
+          "model.height",
+          "model.n_elem"
+        ]
+      },
+      {
+        "title": "截面",
+        "params": [
+          "model.area",
+          "model.inertia"
+        ]
+      },
+      {
+        "title": "载荷",
+        "params": [
+          "model.tip_load"
+        ]
+      },
+      {
+        "title": "分析",
+        "params": [
+          "buckling.n_modes"
+        ]
+      }
+    ],
+    "results": [
+      "static",
+      "buckling"
+    ]
+  }
+}

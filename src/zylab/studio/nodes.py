@@ -23,6 +23,7 @@ from zylab.fea import (
     Convection,
     ElectricCase,
     ElectroThermalSolution,
+    ElectroThermalTransientSolution,
     ElementBlock,
     ElementType,
     HarmonicResponse,
@@ -39,6 +40,7 @@ from zylab.fea import (
     TransientSolution,
     solve_buckling,
     solve_electrothermal,
+    solve_electrothermal_transient,
     solve_harmonic,
     solve_modal,
     solve_nonlinear_static,
@@ -47,6 +49,7 @@ from zylab.fea import (
 )
 
 from .bundle import ConductionBundle, ModelBundle
+from .meshing3d import cylinder_resistor_mesh, vfilm_resistor_mesh
 from .module import module_spec
 
 if TYPE_CHECKING:
@@ -55,12 +58,15 @@ if TYPE_CHECKING:
 __all__ = [
     "build_cantilever",
     "build_column",
+    "build_cylinder_resistor",
     "build_joule_hole",
     "build_joule_plate",
     "build_joule_series",
     "build_truss",
+    "build_vfilm_resistor",
     "run_buckling",
     "run_electrothermal",
+    "run_electrothermal_transient",
     "run_harmonic",
     "run_modal",
     "run_nonlinear",
@@ -559,6 +565,139 @@ def run_electrothermal(
         model.sections,
         model.electric_case,
         model.thermal_case,
+        report=report,
+    )
+
+
+def build_cylinder_resistor(inputs: NodeInputs, params: NodeParams, report: ReportFn | None = None) -> ConductionBundle:
+    """构建圆柱电阻 HEX8 电-热耦合模型（两端面电极给定电压，全表面对流）.
+
+    圆柱沿 z 轴极坐标结构化离散（轴心留 5% 半径中心孔规避单元退化），
+    z=0 端面接地 0V、z=L 端面给定电压，外圆柱面与两端面对流散热；
+    材料为常物性电阻合金（含体积热容，瞬态分析可直接使用）。
+    """
+    del inputs  # 源节点无输入
+    p = _params("example.cylinder_resistor_3d", params)
+
+    _report(report, 0.4, "生成圆柱网格")
+    geo = cylinder_resistor_mesh(
+        radius=float(p["radius"]),
+        length=float(p["length"]),
+        n_theta=int(p["n_theta"]),
+        n_r=int(p["n_r"]),
+        n_z=int(p["n_z"]),
+    )
+    _report(report, 0.8, "生成电-热边界")
+    bundle = ConductionBundle(
+        mesh=geo.mesh,
+        materials=(
+            ConductionMaterial(
+                electric_sigma=float(p["electric_sigma"]),
+                thermal_k=float(p["thermal_k"]),
+                volumetric_heat_capacity=float(p["rho_cp"]),
+            ),
+        ),
+        sections=(Section(),),
+        electric_case=ElectricCase(
+            voltages=(
+                *(NodalValue(n, 0.0) for n in geo.end_low_nodes),
+                *(NodalValue(n, float(p["voltage"])) for n in geo.end_high_nodes),
+            ),
+        ),
+        thermal_case=ThermalCase(
+            convections=(
+                Convection(faces=geo.conv_faces, h_coeff=float(p["h_conv"]), t_ambient=float(p["t_ambient"])),
+            ),
+        ),
+    )
+    _report(report, 1.0, "模型就绪")
+    return bundle
+
+
+def build_vfilm_resistor(inputs: NodeInputs, params: NodeParams, report: ReportFn | None = None) -> ConductionBundle:
+    """构建 V 形薄膜电阻 HEX8 电-热耦合模型（微米级厚膜 + 陶瓷基底）.
+
+    俯视 V 形路径扫掠生成薄膜（引入/引出段为高电导电极、中间 V 形区为
+    阻性厚膜），陶瓷基底与薄膜共享底面节点：热学上双向耦合、电学上基底
+    电导率极小被绝缘过滤（孤立节点自动接地）。热边界 = 陶瓷底面恒温 +
+    薄膜顶面对流。
+    """
+    del inputs  # 源节点无输入
+    p = _params("example.vfilm_resistor_3d", params)
+
+    _report(report, 0.4, "生成 V 形薄膜网格")
+    geo = vfilm_resistor_mesh(
+        span=float(p["span"]),
+        depth=float(p["depth"]),
+        width=float(p["width"]),
+        thickness=float(p["thickness"]),
+        substrate_h=float(p["substrate_h"]),
+        lead_len=float(p["lead_len"]),
+        n_lead=int(p["n_lead"]),
+        n_diag=int(p["n_diag"]),
+        n_width=int(p["n_width"]),
+        n_sub=int(p["n_sub"]),
+    )
+    _report(report, 0.8, "生成电-热边界")
+    # 材料表按块索引引用：0 = 阻性厚膜，1 = 电极，2 = 陶瓷基底（绝缘，电场装配跳过）
+    bundle = ConductionBundle(
+        mesh=geo.mesh,
+        materials=(
+            ConductionMaterial(
+                electric_sigma=float(p["sigma_film"]),
+                thermal_k=float(p["k_film"]),
+                volumetric_heat_capacity=float(p["rho_cp_film"]),
+            ),
+            ConductionMaterial(
+                electric_sigma=float(p["sigma_electrode"]),
+                thermal_k=float(p["k_electrode"]),
+                volumetric_heat_capacity=float(p["rho_cp_electrode"]),
+            ),
+            ConductionMaterial(
+                electric_sigma=1.0e-12,  # 陶瓷绝缘（低于绝缘阈值即被电场过滤）
+                thermal_k=float(p["k_ceramic"]),
+                volumetric_heat_capacity=float(p["rho_cp_ceramic"]),
+            ),
+        ),
+        sections=(Section(),),
+        electric_case=ElectricCase(
+            voltages=(
+                *(NodalValue(n, 0.0) for n in geo.lead_low_nodes),
+                *(NodalValue(n, float(p["voltage"])) for n in geo.lead_high_nodes),
+            ),
+        ),
+        thermal_case=ThermalCase(
+            temperatures=tuple(NodalValue(n, float(p["t_base"])) for n in geo.base_bottom_nodes),
+            convections=(
+                Convection(faces=geo.film_top_faces, h_coeff=float(p["h_conv"]), t_ambient=float(p["t_ambient"])),
+            ),
+        ),
+    )
+    _report(report, 1.0, "模型就绪")
+    return bundle
+
+
+def run_electrothermal_transient(
+    inputs: NodeInputs, params: NodeParams, report: ReportFn | None = None
+) -> ElectroThermalTransientSolution:
+    """瞬态电-热耦合分析节点：ET_MODEL -> ElectroThermalTransientSolution.
+
+    稳态电场（常物性）+ backward Euler 瞬态温度场；初始温度为均匀 ``t_init``。
+    """
+    model = inputs["model"]
+    if not isinstance(model, ConductionBundle):
+        raise TypeError(f"输入端口 'model' 应为 ConductionBundle，得到 {type(model).__name__}")
+    p = _params("analysis.electrothermal_transient", params)
+    initial = np.full(model.mesh.n_nodes, float(p["t_init"]))
+    return solve_electrothermal_transient(
+        model.mesh,
+        model.materials,
+        model.sections,
+        model.electric_case,
+        model.thermal_case,
+        initial=initial,
+        total_time=float(p["duration"]),
+        n_steps=int(p["n_steps"]),
         report=report,
     )
 

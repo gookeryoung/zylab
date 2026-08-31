@@ -1,0 +1,65 @@
+{
+  "id": "structural.cantilever_harmonic",
+  "name": "悬臂梁谐响应分析",
+  "discipline": "structural",
+  "description": "端部简谐激励下的频率扫描，输出末端观察点频响曲线（对数幅值轴）与共振峰。",
+  "tags": [
+    "振动"
+  ],
+  "nodes": [
+    {
+      "id": "model",
+      "type": "example.cantilever_q4",
+      "params": {},
+      "inputs": {}
+    },
+    {
+      "id": "solve",
+      "type": "analysis.harmonic",
+      "params": {},
+      "inputs": {
+        "model": "model.model"
+      }
+    }
+  ],
+  "ui": {
+    "param_groups": [
+      {
+        "title": "几何与网格",
+        "params": [
+          "model.length",
+          "model.height",
+          "model.nx",
+          "model.ny"
+        ]
+      },
+      {
+        "title": "材料",
+        "params": [
+          "model.e_modulus",
+          "model.poisson",
+          "model.thickness",
+          "model.density"
+        ]
+      },
+      {
+        "title": "载荷",
+        "params": [
+          "model.tip_load"
+        ]
+      },
+      {
+        "title": "扫频与阻尼",
+        "params": [
+          "solve.f_max",
+          "solve.n_freq",
+          "solve.alpha",
+          "solve.beta"
+        ]
+      }
+    ],
+    "results": [
+      "solve"
+    ]
+  }
+}

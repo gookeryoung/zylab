@@ -1,0 +1,64 @@
+{
+  "id": "structural.cantilever_modal",
+  "name": "悬臂梁模态分析",
+  "discipline": "structural",
+  "description": "Q4 平面应力悬臂梁自由振动，输出频率表与各阶振型云图。",
+  "tags": [
+    "振动"
+  ],
+  "nodes": [
+    {
+      "id": "model",
+      "type": "example.cantilever_q4",
+      "params": {
+        "tip_load": 0.0
+      },
+      "inputs": {}
+    },
+    {
+      "id": "solve",
+      "type": "analysis.modal",
+      "params": {},
+      "inputs": {
+        "model": "model.model"
+      }
+    }
+  ],
+  "ui": {
+    "param_groups": [
+      {
+        "title": "几何与网格",
+        "params": [
+          "model.length",
+          "model.height",
+          "model.nx",
+          "model.ny"
+        ]
+      },
+      {
+        "title": "材料",
+        "params": [
+          "model.e_modulus",
+          "model.poisson",
+          "model.thickness",
+          "model.density"
+        ]
+      },
+      {
+        "title": "载荷",
+        "params": [
+          "model.tip_load"
+        ]
+      },
+      {
+        "title": "分析",
+        "params": [
+          "solve.n_modes"
+        ]
+      }
+    ],
+    "results": [
+      "solve"
+    ]
+  }
+}

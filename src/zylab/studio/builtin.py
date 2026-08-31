@@ -1,272 +1,47 @@
-"""内置分析模板（随包发布的预连节点图；用户模板另存于 data_dir/templates/）."""
+"""内置分析模板：随包发布的预连节点图（assets/templates/<学科>/*.json）.
+
+预制模板以人类可读 JSON 分发并按学科子目录归类；用户可参照其结构
+在 ``data_dir/templates/<学科>/`` 下自建模板（注册表递归加载），
+也可直接修改包内 JSON 定制预制模板的行为。
+"""
 
 from __future__ import annotations
 
-from .template import Template
+import logging
+from pathlib import Path
 
-__all__ = ["BUILTIN_TEMPLATES"]
+from .errors import TemplateError
+from .template import Template, template_from_json
 
-#: 悬臂梁模型的常用参数分组（几何/材料/载荷）
-_BEAM_GROUPS = (
-    {"title": "几何与网格", "params": ["model.length", "model.height", "model.nx", "model.ny"]},
-    {"title": "材料", "params": ["model.e_modulus", "model.poisson", "model.thickness", "model.density"]},
-    {"title": "载荷", "params": ["model.tip_load"]},
-)
+__all__ = ["BUILTIN_TEMPLATES", "builtin_templates_dir"]
 
-BUILTIN_TEMPLATES: tuple[Template, ...] = tuple(
-    Template.from_dict(raw)
-    for raw in (
-        {
-            "id": "structural.cantilever_static",
-            "name": "悬臂梁静力分析",
-            "discipline": "structural",
-            "description": "Q4 平面应力悬臂梁端部受载，输出变形云图与应变能。",
-            "tags": ["入门"],
-            "nodes": [
-                {"id": "model", "type": "example.cantilever_q4"},
-                {"id": "solve", "type": "analysis.static", "inputs": {"model": "model.model"}},
-            ],
-            "ui": {"param_groups": _BEAM_GROUPS, "results": ["solve"]},
-        },
-        {
-            "id": "structural.cantilever_modal",
-            "name": "悬臂梁模态分析",
-            "discipline": "structural",
-            "description": "Q4 平面应力悬臂梁自由振动，输出频率表与各阶振型云图。",
-            "tags": ["振动"],
-            "nodes": [
-                {"id": "model", "type": "example.cantilever_q4", "params": {"tip_load": 0.0}},
-                {"id": "solve", "type": "analysis.modal", "inputs": {"model": "model.model"}},
-            ],
-            "ui": {
-                "param_groups": [*_BEAM_GROUPS, {"title": "分析", "params": ["solve.n_modes"]}],
-                "results": ["solve"],
-            },
-        },
-        {
-            "id": "structural.cantilever_harmonic",
-            "name": "悬臂梁谐响应分析",
-            "discipline": "structural",
-            "description": "端部简谐激励下的频率扫描，输出末端观察点频响曲线（对数幅值轴）与共振峰。",
-            "tags": ["振动"],
-            "nodes": [
-                {"id": "model", "type": "example.cantilever_q4"},
-                {"id": "solve", "type": "analysis.harmonic", "inputs": {"model": "model.model"}},
-            ],
-            "ui": {
-                "param_groups": [
-                    *_BEAM_GROUPS,
-                    {
-                        "title": "扫频与阻尼",
-                        "params": ["solve.f_max", "solve.n_freq", "solve.alpha", "solve.beta"],
-                    },
-                ],
-                "results": ["solve"],
-            },
-        },
-        {
-            "id": "structural.cantilever_transient",
-            "name": "悬臂梁瞬态动力分析",
-            "discipline": "structural",
-            "description": "端部阶跃载荷的 Newmark 时间积分，输出末帧变形云图与末端观察点位移时程曲线。",
-            "tags": ["振动"],
-            "nodes": [
-                {"id": "model", "type": "example.cantilever_q4"},
-                {"id": "solve", "type": "analysis.transient", "inputs": {"model": "model.model"}},
-            ],
-            "ui": {
-                "param_groups": [
-                    *_BEAM_GROUPS,
-                    {"title": "时程与阻尼", "params": ["solve.duration", "solve.n_steps", "solve.alpha", "solve.beta"]},
-                ],
-                "results": ["solve"],
-            },
-        },
-        {
-            "id": "structural.column_buckling",
-            "name": "压杆稳定（屈曲）分析",
-            "discipline": "structural",
-            "description": "BEAM2 悬臂柱顶部轴压，输出各阶屈曲载荷因子与失稳模态（一阶 ≈ π²EI/4L²）。",
-            "tags": ["稳定性", "基准"],
-            "nodes": [
-                {"id": "model", "type": "example.column_beam2"},
-                {"id": "solve", "type": "analysis.buckling", "inputs": {"model": "model.model"}},
-            ],
-            "ui": {
-                "param_groups": [
-                    {"title": "几何与网格", "params": ["model.height", "model.n_elem"]},
-                    {"title": "截面", "params": ["model.area", "model.inertia"]},
-                    {"title": "载荷", "params": ["model.tip_load"]},
-                    {"title": "分析", "params": ["solve.n_modes"]},
-                ],
-                "results": ["solve"],
-            },
-        },
-        {
-            "id": "structural.truss_nonlinear",
-            "name": "两杆桁架几何非线性分析",
-            "discipline": "structural",
-            "description": "TRUSS2 两杆浅桁架顶点受载（接近极限点），输出变形云图与载荷-位移曲线。",
-            "tags": ["非线性"],
-            "nodes": [
-                {"id": "model", "type": "example.truss2_two_bar"},
-                {"id": "solve", "type": "analysis.nonlinear", "inputs": {"model": "model.model"}},
-            ],
-            "ui": {
-                "param_groups": [
-                    {"title": "几何", "params": ["model.half_span", "model.rise"]},
-                    {"title": "材料与截面", "params": ["model.e_modulus", "model.area"]},
-                    {"title": "载荷", "params": ["model.apex_load"]},
-                    {"title": "分析", "params": ["solve.n_increments"]},
-                ],
-                "results": ["solve"],
-            },
-        },
-        {
-            "id": "structural.column_buckling_linked",
-            "name": "压杆屈曲分析（静力参考态链接）",
-            "discipline": "structural",
-            "description": "静力节点产出参考态，屈曲节点经 reference 端口复用其轴力，演示模块 Link 连接。",
-            "tags": ["稳定性", "链接"],
-            "nodes": [
-                {"id": "model", "type": "example.column_beam2"},
-                {"id": "static", "type": "analysis.static", "inputs": {"model": "model.model"}},
-                {
-                    "id": "buckling",
-                    "type": "analysis.buckling",
-                    "inputs": {"model": "model.model", "reference": "static.solution"},
-                },
-            ],
-            "ui": {
-                "param_groups": [
-                    {"title": "几何与网格", "params": ["model.height", "model.n_elem"]},
-                    {"title": "截面", "params": ["model.area", "model.inertia"]},
-                    {"title": "载荷", "params": ["model.tip_load"]},
-                    {"title": "分析", "params": ["buckling.n_modes"]},
-                ],
-                "results": ["static", "buckling"],
-            },
-        },
-        {
-            "id": "structural.truss_nonlinear_linked",
-            "name": "两杆桁架非线性（静力初态链接）",
-            "discipline": "structural",
-            "description": "静力节点产出初态位移，非线性节点经 initial 端口从初态起算，演示模块 Link 连接。",
-            "tags": ["非线性", "链接"],
-            "nodes": [
-                {"id": "model", "type": "example.truss2_two_bar"},
-                {"id": "static", "type": "analysis.static", "inputs": {"model": "model.model"}},
-                {
-                    "id": "nonlinear",
-                    "type": "analysis.nonlinear",
-                    "inputs": {"model": "model.model", "initial": "static.solution"},
-                },
-            ],
-            "ui": {
-                "param_groups": [
-                    {"title": "几何", "params": ["model.half_span", "model.rise"]},
-                    {"title": "材料与截面", "params": ["model.e_modulus", "model.area"]},
-                    {"title": "载荷", "params": ["model.apex_load"]},
-                    {"title": "分析", "params": ["nonlinear.n_increments"]},
-                ],
-                "results": ["static", "nonlinear"],
-            },
-        },
-        {
-            "id": "structural.cantilever_combo",
-            "name": "悬臂梁静力 + 模态联合分析",
-            "discipline": "structural",
-            "description": "同一模型共享驱动静力与模态两路分析，演示多学科模块的 Share 连接模式。",
-            "tags": ["入门", "组合"],
-            "nodes": [
-                {"id": "model", "type": "example.cantilever_q4"},
-                {"id": "static", "type": "analysis.static", "inputs": {"model": "model.model"}},
-                {"id": "modal", "type": "analysis.modal", "inputs": {"model": "model.model"}},
-            ],
-            "ui": {
-                "param_groups": [*_BEAM_GROUPS, {"title": "分析", "params": ["modal.n_modes"]}],
-                "results": ["static", "modal"],
-            },
-        },
-        {
-            "id": "thermal.joule_plate_2d",
-            "name": "通电加热板电-热耦合分析",
-            "discipline": "thermal",
-            "description": "Q4 平面板左右电极通电，Joule 热顺序耦合稳态温度场；"
-            "底边恒温、其余三边对流散热，输出温度/电压云图。",
-            "tags": ["电-热", "稳态"],
-            "nodes": [
-                {"id": "model", "type": "example.joule_plate_2d"},
-                {"id": "solve", "type": "analysis.electrothermal", "inputs": {"model": "model.model"}},
-            ],
-            "ui": {
-                "param_groups": [
-                    {"title": "几何与网格", "params": ["model.length", "model.height", "model.nx", "model.ny"]},
-                    {
-                        "title": "材料与厚度",
-                        "params": ["model.electric_sigma", "model.thermal_k", "model.thickness"],
-                    },
-                    {"title": "电学边界", "params": ["model.voltage"]},
-                    {"title": "热边界", "params": ["model.t_base", "model.h_conv", "model.t_ambient"]},
-                ],
-                "results": ["solve"],
-            },
-        },
-        {
-            "id": "thermal.joule_series_2d",
-            "name": "多材料串联电加热板（热点分析）",
-            "discipline": "thermal",
-            "description": "电极/电阻区/电极三区多块网格：电流经高阻抗电阻区集浓产热，"
-            "稳态热点出现在电阻区；演示多材料 ElementBlock 分区建模与电-热耦合。",
-            "tags": ["电-热", "多材料", "热点"],
-            "nodes": [
-                {"id": "model", "type": "example.joule_series_2d"},
-                {"id": "solve", "type": "analysis.electrothermal", "inputs": {"model": "model.model"}},
-            ],
-            "ui": {
-                "param_groups": [
-                    {"title": "几何与网格", "params": ["model.length", "model.height", "model.nx", "model.ny"]},
-                    {"title": "分区", "params": ["model.electrode_len"]},
-                    {
-                        "title": "电极材料",
-                        "params": ["model.sigma_conductor", "model.k_conductor"],
-                    },
-                    {
-                        "title": "电阻区材料",
-                        "params": ["model.sigma_resistor", "model.k_resistor"],
-                    },
-                    {"title": "厚度与电学边界", "params": ["model.thickness", "model.voltage"]},
-                    {"title": "热边界", "params": ["model.t_base", "model.h_conv", "model.t_ambient"]},
-                ],
-                "results": ["solve"],
-            },
-        },
-        {
-            "id": "thermal.joule_hole_2d",
-            "name": "带圆孔多材料电加热板（复杂形状热点）",
-            "discipline": "thermal",
-            "description": "电极/电阻区/电极三区多块网格 + 形心掩码挖去中央圆孔："
-            "电流绕孔集浓、孔缘出现热点；边界自动提取——电极面给定电压、"
-            "底边恒温、其余边界（含孔缘）对流散热。",
-            "tags": ["电-热", "多材料", "复杂形状", "热点"],
-            "nodes": [
-                {"id": "model", "type": "example.joule_hole_2d"},
-                {"id": "solve", "type": "analysis.electrothermal", "inputs": {"model": "model.model"}},
-            ],
-            "ui": {
-                "param_groups": [
-                    {"title": "几何与网格", "params": ["model.length", "model.height", "model.nx", "model.ny"]},
-                    {
-                        "title": "分区与圆孔",
-                        "params": ["model.electrode_len", "model.hole_x", "model.hole_y", "model.hole_r"],
-                    },
-                    {"title": "电极材料", "params": ["model.sigma_conductor", "model.k_conductor"]},
-                    {"title": "电阻区材料", "params": ["model.sigma_resistor", "model.k_resistor"]},
-                    {"title": "厚度与电学边界", "params": ["model.thickness", "model.voltage"]},
-                    {"title": "热边界", "params": ["model.t_base", "model.h_conv", "model.t_ambient"]},
-                ],
-                "results": ["solve"],
-            },
-        },
-    )
-)
+logger = logging.getLogger(__name__)
+
+#: 预制模板资产目录（随包分发，按学科子目录归类）
+_ASSETS_TEMPLATES_DIR = Path(__file__).resolve().parent.parent / "assets" / "templates"
+
+
+def builtin_templates_dir() -> Path:
+    """预制模板资产目录（供打包校验与用户查阅）."""
+    return _ASSETS_TEMPLATES_DIR
+
+
+def _load_assets_templates(directory: Path) -> tuple[Template, ...]:
+    """加载目录下全部 ``<学科>/*.json`` 预制模板.
+
+    单个文件非法仅记录告警并跳过（缺目录视为打包缺陷，返回空并告警）。
+    """
+    if not directory.is_dir():
+        logger.warning("预制模板目录缺失: %s", directory)
+        return ()
+    templates: list[Template] = []
+    for path in sorted(directory.glob("*/*.json")):
+        try:
+            templates.append(template_from_json(path.read_text(encoding="utf-8")))
+        except (OSError, TemplateError) as exc:
+            logger.warning("跳过非法预制模板 %s: %s", path.name, exc)
+    return tuple(templates)
+
+
+#: 内置模板表（模块导入时从包内 JSON 资产加载）
+BUILTIN_TEMPLATES: tuple[Template, ...] = _load_assets_templates(_ASSETS_TEMPLATES_DIR)

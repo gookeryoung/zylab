@@ -1,0 +1,65 @@
+{
+  "id": "structural.cantilever_transient",
+  "name": "悬臂梁瞬态动力分析",
+  "discipline": "structural",
+  "description": "端部阶跃载荷的 Newmark 时间积分，输出末帧变形云图与末端观察点位移时程曲线。",
+  "tags": [
+    "振动"
+  ],
+  "nodes": [
+    {
+      "id": "model",
+      "type": "example.cantilever_q4",
+      "params": {},
+      "inputs": {}
+    },
+    {
+      "id": "solve",
+      "type": "analysis.transient",
+      "params": {},
+      "inputs": {
+        "model": "model.model"
+      }
+    }
+  ],
+  "ui": {
+    "param_groups": [
+      {
+        "title": "几何与网格",
+        "params": [
+          "model.length",
+          "model.height",
+          "model.nx",
+          "model.ny"
+        ]
+      },
+      {
+        "title": "材料",
+        "params": [
+          "model.e_modulus",
+          "model.poisson",
+          "model.thickness",
+          "model.density"
+        ]
+      },
+      {
+        "title": "载荷",
+        "params": [
+          "model.tip_load"
+        ]
+      },
+      {
+        "title": "时程与阻尼",
+        "params": [
+          "solve.duration",
+          "solve.n_steps",
+          "solve.alpha",
+          "solve.beta"
+        ]
+      }
+    ],
+    "results": [
+      "solve"
+    ]
+  }
+}

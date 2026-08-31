@@ -1,0 +1,89 @@
+{
+  "id": "thermal.vfilm_resistor_steady",
+  "name": "V 形薄膜电阻稳态电-热分析",
+  "discipline": "thermal",
+  "description": "微米级 V 形薄膜电阻（陶瓷基底）稳态电-热耦合：电流集中于 V 形阻性膜产生 Joule 热点，热量经共享节点导入陶瓷基底由底面散出，输出温度/电压云图。",
+  "tags": [
+    "电-热",
+    "稳态",
+    "三维",
+    "薄膜电阻"
+  ],
+  "nodes": [
+    {
+      "id": "model",
+      "type": "example.vfilm_resistor_3d",
+      "params": {},
+      "inputs": {}
+    },
+    {
+      "id": "solve",
+      "type": "analysis.electrothermal",
+      "params": {},
+      "inputs": {
+        "model": "model.model"
+      }
+    }
+  ],
+  "ui": {
+    "param_groups": [
+      {
+        "title": "薄膜几何",
+        "params": [
+          "model.span",
+          "model.depth",
+          "model.width",
+          "model.thickness"
+        ]
+      },
+      {
+        "title": "基底与电极",
+        "params": [
+          "model.substrate_h",
+          "model.lead_len"
+        ]
+      },
+      {
+        "title": "网格",
+        "params": [
+          "model.n_lead",
+          "model.n_diag",
+          "model.n_width",
+          "model.n_sub"
+        ]
+      },
+      {
+        "title": "薄膜与电极材料",
+        "params": [
+          "model.sigma_film",
+          "model.sigma_electrode",
+          "model.k_film",
+          "model.k_electrode"
+        ]
+      },
+      {
+        "title": "陶瓷基底材料",
+        "params": [
+          "model.k_ceramic"
+        ]
+      },
+      {
+        "title": "电学边界",
+        "params": [
+          "model.voltage"
+        ]
+      },
+      {
+        "title": "热边界",
+        "params": [
+          "model.t_base",
+          "model.h_conv",
+          "model.t_ambient"
+        ]
+      }
+    ],
+    "results": [
+      "solve"
+    ]
+  }
+}

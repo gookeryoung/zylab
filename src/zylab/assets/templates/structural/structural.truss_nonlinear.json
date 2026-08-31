@@ -1,0 +1,58 @@
+{
+  "id": "structural.truss_nonlinear",
+  "name": "两杆桁架几何非线性分析",
+  "discipline": "structural",
+  "description": "TRUSS2 两杆浅桁架顶点受载（接近极限点），输出变形云图与载荷-位移曲线。",
+  "tags": [
+    "非线性"
+  ],
+  "nodes": [
+    {
+      "id": "model",
+      "type": "example.truss2_two_bar",
+      "params": {},
+      "inputs": {}
+    },
+    {
+      "id": "solve",
+      "type": "analysis.nonlinear",
+      "params": {},
+      "inputs": {
+        "model": "model.model"
+      }
+    }
+  ],
+  "ui": {
+    "param_groups": [
+      {
+        "title": "几何",
+        "params": [
+          "model.half_span",
+          "model.rise"
+        ]
+      },
+      {
+        "title": "材料与截面",
+        "params": [
+          "model.e_modulus",
+          "model.area"
+        ]
+      },
+      {
+        "title": "载荷",
+        "params": [
+          "model.apex_load"
+        ]
+      },
+      {
+        "title": "分析",
+        "params": [
+          "solve.n_increments"
+        ]
+      }
+    ],
+    "results": [
+      "solve"
+    ]
+  }
+}

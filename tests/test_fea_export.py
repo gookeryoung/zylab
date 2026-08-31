@@ -12,12 +12,14 @@ from zylab.fea import (
     BucklingSolution,
     ElectricSolution,
     ElectroThermalSolution,
+    ElectroThermalTransientSolution,
     HarmonicResponse,
     Mesh,
     ModalSolution,
     NonlinearSolution,
     StaticSolution,
     ThermalSolution,
+    ThermalTransientSolution,
     TransientSolution,
     export_csv,
 )
@@ -151,6 +153,36 @@ def test_electrothermal_node_table(tmp_path: Path) -> None:
     assert float(rows[1][2]) == 20.0
     assert float(rows[2][1]) == 1.0
     assert float(rows[2][2]) == 25.0
+
+
+def test_electrothermal_transient_series(tmp_path: Path) -> None:
+    """瞬态电-热耦合导出逐帧温度峰值/谷值时程."""
+    mesh = _mesh()
+    electric = ElectricSolution(
+        mesh=mesh,
+        voltages=np.array([0.0, 1.0]),
+        element_gradients=np.zeros((1, 2)),
+        element_power=np.array([0.5]),
+        total_power=0.5,
+    )
+    thermal = ThermalTransientSolution(
+        mesh=mesh,
+        times=np.array([0.0, 1.0]),
+        temperatures=np.array([[20.0, 20.0], [30.0, 40.0]]),
+        element_gradients=np.zeros((1, 2)),
+        element_heat_flux=np.zeros(1),
+        t_min=20.0,
+        t_max=40.0,
+        convection_heat=np.zeros(2),
+        total_time=1.0,
+    )
+    solution = ElectroThermalTransientSolution(mesh=mesh, electric=electric, thermal=thermal, total_power=0.5)
+    rows = _read(export_csv(solution, tmp_path / "et_transient.csv"))
+    assert rows[0] == ["t", "t_max", "t_min"]
+    assert len(rows) == 3
+    assert float(rows[1][1]) == 20.0  # 初始帧全场同温
+    assert float(rows[2][1]) == 40.0  # 末帧峰值
+    assert float(rows[2][2]) == 30.0  # 末帧谷值
 
 
 def test_creates_parent_directory(tmp_path: Path) -> None:

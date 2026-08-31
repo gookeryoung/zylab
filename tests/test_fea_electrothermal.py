@@ -1,4 +1,4 @@
-"""fea.electrothermal 电-热耦合测试：解析解互证、对流能量守恒、进度回调."""
+"""fea.electrothermal 电-热耦合测试：解析解互证、对流能量守恒、瞬态收敛与进度回调."""
 
 from __future__ import annotations
 
@@ -16,11 +16,16 @@ from zylab.fea import (
     Section,
     ThermalCase,
     solve_electrothermal,
+    solve_electrothermal_transient,
 )
 
 __all__ = []
 
 MAT = ConductionMaterial(electric_sigma=1.0, thermal_k=1.0)
+
+#: 提供热容的材料（ρc = 1 J/mm³·K）
+CAP_MAT = ConductionMaterial(electric_sigma=1.0, thermal_k=1.0, volumetric_heat_capacity=1.0)
+
 UNIT = Section()
 
 
@@ -116,3 +121,72 @@ class TestSolveElectrothermal:
         assert events[-1] == (1.0, "电-热耦合求解完成")
         progresses = [p for p, _ in events]
         assert progresses == sorted(progresses)
+
+
+class TestSolveElectrothermalTransient:
+    """瞬态电-热顺序耦合求解."""
+
+    def test_long_time_matches_steady(self) -> None:
+        """两端电压 + 两端恒温：总时长充分大时瞬态末帧收敛到稳态耦合解."""
+        length, height, v0 = 2.0, 1.0, 1.0
+        mesh = _plate(4, 2, length, height)
+        coords = mesh.coords
+        left = np.flatnonzero(coords[:, 0] <= 0.0)
+        right = np.flatnonzero(coords[:, 0] >= length - 1e-9)
+        electric_case = ElectricCase(
+            voltages=(*(NodalValue(int(n), 0.0) for n in left), *(NodalValue(int(n), v0) for n in right)),
+        )
+        thermal_case = ThermalCase(
+            temperatures=tuple(NodalValue(int(n), 0.0) for n in (*left, *right)),
+        )
+        steady = solve_electrothermal(mesh, (CAP_MAT,), (UNIT,), electric_case, thermal_case)
+        solution = solve_electrothermal_transient(
+            mesh,
+            (CAP_MAT,),
+            (UNIT,),
+            electric_case,
+            thermal_case,
+            initial=np.zeros(mesh.n_nodes),
+            total_time=200.0,
+            n_steps=40,
+        )
+        # 常物性：电场与稳态一致
+        np.testing.assert_allclose(solution.voltages, steady.voltages, rtol=1e-12)
+        assert solution.total_power == pytest.approx(steady.total_power, rel=1e-12)
+        # 末帧温度收敛稳态
+        np.testing.assert_allclose(solution.temperatures, steady.temperatures, rtol=1e-8, atol=1e-8)
+        assert solution.thermal.temperatures.shape == (41, mesh.n_nodes)
+        # property 委托
+        np.testing.assert_array_equal(solution.temperatures, solution.thermal.temperatures[-1])
+        assert solution.t_max == solution.thermal.t_max
+
+    def test_monotonic_heating_from_cold_start(self) -> None:
+        """冷启动（初温 = 恒温边界温度）：峰值温度从零单调升且未达稳态值."""
+        length, height, v0 = 2.0, 1.0, 1.0
+        mesh = _plate(4, 2, length, height)
+        coords = mesh.coords
+        left = np.flatnonzero(coords[:, 0] <= 0.0)
+        right = np.flatnonzero(coords[:, 0] >= length - 1e-9)
+        electric_case = ElectricCase(
+            voltages=(*(NodalValue(int(n), 0.0) for n in left), *(NodalValue(int(n), v0) for n in right)),
+        )
+        thermal_case = ThermalCase(
+            temperatures=tuple(NodalValue(int(n), 0.0) for n in (*left, *right)),
+        )
+        solution = solve_electrothermal_transient(
+            mesh,
+            (CAP_MAT,),
+            (UNIT,),
+            electric_case,
+            thermal_case,
+            initial=np.zeros(mesh.n_nodes),
+            total_time=4.0,
+            n_steps=20,
+        )
+        peaks = solution.thermal.temperatures.max(axis=1)
+        assert np.all(np.diff(peaks) > 0.0)  # 峰值单调上升
+        assert peaks[-1] > 0.0
+        # 中间帧峰值介于初值与稳态解析值之间
+        q = CAP_MAT.electric_sigma * (v0 / length) ** 2
+        steady_peak = q * length**2 / (8.0 * CAP_MAT.thermal_k)
+        assert peaks[-1] < steady_peak

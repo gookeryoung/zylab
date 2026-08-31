@@ -24,6 +24,20 @@ __all__ = []
 MAT = ConductionMaterial(electric_sigma=1.0, thermal_k=1.0)
 UNIT = Section()
 
+#: 单位立方体（HEX8 节点序：ζ=-1 面 1-4，ζ=+1 面 5-8）
+HEX_COORDS = np.array(
+    [
+        [0.0, 0.0, 0.0],
+        [1.0, 0.0, 0.0],
+        [1.0, 1.0, 0.0],
+        [0.0, 1.0, 0.0],
+        [0.0, 0.0, 1.0],
+        [1.0, 0.0, 1.0],
+        [1.0, 1.0, 1.0],
+        [0.0, 1.0, 1.0],
+    ]
+)
+
 
 def _plate(nx: int, ny: int, length: float = 2.0, height: float = 1.0) -> Mesh:
     """矩形板 Q4 网格（节点编号 = j*(nx+1)+i）."""
@@ -146,6 +160,23 @@ class TestSolveThermal:
         progresses = [p for p, _ in events]
         assert progresses == sorted(progresses)
 
+    def test_3d_face_convection_steady(self) -> None:
+        """单 HEX8 立方体：底面恒温 100、顶面对流（h=1, T∞=0）→ 顶面 T=50（热阻串联解析）."""
+        mesh = Mesh(HEX_COORDS, (ElementBlock(etype=ElementType.HEX8, conn=np.arange(8)[None, :]),))
+        case = ThermalCase(
+            temperatures=tuple(NodalValue(n, 100.0) for n in (0, 1, 2, 3)),
+            convections=(Convection(faces=((4, 5, 6, 7),), h_coeff=1.0, t_ambient=0.0),),
+        )
+        solution = solve_thermal(mesh, (MAT,), (UNIT,), case)
+        np.testing.assert_allclose(solution.temperatures[4:], np.full(4, 50.0), rtol=1e-12)
+        assert solution.t_max == pytest.approx(100.0, rel=1e-12)
+        assert solution.t_min == pytest.approx(50.0, rel=1e-12)
+        # 对流散热 = h·(T_top - 0)·A = 1×50×1
+        assert solution.convection_heat == pytest.approx(50.0, rel=1e-12)
+        # 顶面 4 节点温度相同 → 顶面等温，热流沿 z 一维
+        assert solution.element_gradients.shape == (1, 3)
+        np.testing.assert_allclose(solution.element_gradients, [[0.0, 0.0, -50.0]], rtol=1e-10, atol=1e-10)
+
 
 class TestThermalCaseValidation:
     """热学工况校验."""
@@ -174,6 +205,16 @@ class TestThermalCaseValidation:
         with pytest.raises(MeshError, match="越界"):
             solve_thermal(mesh, (MAT,), (UNIT,), case)
 
+    def test_convection_face_node_out_of_range(self) -> None:
+        """对流面片节点越界抛 MeshError."""
+        mesh = Mesh(HEX_COORDS, (ElementBlock(etype=ElementType.HEX8, conn=np.arange(8)[None, :]),))
+        case = ThermalCase(
+            temperatures=(NodalValue(0, 0.0),),
+            convections=(Convection(faces=((4, 5, 6, 99),), h_coeff=1.0, t_ambient=0.0),),
+        )
+        with pytest.raises(MeshError, match="越界"):
+            solve_thermal(mesh, (MAT,), (UNIT,), case)
+
 
 class TestConvectionValidation:
     """对流边界参数校验."""
@@ -187,3 +228,8 @@ class TestConvectionValidation:
         """对流换热系数非正抛 MeshError."""
         with pytest.raises(MeshError, match="须为正"):
             Convection(nodes=(0, 1), h_coeff=0.0, t_ambient=0.0)
+
+    def test_face_with_wrong_node_count(self) -> None:
+        """对流面片节点数非 4 抛 MeshError."""
+        with pytest.raises(MeshError, match="4 节点四边形"):
+            Convection(faces=((0, 1, 2),), h_coeff=1.0, t_ambient=0.0)

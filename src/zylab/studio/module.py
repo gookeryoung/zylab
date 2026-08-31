@@ -42,6 +42,7 @@ class PortType(Enum):
     NONLINEAR = "nonlinear"  # fea.NonlinearSolution
     ET_MODEL = "et_model"  # bundle.ConductionBundle（电-热传导模型）
     ELECTROTHERMAL = "electrothermal"  # fea.ElectroThermalSolution
+    ET_TRANSIENT = "et_transient"  # fea.ElectroThermalTransientSolution（瞬态电-热耦合解）
 
 
 @unique
@@ -458,6 +459,100 @@ BUILTIN_MODULES: tuple[ModuleSpec, ...] = (
         target="zylab.studio.nodes:run_electrothermal",
         inputs=(PortSpec("model", PortType.ET_MODEL, "传导模型"),),
         outputs=(PortSpec("solution", PortType.ELECTROTHERMAL, "电热耦合解"),),
+    ),
+    ModuleSpec(
+        type_id="analysis.electrothermal_transient",
+        name="瞬态电-热耦合分析",
+        category=ModuleCategory.ANALYSIS,
+        target="zylab.studio.nodes:run_electrothermal_transient",
+        inputs=(PortSpec("model", PortType.ET_MODEL, "传导模型"),),
+        outputs=(PortSpec("solution", PortType.ET_TRANSIENT, "瞬态电热解"),),
+        params=(
+            ParamSpec("t_init", "初始温度", ParamType.FLOAT, 20.0, -1.0e4, 1.0e4, 1.0, "", "均匀初始温度场"),
+            ParamSpec("duration", "总时长", ParamType.FLOAT, 1.0, 1.0e-9, 1.0e6, 1.0, "s", "瞬态积分总时长"),
+            ParamSpec("n_steps", "积分步数", ParamType.INT, 50, 1, 10000, 10, "", "均匀步长 backward Euler"),
+        ),
+    ),
+    ModuleSpec(
+        type_id="example.cylinder_resistor_3d",
+        name="圆柱电阻（HEX8 电-热耦合）",
+        category=ModuleCategory.SOURCE,
+        target="zylab.studio.nodes:build_cylinder_resistor",
+        outputs=(PortSpec("model", PortType.ET_MODEL, "传导模型"),),
+        params=(
+            ParamSpec("radius", "半径 R", ParamType.FLOAT, 2.0, 0.01, 1.0e3, 0.1, "mm", "圆柱电阻半径"),
+            ParamSpec("length", "长度 L", ParamType.FLOAT, 20.0, 0.1, 1.0e4, 1.0, "mm", "圆柱电阻长度"),
+            ParamSpec("n_theta", "周向单元数", ParamType.INT, 12, 3, 64, 3, "", "截面多边形逼近圆周"),
+            ParamSpec("n_r", "径向单元数", ParamType.INT, 4, 1, 32, 1),
+            ParamSpec("n_z", "轴向单元数", ParamType.INT, 20, 1, 300, 5),
+            ParamSpec(
+                "voltage", "电极电压 V₀", ParamType.FLOAT, 1.0, -1.0e6, 1.0e6, 0.1, "V", "z=L 端面电压，z=0 端面接地"
+            ),
+            ParamSpec("electric_sigma", "电导率 σ", ParamType.FLOAT, 1.0, 1.0e-9, 1.0e9, 0.1, "S/mm"),
+            ParamSpec("thermal_k", "导热系数 k", ParamType.FLOAT, 0.015, 1.0e-9, 1.0e6, 0.001, "W/mm·K"),
+            ParamSpec("rho_cp", "体积热容 ρc", ParamType.FLOAT, 4.0, 1.0e-9, 1.0e6, 0.1, "J/mm³·K", "瞬态分析必需"),
+            ParamSpec(
+                "h_conv",
+                "对流系数 h",
+                ParamType.FLOAT,
+                1.0e-5,
+                1.0e-9,
+                1.0,
+                1.0e-6,
+                "W/mm²·K",
+                "外圆柱面与两端面对流",
+            ),
+            ParamSpec("t_ambient", "环境温度", ParamType.FLOAT, 20.0, -1.0e4, 1.0e4, 1.0, ""),
+        ),
+    ),
+    ModuleSpec(
+        type_id="example.vfilm_resistor_3d",
+        name="V 形薄膜电阻（HEX8 电-热耦合）",
+        category=ModuleCategory.SOURCE,
+        target="zylab.studio.nodes:build_vfilm_resistor",
+        outputs=(PortSpec("model", PortType.ET_MODEL, "传导模型"),),
+        params=(
+            ParamSpec("span", "跨度 L", ParamType.FLOAT, 10.0, 0.1, 1.0e4, 0.5, "mm", "俯视总跨度"),
+            ParamSpec("depth", "V 形深度 d", ParamType.FLOAT, 2.0, 0.01, 1.0e3, 0.1, "mm", "V 顶点下探深度"),
+            ParamSpec("width", "薄膜宽度 w", ParamType.FLOAT, 1.0, 0.01, 1.0e3, 0.1, "mm"),
+            ParamSpec("thickness", "薄膜厚度 t", ParamType.FLOAT, 0.005, 1.0e-6, 0.1, 1.0e-3, "mm", "典型微米级厚膜"),
+            ParamSpec("substrate_h", "基底厚度 H", ParamType.FLOAT, 1.0, 0.01, 1.0e3, 0.1, "mm", "陶瓷基底厚度"),
+            ParamSpec("lead_len", "电极段长 a", ParamType.FLOAT, 1.5, 0.01, 5.0e3, 0.1, "mm", "引入/引出电极段长"),
+            ParamSpec("n_lead", "电极段单元数", ParamType.INT, 4, 1, 200, 1),
+            ParamSpec("n_diag", "斜段单元数", ParamType.INT, 8, 1, 400, 1, "", "每段斜线的单元数"),
+            ParamSpec("n_width", "宽度分段数", ParamType.INT, 2, 1, 32, 1),
+            ParamSpec("n_sub", "基底层数", ParamType.INT, 4, 1, 32, 1, "", "基底厚度方向层数"),
+            ParamSpec("sigma_film", "薄膜电导率 σ_f", ParamType.FLOAT, 0.05, 1.0e-9, 1.0e9, 0.01, "S/mm", "阻性厚膜"),
+            ParamSpec("sigma_electrode", "电极电导率 σ_e", ParamType.FLOAT, 50.0, 1.0e-9, 1.0e9, 1.0, "S/mm"),
+            ParamSpec("k_film", "薄膜导热系数 k_f", ParamType.FLOAT, 0.01, 1.0e-9, 1.0e6, 0.001, "W/mm·K"),
+            ParamSpec("k_electrode", "电极导热系数 k_e", ParamType.FLOAT, 0.4, 1.0e-9, 1.0e6, 0.01, "W/mm·K"),
+            ParamSpec("k_ceramic", "陶瓷导热系数 k_c", ParamType.FLOAT, 0.025, 1.0e-9, 1.0e6, 0.001, "W/mm·K", "基底"),
+            ParamSpec(
+                "rho_cp_film", "薄膜热容 ρc_f", ParamType.FLOAT, 2.0, 1.0e-9, 1.0e6, 0.1, "J/mm³·K", "瞬态分析必需"
+            ),
+            ParamSpec(
+                "rho_cp_electrode", "电极热容 ρc_e", ParamType.FLOAT, 2.5, 1.0e-9, 1.0e6, 0.1, "J/mm³·K", "瞬态分析必需"
+            ),
+            ParamSpec(
+                "rho_cp_ceramic", "陶瓷热容 ρc_c", ParamType.FLOAT, 3.0, 1.0e-9, 1.0e6, 0.1, "J/mm³·K", "瞬态分析必需"
+            ),
+            ParamSpec(
+                "voltage", "电极电压 V₀", ParamType.FLOAT, 1.0, -1.0e6, 1.0e6, 0.1, "V", "引出端电压，引入端接地 0"
+            ),
+            ParamSpec("t_base", "基底底面温度", ParamType.FLOAT, 20.0, -1.0e4, 1.0e4, 1.0, "", "陶瓷底面恒温边界"),
+            ParamSpec(
+                "h_conv",
+                "对流系数 h",
+                ParamType.FLOAT,
+                1.0e-4,
+                1.0e-9,
+                1.0,
+                1.0e-6,
+                "W/mm²·K",
+                "薄膜顶面对流换热",
+            ),
+            ParamSpec("t_ambient", "环境温度", ParamType.FLOAT, 20.0, -1.0e4, 1.0e4, 1.0, ""),
+        ),
     ),
     ModuleSpec(
         type_id="analysis.nonlinear",

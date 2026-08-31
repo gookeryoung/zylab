@@ -155,6 +155,63 @@ def test_show_electrothermal_solution_and_view_switch(qtbot) -> None:
 
 
 @pytest.mark.gui
+def test_show_vfilm_3d_preview_and_rotation(qtbot) -> None:
+    """V 形薄膜 3D 预览：等轴测投影模式 + 视角旋转重投影不崩溃."""
+    view = ResultView()
+    qtbot.addWidget(view)
+    view.show()
+    bundle = nodes.build_vfilm_resistor({}, {"n_lead": 2, "n_diag": 3, "n_width": 2, "n_sub": 1})
+    view.show_mesh(bundle)
+    assert view._is3d  # 3D 坐标进入投影模式
+    assert "拖拽旋转视角" in view._summary.text()
+    view._azim = 120.0  # 模拟拖拽旋转后的新视角
+    view._elev = -30.0
+    view._rerender_3d()  # 预览态重投影（走 show_mesh）
+    assert view._is3d
+    assert view._plot.getPlotItem().listDataItems()
+
+
+@pytest.mark.gui
+def test_show_et_transient_views_and_scalar_anim(qtbot) -> None:
+    """瞬态电-热解：三视图 + 温度云图标量帧动画（3D 深度排序散点）."""
+    view = ResultView()
+    qtbot.addWidget(view)
+    view.show()
+    bundle = nodes.build_vfilm_resistor({}, {"n_lead": 2, "n_diag": 3, "n_width": 2, "n_sub": 1})
+    solution = nodes.run_electrothermal_transient({"model": bundle}, {"n_steps": 3})
+    view.show_solution(solution)
+    assert view._view_combo.count() == 3
+    assert view._view_combo.itemText(0) == "温度云图"
+    assert view._view_combo.itemText(1) == "电压云图"
+    assert view._view_combo.itemText(2) == "温度时程曲线"
+    # 标量帧动画：位移帧互斥清空、默认末帧、控制行显示
+    assert view._scalar_frames and not view._frames
+    assert len(view._scalar_frames) == 4  # 步数 + 1（含 t=0 初始帧）
+    assert view._frame_index == 3
+    assert view._frame_slider.isVisible()
+    assert view._frame_label.text().startswith("t = ")
+    assert view._colorbar.isVisible()  # 温度场绑定标尺
+    view._on_play_toggled()  # 末帧回绕，从首帧播放
+    assert view._anim_timer.isActive()
+    assert view._frame_index == 0
+    view._on_anim_tick()  # 标量帧推进
+    assert view._frame_index == 1
+    view._on_play_toggled()  # 暂停
+    assert not view._anim_timer.isActive()
+    view._frame_slider.setValue(3)  # 拖回末帧
+    assert view._frame_index == 3
+    view._view_combo.setCurrentIndex(1)  # 电压云图（静态场）
+    assert view._plot.getPlotItem().listDataItems()
+    assert not view._frame_slider.isVisible()
+    view._view_combo.setCurrentIndex(2)  # 温度时程曲线
+    assert "热点峰值" in view._summary.text()
+    assert not view._colorbar.isVisible()
+    view._view_combo.setCurrentIndex(0)  # 切回温度云图动画
+    assert view._frame_slider.isVisible()
+    assert len(view._scalar_frames) == 4
+
+
+@pytest.mark.gui
 def test_show_error_and_clear(qtbot) -> None:
     """错误着色与清空."""
     view = ResultView()

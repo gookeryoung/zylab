@@ -1,0 +1,64 @@
+{
+  "id": "thermal.joule_plate_2d",
+  "name": "通电加热板电-热耦合分析",
+  "discipline": "thermal",
+  "description": "Q4 平面板左右电极通电，Joule 热顺序耦合稳态温度场；底边恒温、其余三边对流散热，输出温度/电压云图。",
+  "tags": [
+    "电-热",
+    "稳态"
+  ],
+  "nodes": [
+    {
+      "id": "model",
+      "type": "example.joule_plate_2d",
+      "params": {},
+      "inputs": {}
+    },
+    {
+      "id": "solve",
+      "type": "analysis.electrothermal",
+      "params": {},
+      "inputs": {
+        "model": "model.model"
+      }
+    }
+  ],
+  "ui": {
+    "param_groups": [
+      {
+        "title": "几何与网格",
+        "params": [
+          "model.length",
+          "model.height",
+          "model.nx",
+          "model.ny"
+        ]
+      },
+      {
+        "title": "材料与厚度",
+        "params": [
+          "model.electric_sigma",
+          "model.thermal_k",
+          "model.thickness"
+        ]
+      },
+      {
+        "title": "电学边界",
+        "params": [
+          "model.voltage"
+        ]
+      },
+      {
+        "title": "热边界",
+        "params": [
+          "model.t_base",
+          "model.h_conv",
+          "model.t_ambient"
+        ]
+      }
+    ],
+    "results": [
+      "solve"
+    ]
+  }
+}

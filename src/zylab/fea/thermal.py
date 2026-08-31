@@ -29,22 +29,28 @@ __all__ = ["Convection", "ThermalCase", "ThermalSolution", "solve_thermal"]
 
 @dataclass(frozen=True)
 class Convection:
-    """边界对流（Robin）：沿节点折线逐段施加 ``h(T - T∞)``.
+    """边界对流（Robin）：2D 沿节点折线逐段施加，3D 沿四边形面片施加 ``h(T - T∞)``.
 
     Attributes:
-        nodes: 边界节点索引序列（沿边连续排列）。
+        nodes: 边界节点索引序列（沿边连续排列，2D 折线口径）。
         h_coeff: 对流换热系数（W/mm²·K，> 0）。
         t_ambient: 环境温度（K 或 °C，与给定温度同基准）。
+        faces: 四边形面片节点组（3D 网格口径，每组恰 4 个节点，
+            HEX8 边界面按逆时针（从域外看）排列）。
     """
 
-    nodes: tuple[int, ...]
-    h_coeff: float
-    t_ambient: float
+    nodes: tuple[int, ...] = ()
+    h_coeff: float = 0.0
+    t_ambient: float = 0.0
+    faces: tuple[tuple[int, int, int, int], ...] = ()
 
     def __post_init__(self) -> None:
         """校验对流参数."""
-        if len(self.nodes) < 2:
-            raise MeshError("对流边界至少需要 2 个节点")
+        if len(self.nodes) < 2 and not self.faces:
+            raise MeshError("对流边界至少需要 2 个节点或 1 个四边形面片")
+        for face in self.faces:
+            if len(face) != 4:
+                raise MeshError(f"对流面片须为 4 节点四边形，实际 {len(face)} 节点")
         if self.h_coeff <= 0.0:
             raise MeshError(f"对流换热系数须为正，实际 h={self.h_coeff}")
 
@@ -69,7 +75,7 @@ class ThermalCase:
             if not 0 <= item.node < mesh.n_nodes:
                 raise MeshError(f"热学边界引用节点 {item.node} 越界（共 {mesh.n_nodes} 节点）")
         for convection in self.convections:
-            for node in convection.nodes:
+            for node in (*convection.nodes, *(n for face in convection.faces for n in face)):
                 if not 0 <= node < mesh.n_nodes:
                     raise MeshError(f"对流边界引用节点 {node} 越界（共 {mesh.n_nodes} 节点）")
 
@@ -109,9 +115,9 @@ def solve_thermal(  # noqa: PLR0913  模型四要素 + 工况/附加热载荷/�
     """稳态热传导分析主流程.
 
     Args:
-        mesh: 网格（v1 限 2D 连续体 TRIA3/QUAD4）。
+        mesh: 网格（2D 连续体 TRIA3/QUAD4，或 3D 六面体 HEX8）。
         materials: 传导材料表（ElementBlock.material 索引引用）。
-        sections: 截面表（平面单元取厚度）。
+        sections: 截面表（平面单元取厚度，HEX8 忽略）。
         case: 热学工况（给定温度 + 热源 + 对流）。
         extra_heat: 附加节点热载荷（如 Joule 热一致节点载荷），与 case 热源叠加。
         report: 进度回调 ``(progress, message)``（进程执行器自动注入）。
@@ -156,12 +162,70 @@ def solve_thermal(  # noqa: PLR0913  模型四要素 + 工况/附加热载荷/�
     return ThermalSolution(
         mesh=mesh,
         temperatures=t,
-        element_gradients=np.concatenate(gradients) if gradients else np.empty((0, 2)),
+        element_gradients=np.concatenate(gradients) if gradients else np.empty((0, mesh.dim)),
         element_heat_flux=np.concatenate(fluxes) if fluxes else np.empty(0),
         t_min=float(t.min()),
         t_max=float(t.max()),
         convection_heat=convection_heat,
     )
+
+
+#: 对流面片 2×2 高斯点（与 conduction 单元积分同阶）
+_FACE_GAUSS = (1.0 / np.sqrt(3.0), -1.0 / np.sqrt(3.0))
+
+
+def _face_shape_values(xi: float, eta: float) -> np.ndarray:
+    """四边形面片形函数值 ``(4,)``（节点序：左下/右下/右上/左上）."""
+    return 0.25 * np.array(
+        [
+            (1.0 - xi) * (1.0 - eta),
+            (1.0 + xi) * (1.0 - eta),
+            (1.0 + xi) * (1.0 + eta),
+            (1.0 - xi) * (1.0 + eta),
+        ]
+    )
+
+
+def _face_shape_derivs(xi: float, eta: float) -> np.ndarray:
+    """四边形面片形函数对自然坐标的导数 ``(2, 4)``."""
+    return 0.25 * np.array(
+        [
+            [-(1.0 - eta), (1.0 - eta), (1.0 + eta), -(1.0 + eta)],
+            [-(1.0 - xi), -(1.0 + xi), (1.0 + xi), (1.0 - xi)],
+        ]
+    )
+
+
+def _face_convection_terms(coords: np.ndarray, h: float, t_inf: float) -> tuple[np.ndarray, np.ndarray]:
+    """单个四边形面片的一致对流刚度 ``(4,4)`` 与载荷 ``(4,)``（2×2 高斯）.
+
+    :param coords: 面片节点坐标 ``(4, 3)``。
+    :param h: 对流换热系数（W/mm²·K）。
+    :param t_inf: 环境温度。
+    """
+    ke = np.zeros((4, 4))
+    fe = np.zeros(4)
+    for xi in _FACE_GAUSS:
+        for eta in _FACE_GAUSS:
+            dn = _face_shape_derivs(xi, eta)
+            jac = dn @ coords
+            det = float(np.linalg.norm(np.cross(jac[0], jac[1])))
+            if det <= 0.0:
+                raise MeshError("对流面片退化（面积接近零）")
+            shape = _face_shape_values(xi, eta)
+            ke += h * det * np.outer(shape, shape)
+            fe += h * t_inf * det * shape
+    return ke, fe
+
+
+def _face_area(coords: np.ndarray) -> float:
+    """四边形面片面积（2×2 高斯 |detJ| 求和）."""
+    area = 0.0
+    for xi in _FACE_GAUSS:
+        for eta in _FACE_GAUSS:
+            jac = _face_shape_derivs(xi, eta) @ coords
+            area += float(np.linalg.norm(np.cross(jac[0], jac[1])))
+    return area
 
 
 def _apply_convections(
@@ -170,7 +234,11 @@ def _apply_convections(
     stiffness: csr_matrix,
     force: np.ndarray,
 ) -> tuple[csr_matrix, np.ndarray]:
-    """对流边界折入刚度与载荷：段级 ``h L/6 [2,1;1,2]`` 与 ``h T∞ L/2 [1,1]``."""
+    """对流边界折入刚度与载荷.
+
+    2D 折线：段级 ``h L/6 [2,1;1,2]`` 与 ``h T∞ L/2 [1,1]``；
+    3D 面片：``∫ h NᵀN dS`` 与 ``∫ h T∞ N dS``（2×2 高斯）。
+    """
     if not case.convections:
         return stiffness, force
     rows: list[int] = []
@@ -191,19 +259,33 @@ def _apply_convections(
                     rows.append(node_i)
                     cols.append(node_j)
                     values.append(float(edge_k[local_i, local_j]))
-    # 段级贡献以 COO 累加折入原 CSR
+        for face in convection.faces:
+            face_k, face_f = _face_convection_terms(
+                mesh.coords[np.asarray(face)], convection.h_coeff, convection.t_ambient
+            )
+            for local_i, node_i in enumerate(face):
+                load[node_i] += face_f[local_i]
+                for local_j, node_j in enumerate(face):
+                    rows.append(node_i)
+                    cols.append(node_j)
+                    values.append(float(face_k[local_i, local_j]))
+    # 段级/面片级贡献以 COO 累加折入原 CSR
     extra = csr_matrix((values, (rows, cols)), shape=stiffness.shape)
     return stiffness + extra, load
 
 
 def _convection_total(mesh: Mesh, case: ThermalCase, temperatures: np.ndarray) -> float:
-    """对流边界总换热量（正 = 向环境散热）：逐段 h·(T_avg - T∞)·L."""
+    """对流边界总换热量（正 = 向环境散热）：逐段 ``h(T_avg-T∞)L`` 或逐面片 ``h(T_avg-T∞)A``."""
     total = 0.0
     for convection in case.convections:
         for here, there in zip(convection.nodes[:-1], convection.nodes[1:]):
             length = float(np.linalg.norm(mesh.coords[there] - mesh.coords[here]))
             t_avg = 0.5 * (temperatures[here] + temperatures[there])
             total += convection.h_coeff * (t_avg - convection.t_ambient) * length
+        for face in convection.faces:
+            area = _face_area(mesh.coords[np.asarray(face)])
+            t_avg = float(np.mean(temperatures[np.asarray(face)]))
+            total += convection.h_coeff * (t_avg - convection.t_ambient) * area
     return total
 
 

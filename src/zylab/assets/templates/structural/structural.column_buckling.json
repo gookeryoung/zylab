@@ -1,0 +1,59 @@
+{
+  "id": "structural.column_buckling",
+  "name": "压杆稳定（屈曲）分析",
+  "discipline": "structural",
+  "description": "BEAM2 悬臂柱顶部轴压，输出各阶屈曲载荷因子与失稳模态（一阶 ≈ π²EI/4L²）。",
+  "tags": [
+    "稳定性",
+    "基准"
+  ],
+  "nodes": [
+    {
+      "id": "model",
+      "type": "example.column_beam2",
+      "params": {},
+      "inputs": {}
+    },
+    {
+      "id": "solve",
+      "type": "analysis.buckling",
+      "params": {},
+      "inputs": {
+        "model": "model.model"
+      }
+    }
+  ],
+  "ui": {
+    "param_groups": [
+      {
+        "title": "几何与网格",
+        "params": [
+          "model.height",
+          "model.n_elem"
+        ]
+      },
+      {
+        "title": "截面",
+        "params": [
+          "model.area",
+          "model.inertia"
+        ]
+      },
+      {
+        "title": "载荷",
+        "params": [
+          "model.tip_load"
+        ]
+      },
+      {
+        "title": "分析",
+        "params": [
+          "solve.n_modes"
+        ]
+      }
+    ],
+    "results": [
+      "solve"
+    ]
+  }
+}
