@@ -124,10 +124,20 @@ class ColorBarWidget(QWidget):
 
     def _fit_width(self) -> None:
         """宽度按最宽刻度文本自适应（上限截断），避免文字被绘图区遮挡."""
-        metrics = QFontMetrics(self.font())
+        self._ensure_width(QFontMetrics(self.font()))
+
+    def _ensure_width(self, metrics: QFontMetrics) -> None:
+        """按给定字体度量确保宽度容纳刻度全文（超上限封顶省略）.
+
+        字体度量晚于 :meth:`set_field` 生效时（如样式表字体在 polish 后
+        才应用），绘制期以实际画笔字体再补偿一次，保证大数值刻度
+        （如 ``3.172e+04``）全文显示而非被绘图区遮挡。
+        """
+        text_x = self._PAD + self._BAR_W + self._PAD
         widest = max(metrics.horizontalAdvance(t) for t in self._labels())
-        text_w = min(widest, self._MAX_LABEL_W)
-        self.setFixedWidth(self._PAD + self._BAR_W + self._PAD + text_w + self._PAD)
+        needed = text_x + widest + self._PAD
+        if needed > self.width():
+            self.setFixedWidth(min(needed, text_x + self._MAX_LABEL_W + self._PAD))
 
     def paintEvent(self, event) -> None:  # Qt 命名约定
         """绘制竖向色带（64 段）、三档刻度值与单位后缀."""
@@ -155,14 +165,10 @@ class ColorBarWidget(QWidget):
         metrics = QFontMetrics(painter.font())
         text_h = metrics.height()
         text_x = bar_x + self._BAR_W + self._PAD
+        # 字体度量晚于宽度自适应生效时按实际画笔字体补偿一次宽度
+        self._ensure_width(metrics)
         text_w = self.width() - text_x - self._PAD
         labels = self._labels()
-        # 字体度量晚于宽度自适应生效时（如样式表 13px 在 set_field 之后 polish）
-        # 在此按实际画笔字体补偿一次宽度，保证大数值刻度全文显示而非省略截断
-        widest = max(metrics.horizontalAdvance(t) for t in labels)
-        if text_x + widest + self._PAD > self.width():
-            self.setFixedWidth(min(text_x + widest + self._PAD, text_x + self._MAX_LABEL_W + self._PAD))
-            text_w = self.width() - text_x - self._PAD
         painter.setPen(QColor(pal.text_secondary))
         ys = (self._PAD, (self.height() - text_h) // 2, self.height() - self._PAD - text_h)
         for y, text in zip(ys, labels):
