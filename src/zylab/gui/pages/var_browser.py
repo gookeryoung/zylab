@@ -23,6 +23,8 @@ from ..qt_compat import (
     QDialog,
     QDialogButtonBox,
     QFont,
+    QFrame,
+    QGridLayout,
     QHBoxLayout,
     QLabel,
     QModelIndex,
@@ -200,21 +202,39 @@ class VarDetailDialog(QDialog):
 
     # ------------------------------------------------------------ 摘要与构建
 
-    def _build_summary(self) -> QLabel:
-        """摘要行：名称/类型/形状/元素类型/字节数 + 数值统计."""
+    def _build_summary(self) -> QWidget:
+        """摘要区：属性两列对齐网格（键次级色 + 值等宽字体），数值统计以分隔线分组续排."""
         info = self._info
-        parts = [f"名称 {info.name}", f"类型 {info.type_name}"]
+        props: list[tuple[str, str]] = [("名称", info.name), ("类型", info.type_name)]
         if info.shape:
-            parts.append(f"形状 {info.shape}")
+            props.append(("形状", info.shape))
         if info.dtype:
-            parts.append(f"元素类型 {info.dtype}")
-        parts.append(f"字节数 {info.nbytes}")
-        stats = _stats_text(self._value)
+            props.append(("元素类型", info.dtype))
+        props.append(("字节数", str(info.nbytes)))
+        panel = QWidget()
+        grid = QGridLayout(panel)
+        grid.setContentsMargins(0, 0, 0, 0)
+        grid.setVerticalSpacing(4)
+        grid.setHorizontalSpacing(theme.SPACING_LG)
+        for row, (key, value) in enumerate(props):
+            self._add_summary_row(grid, row, key, value)
+        stats = _stats_pairs(self._value)
         if stats:
-            parts.append(stats)
-        label = QLabel(" · ".join(parts))
-        label.setWordWrap(True)
-        return label
+            divider = QFrame(objectName="summaryDivider")
+            divider.setFrameShape(QFrame.HLine)
+            grid.addWidget(divider, len(props), 0, 1, 2)
+            for offset, (key, value) in enumerate(stats, start=1):
+                self._add_summary_row(grid, len(props) + offset, key, value)
+        return panel
+
+    @staticmethod
+    def _add_summary_row(grid: QGridLayout, row: int, key: str, value: str) -> None:
+        """摘要网格追加一行：键次级色左对齐，值等宽字体（数值/形状列对齐整洁）."""
+        grid.addWidget(QLabel(key, objectName="summaryKey"), row, 0)
+        value_label = QLabel(value, objectName="summaryValue")
+        value_label.setFont(mono_font())
+        value_label.setTextInteractionFlags(Qt.TextSelectableByMouse)
+        grid.addWidget(value_label, row, 1)
 
     def _build_slice_bar(self) -> QWidget:
         """多维数组前置维索引条（每维一个微调框，改动即刷新切片）."""
@@ -287,13 +307,17 @@ class VarDetailDialog(QDialog):
         self.setWindowTitle(f"{base}（仅显示前 {shown_rows} 行 × {shown_cols} 列）" if truncated else base)
 
 
-def _stats_text(value: object) -> str:
-    """数值 ndarray 的统计摘要（最小/最大/均值，空集或非数值返回空串）."""
+def _stats_pairs(value: object) -> list[tuple[str, str]]:
+    """数值 ndarray 的统计键值对（最小/最大/均值，空集或非数值返回空表）."""
     if not isinstance(value, np.ndarray) or value.size == 0:
-        return ""
+        return []
     if not np.issubdtype(value.dtype, np.number):
-        return ""
+        return []
     finite = value[np.isfinite(value)]  # 全 NaN/Inf 时统计降级为空
     if finite.size == 0:
-        return ""
-    return f"最小 {_fmt_cell(np.min(finite))} · 最大 {_fmt_cell(np.max(finite))} · 均值 {_fmt_cell(np.mean(finite))}"
+        return []
+    return [
+        ("最小", _fmt_cell(float(np.min(finite)))),
+        ("最大", _fmt_cell(float(np.max(finite)))),
+        ("均值", _fmt_cell(float(np.mean(finite)))),
+    ]

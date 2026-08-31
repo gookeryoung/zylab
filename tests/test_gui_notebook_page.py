@@ -530,6 +530,16 @@ def test_var_table_model_tags_role(qtbot) -> None:
 # ------------------------------------------------ 变量详情对话框（MATLAB 风格）
 
 
+def _summary_rows(dialog) -> tuple[list[str], list[str]]:
+    """取详情对话框摘要网格的键列与值列文本（按行序）."""
+    from zylab.gui.qt_compat import QLabel
+
+    panel = dialog._build_summary()
+    keys = [lbl.text() for lbl in panel.findChildren(QLabel) if lbl.objectName() == "summaryKey"]
+    values = [lbl.text() for lbl in panel.findChildren(QLabel) if lbl.objectName() == "summaryValue"]
+    return keys, values
+
+
 @pytest.mark.gui
 def test_var_detail_dialog_matrix_shapes(qtbot) -> None:
     """详情对话框：一维列向量/二维矩阵/多维切片导航均正确呈现."""
@@ -561,8 +571,11 @@ def test_var_detail_dialog_matrix_shapes(qtbot) -> None:
     assert d3._table.item(0, 0).text() == "0"
     d3._ndim_spinners[0].setValue(1)
     assert d3._table.item(0, 0).text() == "4"
-    # 摘要含统计（最小/最大/均值）
-    assert "最大 7" in d3._build_summary().text()
+    # 摘要网格：属性与统计键值对齐（最小/最大/均值）
+    keys, values = _summary_rows(d3)
+    for key in ("名称", "类型", "形状", "元素类型", "字节数", "最小", "最大", "均值"):
+        assert key in keys
+    assert values[keys.index("最大")] == "7"
 
 
 @pytest.mark.gui
@@ -574,7 +587,8 @@ def test_var_detail_dialog_non_array(qtbot) -> None:
     info = VarInfo(name="s", type_name="str", shape="", dtype="", nbytes=52, preview="'hello'")
     dialog = VarDetailDialog(info, "hello")
     qtbot.addWidget(dialog)
-    assert "hello" in dialog._build_summary().text() or dialog._build_summary().text().startswith("名称 s")
+    keys, values = _summary_rows(dialog)
+    assert values[keys.index("名称")] == "s"
     # 超大数组截断保护（200 行上限）
     import numpy as np
 
@@ -588,15 +602,17 @@ def test_var_detail_dialog_non_array(qtbot) -> None:
     d_long = VarDetailDialog(info_long, "x" * 3000)
     qtbot.addWidget(d_long)
     assert "超长截断" in d_long._build_text_view().text()
-    # 非数值数组与全 NaN：统计降级为空，不抛错
+    # 非数值数组与全 NaN：统计降级为空（键列不含统计项），不抛错
     info_str = VarInfo(name="w", type_name="ndarray", shape="2", dtype="<U3", nbytes=24, preview="")
     d_str = VarDetailDialog(info_str, np.array(["ab", "cd"]))
     qtbot.addWidget(d_str)
-    assert "最小" not in d_str._build_summary().text()
+    keys, _ = _summary_rows(d_str)
+    assert "最小" not in keys
     info_nan = VarInfo(name="nn", type_name="ndarray", shape="2", dtype="float64", nbytes=16, preview="")
     d_nan = VarDetailDialog(info_nan, np.array([np.nan, np.nan]))
     qtbot.addWidget(d_nan)
-    assert "最小" not in d_nan._build_summary().text()
+    keys, _ = _summary_rows(d_nan)
+    assert "最小" not in keys
 
 
 @pytest.mark.gui

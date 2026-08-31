@@ -89,13 +89,24 @@ QListWidget#paletteList {
 }
 QListWidget#paletteList::item {
     border-radius: ${RADIUS_SM};
-    margin: 1px 0;
+    margin: 2px 6px;
 }
 QListWidget#paletteList::item:selected {
     background-color: ${QSS_SELECTION_BG};
 }
 QLabel#paletteTitle { color: ${QSS_TEXT_PRIMARY}; }
 QLabel#paletteHint { color: ${QSS_TEXT_SECONDARY}; }
+/* 行标签最小高度兜底：行高在样式表字体 polish 前度量时防单行文字被裁剪 */
+QLabel#paletteTitle, QLabel#paletteHint { min-height: 20px; }
+
+/* 变量详情摘要网格（键次级色，值等宽字体对齐；统计组前细分隔线） */
+QLabel#summaryKey { color: ${QSS_TEXT_SECONDARY}; }
+QLabel#summaryValue { color: ${QSS_TEXT_PRIMARY}; }
+QFrame#summaryDivider {
+    border: none;
+    border-top: 1px solid ${QSS_BORDER};
+    max-height: 1px;
+}
 
 /* ------------------------------------------------ 侧边栏 */
 QListWidget#sidebar {

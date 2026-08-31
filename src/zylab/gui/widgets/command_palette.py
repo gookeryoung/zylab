@@ -30,6 +30,10 @@ from ..qt_compat import (
 
 __all__ = ["Command", "CommandPalette"]
 
+#: 列表行兜底高度（命令行项与主题行共用）：需容纳样式表字体行高 + 上下边距，
+# 兜底值按 polish 后 13px 字体（行高约 18px）+ 12px 垂直边距取整
+_ROW_H = 34
+
 
 @dataclass(frozen=True)
 class Command:
@@ -154,13 +158,15 @@ class CommandPalette(QDialog):
         item.setData(Qt.UserRole, ("command", command.id))
         row = QWidget()
         layout = QHBoxLayout(row)
-        layout.setContentsMargins(8, 4, 8, 4)
+        layout.setContentsMargins(8, 6, 8, 6)
         layout.setSpacing(8)
         layout.addWidget(QLabel(command.title, objectName="paletteTitle"))
         layout.addStretch()
         if command.shortcut:
             layout.addWidget(QLabel(command.shortcut, objectName="paletteHint"))
-        item.setSizeHint(row.sizeHint())
+        hint = row.sizeHint()
+        hint.setHeight(max(hint.height(), _ROW_H))  # 兜底行高，防样式表字体度量偏小致行间遮挡
+        item.setSizeHint(hint)
         self._list.addItem(item)
         self._list.setItemWidget(item, row)
 
@@ -177,7 +183,11 @@ class CommandPalette(QDialog):
                 continue
             if name == current:
                 target = self._list.count()
-            QListWidgetItem(text, self._list).setData(Qt.UserRole, ("theme", name))
+            item = QListWidgetItem(text, self._list)
+            item.setData(Qt.UserRole, ("theme", name))
+            hint = item.sizeHint()
+            hint.setHeight(max(hint.height(), _ROW_H))  # 与命令行项统一的舒适行高
+            item.setSizeHint(hint)
         # 静默选中当前主题：导航预览从当前态开始，无闪烁
         self._list.blockSignals(True)
         self._list.setCurrentRow(target)
