@@ -42,6 +42,14 @@ def page(qtbot, kernel: ReplKernel, bus: EventBus) -> NotebookPage:
     return widget
 
 
+@pytest.fixture
+def status_messages(page: NotebookPage) -> list[str]:
+    """捕获笔记本页状态消息（主窗口状态栏承接显示）."""
+    seen: list[str] = []
+    page.status_message.connect(seen.append)
+    return seen
+
+
 @pytest.mark.gui
 def test_initial_page_has_welcome_cell(page: NotebookPage) -> None:
     """新建页面应含一个演示首格，未执行无输出."""
@@ -186,14 +194,14 @@ def test_save_and_reload_roundtrip(page: NotebookPage, tmp_path: Path) -> None:
 
 
 @pytest.mark.gui
-def test_open_invalid_file_keeps_current(page: NotebookPage, tmp_path: Path) -> None:
-    """打开损坏文件应置状态提示且不破坏当前文档."""
+def test_open_invalid_file_keeps_current(page: NotebookPage, status_messages: list[str], tmp_path: Path) -> None:
+    """打开损坏文件应发状态消息且不破坏当前文档."""
     bad = tmp_path / "bad.znbk"
     bad.write_text("{ not json", encoding="utf-8")
     source_before = page._notebook.cells[0].source
     page.open_path(bad)
     assert page._notebook.cells[0].source == source_before
-    assert "打开失败" in page._status_label.text()
+    assert any("打开失败" in m for m in status_messages)
 
 
 @pytest.mark.gui
@@ -375,7 +383,9 @@ def test_cell_action_move(page: NotebookPage) -> None:
 
 
 @pytest.mark.gui
-def test_restart_kernel_resets_outputs(page: NotebookPage, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_restart_kernel_resets_outputs(
+    page: NotebookPage, status_messages: list[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
     """确认重启后：变量清空、单元输出失效、计数归零、状态提示."""
     from zylab.gui.qt_compat import QMessageBox
 
@@ -388,7 +398,7 @@ def test_restart_kernel_resets_outputs(page: NotebookPage, monkeypatch: pytest.M
     assert page._widgets[0].cell.outputs == []
     assert "v" not in page._kernel.namespace
     assert page._kernel.execution_count == 0
-    assert "内核已重启" in page._status_label.text()
+    assert any("内核已重启" in m for m in status_messages)
 
 
 @pytest.mark.gui
@@ -409,12 +419,17 @@ def test_restart_kernel_cancel_keeps_state(page: NotebookPage, monkeypatch: pyte
 
 @pytest.mark.gui
 def test_toolbar_only_document_level_buttons(page: NotebookPage) -> None:
-    """工具栏仅保留文档级按钮（单元级操作在悬停工具条）."""
-    names = {
-        b.text()
-        for b in (page._btn_new, page._btn_open, page._btn_save, page._btn_run_all, page._btn_restart, page._btn_vars)
-    }
-    assert names == {"新建", "打开", "保存", "全部运行", "重启内核", "变量"}
+    """工具栏仅保留文档级按钮：纯图标（空文字）+ tooltip 承载语义（单元级操作在悬停工具条）."""
+    buttons = (page._btn_new, page._btn_open, page._btn_save, page._btn_run_all, page._btn_restart)
+    tooltips = {b.toolTip() for b in buttons}
+    assert all(b.objectName() == "toolBtn" and b.text() == "" and b.toolTip() for b in buttons)
+    assert "新建笔记本" in tooltips
+    assert "打开笔记本 (.znbk)" in tooltips
+    assert "保存笔记本 (Ctrl+S)，未保存过自动弹出另存对话框" in tooltips
+    # 变量按钮独立分组：checkable 切换侧栏，图标着色随选中态
+    assert page._btn_vars.objectName() == "notebookVarToggle"
+    assert page._btn_vars.isCheckable()
+    assert page._btn_vars.text() == ""
     assert not hasattr(page, "_btn_insert")
     assert not hasattr(page, "_btn_delete")
 
@@ -459,15 +474,18 @@ def test_save_without_path_goes_dialog(page: NotebookPage, tmp_path: Path, monke
 
 
 @pytest.mark.gui
-def test_save_to_failure_sets_status(page: NotebookPage, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """保存失败应置状态提示并返回 False."""
+def test_save_to_failure_sets_status(
+    page: NotebookPage, status_messages: list[str], tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """保存失败应发状态消息并返回 False."""
     from zylab.sci import NotebookError
 
-    monkeypatch.setattr(
-        "zylab.gui.pages.notebook_page.save_notebook", lambda *_a, **_k: (_ for _ in ()).throw(NotebookError("boom"))
-    )
+    def _boom(*_a, **_k):
+        raise NotebookError("boom")
+
+    monkeypatch.setattr("zylab.gui.pages.notebook_page.save_notebook", _boom)
     assert page._save_to(tmp_path / "x.znbk") is False
-    assert "保存失败" in page._status_label.text()
+    assert any("保存失败" in m for m in status_messages)
 
 
 @pytest.mark.gui

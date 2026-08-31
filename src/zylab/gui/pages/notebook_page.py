@@ -36,6 +36,7 @@ from zylab.sci import (
 
 from .. import theme
 from ..highlight import PythonHighlighter
+from ..icons import nav_icon
 from ..qt_compat import (
     QAbstractTableModel,
     QColor,
@@ -53,6 +54,7 @@ from ..qt_compat import (
     QPushButton,
     QScrollArea,
     QShortcut,
+    QSize,
     QSplitter,
     Qt,
     QTableView,
@@ -340,10 +342,19 @@ class CellWidget(QFrame):
         self._output_layout.addWidget(label)
 
     def _add_plot(self, out: PlotOutput) -> None:
-        """绘图输出：内嵌 pyqtgraph（多 series 同图、主题色循环）."""
+        """绘图输出：内嵌 pyqtgraph（多 series 同图、主题色循环、轴色随主题）."""
         pal = theme.current_palette()
         plot = pg.PlotWidget(background=pal.bg_app, parent=self)
         plot.showGrid(x=True, y=True, alpha=0.3)
+        # 轴线/刻度/文字随主题前景色（深色主题下默认黑不可见）
+        axis_pen = pg.mkPen(pal.border_strong, width=1)
+        for axis_name in ("bottom", "left"):
+            axis = plot.getAxis(axis_name)
+            axis.setPen(axis_pen)
+            axis.setTextPen(pg.mkPen(pal.text_primary, width=1))
+        legend = plot.addLegend(offset=(8, 8)) if any(s.label for s in out.series) else None
+        if legend is not None:
+            legend.setLabelTextColor(pal.text_primary)
         plot.setMinimumHeight(260)
         for index, series in enumerate(out.series):
             color = getattr(pal, _CURVE_KEYS[index % len(_CURVE_KEYS)])
@@ -354,18 +365,19 @@ class CellWidget(QFrame):
                 name=series.label or None,
             )
         if out.title:
-            plot.setTitle(out.title)
+            plot.setTitle(out.title, color=pal.text_primary)
         if out.xlabel:
             plot.setLabel("bottom", out.xlabel)
         if out.ylabel:
             plot.setLabel("left", out.ylabel)
-        if any(s.label for s in out.series):
-            plot.addLegend()
         self._output_layout.addWidget(plot)
 
 
 class NotebookPage(QWidget):
     """笔记本页：单元流 + 工具栏 + 右侧变量侧栏（.znbk 打开/保存）."""
+
+    #: 状态提示（打开/保存/重启结果等，主窗口状态栏承接显示）
+    status_message = Signal(str)
 
     def __init__(self, kernel: ReplKernel, bus: EventBus, parent: QWidget | None = None) -> None:
         """初始化笔记本页.
@@ -415,6 +427,13 @@ class NotebookPage(QWidget):
     def refresh_vars(self) -> None:
         """按命名空间当前状态刷新变量浏览器."""
         self._var_model.set_vars(whos(self._kernel.namespace, self._kernel.builtin_names))
+
+    def refresh_theme(self) -> None:
+        """主题切换后重绘工具栏图标与全部单元输出（内嵌绘图随主题换色）."""
+        self._refresh_tool_icons()
+        self._refresh_var_icon()
+        for widget in self._widgets:
+            widget.render_outputs()
 
     def restart_kernel(self) -> None:
         """重启内核：确认后清空命名空间/计数并失效全部单元输出（jupyter Restart Kernel 语义）."""
@@ -532,38 +551,39 @@ class NotebookPage(QWidget):
 
     def _build_ui(self) -> None:
         """组装文档级工具栏 + 单元流滚动区 + 可折叠变量侧栏 + 页面级快捷键."""
-        # 文档级操作（单元级操作在每格悬停工具条，jupyter 语义两极分化）
+        # 文档级操作（单元级操作在每格悬停工具条，jupyter 语义两极分化）；
+        # 纯图标按钮（tooltip 承载语义），与分析页工具行同款规格
         bar = QHBoxLayout()
         bar.setSpacing(theme.SPACING_SM)
-        self._btn_new = QPushButton("新建")
-        self._btn_open = QPushButton("打开")
-        self._btn_save = QPushButton("保存")
+        icon_size = QSize(16, 16)
+        self._btn_new = QPushButton(objectName="toolBtn")
+        self._btn_new.setToolTip("新建笔记本")
+        self._btn_open = QPushButton(objectName="toolBtn")
+        self._btn_open.setToolTip("打开笔记本 (.znbk)")
+        self._btn_save = QPushButton(objectName="toolBtn")
         self._btn_save.setToolTip("保存笔记本 (Ctrl+S)，未保存过自动弹出另存对话框")
-        self._btn_run_all = QPushButton("全部运行")
-        self._btn_restart = QPushButton("重启内核")
-        self._btn_restart.setToolTip("清空全部变量与单元输出，执行计数归零")
-        self._btn_vars = QPushButton("变量", objectName="notebookVarToggle")
+        self._btn_run_all = QPushButton(objectName="toolBtn")
+        self._btn_run_all.setToolTip("全部运行（出错不中断）")
+        self._btn_restart = QPushButton(objectName="toolBtn")
+        self._btn_restart.setToolTip("重启内核：清空全部变量与单元输出，执行计数归零")
+        self._refresh_tool_icons()
+        for button in (self._btn_new, self._btn_open, self._btn_save, self._btn_run_all, self._btn_restart):
+            button.setIconSize(icon_size)
+            bar.addWidget(button)
+        bar.addStretch(1)
+        # 变量面板切换独立分组靠右（与其他文档操作区分，选中态主色高亮）
+        self._btn_vars = QPushButton(objectName="notebookVarToggle")
         self._btn_vars.setCheckable(True)
         self._btn_vars.setToolTip("切换变量面板显示 (Ctrl+Shift+V)")
-        for button in (
-            self._btn_new,
-            self._btn_open,
-            self._btn_save,
-            self._btn_run_all,
-            self._btn_restart,
-            self._btn_vars,
-        ):
-            bar.addWidget(button)
-        self._status_label = QLabel(objectName="notebookStatus")
-        self._status_label.setStyleSheet(f"color: {theme.current_palette().text_secondary};")
-        bar.addWidget(self._status_label)
-        bar.addStretch(1)
+        self._btn_vars.setIconSize(icon_size)
+        self._refresh_var_icon()
+        bar.addWidget(self._btn_vars)
         self._btn_new.clicked.connect(self._on_new)
         self._btn_open.clicked.connect(self._on_open)
         self._btn_save.clicked.connect(self._on_save)
         self._btn_run_all.clicked.connect(self.run_all)
         self._btn_restart.clicked.connect(self.restart_kernel)
-        self._btn_vars.toggled.connect(self._toggle_vars)
+        self._btn_vars.toggled.connect(self._on_vars_toggled)
 
         self._cells_host = QWidget()
         self._cells_layout = QVBoxLayout(self._cells_host)
@@ -665,9 +685,32 @@ class NotebookPage(QWidget):
         self._rebuild_cells()
         self._focus_index(max(0, min(self._current, len(self._widgets) - 1)))
 
+    def _on_vars_toggled(self, visible: bool) -> None:
+        """变量按钮切换：显示侧栏并联动图标强调色."""
+        self._toggle_vars(visible)
+        self._refresh_var_icon()
+
     def _toggle_vars(self, visible: bool) -> None:
         """切换变量侧栏显示（jupyterlab 侧栏收起/展开）."""
         self._var_view.setVisible(visible)
+
+    def _refresh_tool_icons(self) -> None:
+        """按当前主题重绘文档级工具按钮图标（单色剪影随按钮文字色着色）."""
+        pal = theme.current_palette()
+        for name, button in (
+            ("new", self._btn_new),
+            ("open_file", self._btn_open),
+            ("save", self._btn_save),
+            ("run_all", self._btn_run_all),
+            ("rerun", self._btn_restart),
+        ):
+            button.setIcon(nav_icon(name, pal.text_on_primary))
+
+    def _refresh_var_icon(self) -> None:
+        """变量面板切换按钮图标（checked 选中态用强调色）."""
+        pal = theme.current_palette()
+        color = pal.nav_accent if self._btn_vars.isChecked() else pal.text_on_primary
+        self._btn_vars.setIcon(nav_icon("variable", color))
 
     def _wrap_focus_in(self, widget: CellWidget, index: int):
         """包装编辑器 focusInEvent：记录当前焦点格并保留默认聚焦行为."""
@@ -716,8 +759,8 @@ class NotebookPage(QWidget):
         self._dirty = True
 
     def _set_status(self, text: str) -> None:
-        """工具栏尾部状态提示（打开/保存结果等轻量反馈，避免弹窗）."""
-        self._status_label.setText(text)
+        """状态提示经信号送主窗口状态栏显示（避免页面内挤占工具栏空间）."""
+        self.status_message.emit(text)
 
     def _on_new(self) -> None:
         """新建前保存询问."""

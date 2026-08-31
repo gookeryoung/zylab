@@ -123,6 +123,7 @@ class MainWindow(QMainWindow):
         apply_theme(QApplication.instance(), name)
         save_theme_name(default_data_dir(), name)
         self._refresh_sidebar_icons()
+        self._notebook_page.refresh_theme()
         self._studio_page.refresh_theme()
         self.statusBar().showMessage(f"主题已切换: {theme.current_palette().display_name}")
 
@@ -150,6 +151,8 @@ class MainWindow(QMainWindow):
         """连接导航与跨页信号."""
         self._sidebar.currentRowChanged.connect(self._stack.setCurrentIndex)
         self._sidebar.currentRowChanged.connect(lambda _row: self._refresh_sidebar_icons())
+        # 笔记本页状态提示（已打开/已保存/保存失败等）统一进主窗口状态栏
+        self._notebook_page.status_message.connect(self.statusBar().showMessage)
 
     def closeEvent(self, event) -> None:  # Qt 命名约定
         """关闭前询问保存笔记本，确认后终止后台求解执行器."""

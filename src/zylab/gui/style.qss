@@ -145,11 +145,15 @@ QLabel#notebookStatus {
     color: ${QSS_TEXT_SECONDARY};
     font-size: ${FONT_CAPTION};
 }
-/* 变量面板切换按钮：展开时主色高亮（active 状态语义） */
+/* 变量面板切换按钮（与 toolBtn 同规格纯图标；展开时主色高亮） */
+QPushButton#notebookVarToggle {
+    padding: 4px 10px;
+    min-height: 0;
+    min-width: 30px;
+}
 QPushButton#notebookVarToggle:checked {
-    background-color: ${QSS_PRIMARY};
-    color: ${QSS_PRIMARY_TEXT};
-    border: 1px solid ${QSS_PRIMARY};
+    background-color: ${QSS_PRIMARY_PRESSED};
+    border: 1px solid ${QSS_NAV_ACCENT};
 }
 
 /* ------------------------------------------------ 模板选择对话框 */
