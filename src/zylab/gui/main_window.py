@@ -14,13 +14,16 @@ from .icons import NAV_ICON_NAMES, nav_icon
 from .pages.notebook_page import NotebookPage
 from .pages.studio_page import StudioPage
 from .qt_compat import (
-    QComboBox,
+    QEvent,
     QFrame,
     QHBoxLayout,
+    QKeySequence,
     QLabel,
+    QLineEdit,
     QListWidget,
     QListWidgetItem,
     QMainWindow,
+    QShortcut,
     QSize,
     QSplitter,
     QStackedWidget,
@@ -28,6 +31,7 @@ from .qt_compat import (
     QVBoxLayout,
     QWidget,
 )
+from .widgets.command_palette import Command, CommandPalette
 
 __all__ = ["MainWindow"]
 
@@ -53,6 +57,7 @@ class MainWindow(QMainWindow):
         self._kernel = ReplKernel(self._bus)
 
         self._build_ui()
+        self._setup_command_palette()
         self._connect()
         self.statusBar().showMessage("就绪")
 
@@ -95,37 +100,39 @@ class MainWindow(QMainWindow):
         self.setCentralWidget(central)
 
     def _build_header(self) -> QFrame:
-        """构建头部条：左侧标题，右侧主题下拉与运行环境信息."""
+        """构建头部条：左侧标题 + 居中命令搜索框 + 右侧运行环境信息."""
         bar = QFrame(objectName="headerBar")
         layout = QHBoxLayout(bar)
         layout.setContentsMargins(theme.SPACING_MD, 0, theme.SPACING_MD, 0)
         layout.addWidget(QLabel("zylab", objectName="headerTitle"))
-        layout.addStretch()
-        self._theme_combo = QComboBox(objectName="headerThemeCombo")
-        self._theme_combo.setToolTip("选择界面主题")
-        for name in theme.THEMES:
-            self._theme_combo.addItem(theme.palette(name).display_name, name)
-        current = theme.current_palette().name
-        self._theme_combo.setCurrentIndex(list(theme.THEMES).index(current))
-        self._theme_combo.currentIndexChanged.connect(self._on_theme_selected)
-        layout.addWidget(self._theme_combo)
+        # 命令搜索框（VS Code 命令面板入口：点击或 Ctrl+Shift+P 弹出）
+        self._command_search = QLineEdit(objectName="commandSearch")
+        self._command_search.setReadOnly(True)
+        self._command_search.setPlaceholderText("搜索功能 (Ctrl+Shift+P)")
+        self._command_search.setFixedWidth(300)
+        self._command_search.setFixedHeight(26)
+        self._command_search.installEventFilter(self)
+        layout.addWidget(self._command_search, stretch=1, alignment=Qt.AlignHCenter)
         meta = QLabel(f"Python {platform.python_version()} · v{__version__}", objectName="headerMeta")
         layout.addWidget(meta)
         return bar
 
-    def _on_theme_selected(self, index: int) -> None:
-        """下拉选择主题后应用并持久化."""
+    def _set_theme(self, name: str, persist: bool) -> None:
+        """应用主题并刷新全部页面（persist 时持久化并提示状态栏）.
+
+        命令面板主题预览（persist=False）与确认（persist=True）共用；
+        预览只切样式不落盘，Esc 取消由面板发还原主题信号。
+        """
         from .qt_compat import QApplication
 
-        name = self._theme_combo.itemData(index)
-        if name == theme.current_palette().name:
-            return
-        apply_theme(QApplication.instance(), name)
-        save_theme_name(default_data_dir(), name)
+        if name != theme.current_palette().name:
+            apply_theme(QApplication.instance(), name)
         self._refresh_sidebar_icons()
         self._notebook_page.refresh_theme()
         self._studio_page.refresh_theme()
-        self.statusBar().showMessage(f"主题已切换: {theme.current_palette().display_name}")
+        if persist:
+            save_theme_name(default_data_dir(), name)
+            self.statusBar().showMessage(f"主题已切换: {theme.current_palette().display_name}")
 
     def _refresh_sidebar_icons(self) -> None:
         """按当前主题色重绘侧边栏图标（选中行用强调色）."""
@@ -153,6 +160,59 @@ class MainWindow(QMainWindow):
         self._sidebar.currentRowChanged.connect(lambda _row: self._refresh_sidebar_icons())
         # 笔记本页状态提示（已打开/已保存/保存失败等）统一进主窗口状态栏
         self._notebook_page.status_message.connect(self.statusBar().showMessage)
+
+    def _setup_command_palette(self) -> None:
+        """装配命令面板：注册全局命令 + Ctrl+Shift+P 快捷键."""
+        self._palette = CommandPalette(self)
+        self._palette.theme_previewed.connect(lambda name: self._set_theme(name, persist=False))
+        self._palette.theme_confirmed.connect(lambda name: self._set_theme(name, persist=True))
+        self._register_commands()
+        QShortcut(QKeySequence("Ctrl+Shift+P"), self, self._palette.open_commands)
+
+    def _register_commands(self) -> None:
+        """注册全局命令（页面导航 / 笔记本操作 / 主题切换）."""
+        page = self._notebook_page
+        register = self._palette.register
+        register(
+            Command(
+                "go.notebook",
+                "转到：笔记本",
+                lambda: self._sidebar.setCurrentRow(_PAGE_CONSOLE),
+                keywords="goto notebook",
+            )
+        )
+        register(
+            Command(
+                "go.analysis",
+                "转到：分析",
+                lambda: self._sidebar.setCurrentRow(_PAGE_FEA),
+                keywords="goto analysis fea",
+            )
+        )
+        register(
+            Command("go.about", "转到：关于", lambda: self._sidebar.setCurrentRow(_PAGE_ABOUT), keywords="goto about")
+        )
+        register(Command("notebook.new", "新建笔记本", page.new_notebook, keywords="new notebook", shortcut="Ctrl+N"))
+        register(
+            Command("notebook.open", "打开笔记本", page.open_notebook, keywords="open notebook", shortcut="Ctrl+O")
+        )
+        register(
+            Command("notebook.save", "保存笔记本", page.save_notebook, keywords="save notebook", shortcut="Ctrl+S")
+        )
+        register(Command("notebook.run_all", "全部运行（出错不中断）", page.run_all, keywords="run all"))
+        register(
+            Command("notebook.restart", "重启内核（清空变量与输出）", page.restart_kernel, keywords="restart kernel")
+        )
+        register(
+            Command("theme.select", "选择主题（上下键实时预览）", self._palette.open_theme_picker, keywords="theme")
+        )
+
+    def eventFilter(self, obj, event) -> bool:  # Qt 命名约定
+        """点击头部命令搜索框弹出命令面板（只读框仅作入口）."""
+        if obj is self._command_search and event.type() == QEvent.MouseButtonPress:
+            self._palette.open_commands()
+            return True
+        return super().eventFilter(obj, event)
 
     def closeEvent(self, event) -> None:  # Qt 命名约定
         """关闭前询问保存笔记本，确认后终止后台求解执行器."""

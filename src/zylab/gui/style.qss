@@ -57,29 +57,45 @@ QPushButton#headerBtn {
 QPushButton#headerBtn:hover { background-color: ${QSS_NAV_BG_HOVER}; }
 QPushButton#headerBtn:pressed { background-color: ${QSS_NAV_BG_SELECTED}; }
 
-/* 头部条主题下拉（nav 色系） */
-QComboBox#headerThemeCombo {
-    background-color: transparent;
+/* 头部条命令搜索框（VS Code 命令面板入口，nav 色系） */
+QLineEdit#commandSearch {
+    background-color: ${QSS_NAV_BG_HOVER};
     color: ${QSS_NAV_TEXT};
-    border: 1px solid ${QSS_NAV_ACCENT};
+    border: 1px solid transparent;
     border-radius: ${RADIUS_SM};
-    padding: 2px 24px 2px 10px;
+    padding: 2px 10px;
     min-height: 0;
 }
-QComboBox#headerThemeCombo:hover { background-color: ${QSS_NAV_BG_HOVER}; }
-/* 箭头用 SVG 资源：Qt QSS 不支持 border 画三角（渲染成实心方块） */
-QComboBox#headerThemeCombo::down-arrow {
-    image: url(${QSS_ARROW_DOWN});
-    width: 10px;
-    height: 6px;
+QLineEdit#commandSearch:hover { border-color: ${QSS_NAV_ACCENT}; }
+QLineEdit#commandSearch:focus { border-color: ${QSS_NAV_ACCENT}; }
+
+/* 命令面板弹层（Ctrl+Shift+P） */
+QDialog#commandPalette {
+    background-color: ${QSS_BG_APP};
+    border: 1px solid ${QSS_BORDER_STRONG};
+    border-radius: ${RADIUS_MD};
 }
-QComboBox#headerThemeCombo QAbstractItemView {
-    background-color: ${QSS_NAV_BG};
-    color: ${QSS_NAV_TEXT};
-    border: 1px solid ${QSS_NAV_ACCENT};
-    selection-background-color: ${QSS_NAV_BG_SELECTED};
-    selection-color: ${QSS_NAV_TEXT};
+QLineEdit#paletteSearch {
+    background-color: ${QSS_BG_INPUT};
+    color: ${QSS_TEXT_PRIMARY};
+    border: 1px solid ${QSS_BORDER_STRONG};
+    border-radius: ${RADIUS_SM};
+    padding: 6px 10px;
 }
+QListWidget#paletteList {
+    background-color: transparent;
+    border: none;
+    outline: none;
+}
+QListWidget#paletteList::item {
+    border-radius: ${RADIUS_SM};
+    margin: 1px 0;
+}
+QListWidget#paletteList::item:selected {
+    background-color: ${QSS_SELECTION_BG};
+}
+QLabel#paletteTitle { color: ${QSS_TEXT_PRIMARY}; }
+QLabel#paletteHint { color: ${QSS_TEXT_SECONDARY}; }
 
 /* ------------------------------------------------ 侧边栏 */
 QListWidget#sidebar {

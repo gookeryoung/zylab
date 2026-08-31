@@ -1,7 +1,8 @@
-"""gui.theme 主题系统测试：对比度达标（WCAG AA）、令牌完整性、运行时切换."""
+"""gui.theme 主题系统测试：对比度达标（WCAG AA）、令牌完整性、JSON 扩展、运行时切换."""
 
 from __future__ import annotations
 
+import json
 import re
 from pathlib import Path
 
@@ -9,6 +10,7 @@ import pytest
 
 from zylab.gui import theme
 from zylab.gui.app import apply_theme, load_stylesheet, load_theme_name, save_theme_name
+from zylab.gui.qt_compat import Qt
 
 ALL_THEMES = tuple(theme.THEMES.values())
 
@@ -151,7 +153,7 @@ class TestQssTokens:
         """箭头 SVG 资源路径应注入 QSS 且文件存在、颜色随主题."""
         qss = load_stylesheet(pal)
         urls = re.findall(r"image: url\(([^)]+\.svg)\)", qss)
-        assert len(urls) == 4  # 主题下拉/通用下拉/spinbox 上下
+        assert len(urls) == 3  # 通用下拉 + spinbox 上下（主题下拉箭头已随命令面板移除）
         for url in urls:
             assert Path(url).exists()
         # 生成的 SVG 含当前主题次级文字色
@@ -268,29 +270,123 @@ class TestThemePersistence:
 
 
 # ---------------------------------------------------------------------------
-# 主窗口主题下拉框
+# 主题 JSON 扩展（assets/themes 内置 + 用户目录扩展）
+# ---------------------------------------------------------------------------
+
+
+class TestThemeJsonLoading:
+    def test_partial_override_inherits_base(self, tmp_path: Path) -> None:
+        """同名主题部分字段 JSON 应继承基底色板其余字段."""
+        (tmp_path / "dark_tweaked.json").write_text(
+            json.dumps({"name": "dark", "display_name": "深色微调", "primary": "#123456"}),
+            encoding="utf-8",
+        )
+        themes = theme.load_themes_from_dir(tmp_path, base={"dark": theme.DARK})
+        pal = themes["dark"]
+        assert pal.display_name == "深色微调"
+        assert pal.primary == "#123456"
+        assert pal.bg_app == theme.DARK.bg_app  # 未覆盖字段继承基底
+
+    def test_invalid_files_skipped(self, tmp_path: Path) -> None:
+        """非法 JSON / 未知字段 / 缺必填字段均跳过，不影响其余主题."""
+        (tmp_path / "bad.json").write_text("{not json", encoding="utf-8")
+        (tmp_path / "unknown_field.json").write_text(
+            json.dumps({"name": "x", "display_name": "X", "bogus": 1}),
+            encoding="utf-8",
+        )
+        (tmp_path / "noname.json").write_text(json.dumps({"display_name": "无名"}), encoding="utf-8")
+        themes = theme.load_themes_from_dir(tmp_path, base={"dark": theme.DARK})
+        assert set(themes) == {"dark"}
+
+    def test_order_controls_sorting(self, tmp_path: Path) -> None:
+        """``order`` 字段应控制应用顺序（小者先应用，大者后覆盖同名主题）."""
+        (tmp_path / "b_second.json").write_text(
+            json.dumps({"name": "b", "display_name": "B", "order": 20}),
+            encoding="utf-8",
+        )
+        (tmp_path / "a_first.json").write_text(
+            json.dumps({"name": "b", "display_name": "B2", "order": 10}),
+            encoding="utf-8",
+        )
+        themes = theme.load_themes_from_dir(tmp_path, base={"b": theme.DARK})
+        assert themes["b"].display_name == "B"  # order 大者后应用并覆盖
+
+    def test_register_theme_dir_extends(self, tmp_path: Path) -> None:
+        """register_theme_dir 应追加新主题并支持按名取色板（结束后清理）."""
+        src = json.loads((theme._THEMES_DIR / "dark.json").read_text(encoding="utf-8"))
+        src.update({"name": "solarized", "display_name": "Solarized", "primary": "#268BD2"})
+        (tmp_path / "solarized.json").write_text(json.dumps(src), encoding="utf-8")
+        try:
+            assert theme.register_theme_dir(tmp_path) == ["solarized"]
+            assert theme.palette("solarized").primary == "#268BD2"
+        finally:
+            theme.THEMES.pop("solarized", None)
+
+    def test_register_user_themes_app_hook(self, tmp_path: Path) -> None:
+        """app.register_user_themes 应注册数据目录 ``themes/``；缺失目录返回空."""
+        from zylab.gui.app import register_user_themes
+
+        assert register_user_themes(tmp_path) == []  # 目录不存在
+        (tmp_path / "themes").mkdir()
+        src = json.loads((theme._THEMES_DIR / "light.json").read_text(encoding="utf-8"))
+        src.update({"name": "user_custom", "display_name": "用户自定义"})
+        (tmp_path / "themes" / "user_custom.json").write_text(json.dumps(src), encoding="utf-8")
+        try:
+            assert register_user_themes(tmp_path) == ["user_custom"]
+            assert theme.palette("user_custom").display_name == "用户自定义"
+        finally:
+            theme.THEMES.pop("user_custom", None)
+
+
+# ---------------------------------------------------------------------------
+# 主窗口命令面板主题切换
 # ---------------------------------------------------------------------------
 
 
 class TestMainWindowThemeSwitch:
-    def test_select_theme(self, qtbot, monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
-        """下拉选择主题应立即应用并持久化到数据目录."""
+    def test_palette_theme_confirm_persists(self, qtbot, monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+        """命令面板确认主题应立即应用并持久化到数据目录."""
         monkeypatch.setattr("zylab.gui.main_window.default_data_dir", lambda: tmp_path)
         from zylab.gui.main_window import MainWindow
 
-        win = MainWindow()
-        qtbot.addWidget(win)
-        assert theme.current_palette().name == "light"
-        # 初始下拉应显示当前主题
-        assert win._theme_combo.currentIndex() == 0
-        # 选择深色
-        win._theme_combo.setCurrentIndex(1)
-        assert theme.current_palette().name == "dark"
-        assert (tmp_path / "theme.txt").read_text(encoding="utf-8") == "dark"
-        # 选择高对比
-        win._theme_combo.setCurrentIndex(2)
-        assert theme.current_palette().name == "high_contrast"
-        # 选回浅色
-        win._theme_combo.setCurrentIndex(0)
-        assert theme.current_palette().name == "light"
-        theme.set_current_theme(theme.DEFAULT_THEME)
+        try:
+            win = MainWindow()
+            qtbot.addWidget(win)
+            assert theme.current_palette().name == "light"
+            win._palette.open_theme_picker()
+            # 默认选中当前主题
+            assert win._palette._list.currentItem().data(Qt.UserRole) == ("theme", "light")
+            # 选中深色并确认
+            row = next(
+                r
+                for r in range(win._palette._list.count())
+                if win._palette._list.item(r).data(Qt.UserRole)[1] == "dark"
+            )
+            win._palette._list.setCurrentRow(row)
+            win._palette._activate_current(win._palette._list.currentItem())
+            assert theme.current_palette().name == "dark"
+            assert (tmp_path / "theme.txt").read_text(encoding="utf-8") == "dark"
+        finally:
+            theme.set_current_theme(theme.DEFAULT_THEME)
+
+    def test_palette_theme_preview_not_persisted(self, qtbot, monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+        """主题预览仅应用不持久化；Esc 还原原主题."""
+        monkeypatch.setattr("zylab.gui.main_window.default_data_dir", lambda: tmp_path)
+        from zylab.gui.main_window import MainWindow
+
+        try:
+            win = MainWindow()
+            qtbot.addWidget(win)
+            win._palette.open_theme_picker()
+            row = next(
+                r
+                for r in range(win._palette._list.count())
+                if win._palette._list.item(r).data(Qt.UserRole)[1] == "dark"
+            )
+            win._palette._list.setCurrentRow(row)  # 导航预览
+            assert theme.current_palette().name == "dark"
+            assert not (tmp_path / "theme.txt").exists()
+            qtbot.keyPress(win._palette._search, Qt.Key_Escape)  # 取消还原
+            assert theme.current_palette().name == "light"
+        finally:
+            theme.set_current_theme(theme.DEFAULT_THEME)

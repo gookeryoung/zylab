@@ -18,7 +18,10 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+import json
+import logging
+from dataclasses import dataclass, fields
+from pathlib import Path
 
 __all__ = [
     "CONTROL_HEIGHT",
@@ -47,10 +50,14 @@ __all__ = [
     "Palette",
     "contrast_ratio",
     "current_palette",
+    "load_themes_from_dir",
     "palette",
     "qss_tokens",
+    "register_theme_dir",
     "set_current_theme",
 ]
+
+logger = logging.getLogger(__name__)
 
 
 # ---------------------------------------------------------------------------
@@ -123,105 +130,113 @@ class Palette:
     error_text: str
 
 
-#: 浅色主题（默认）：白底深字，青蓝主色
-LIGHT = Palette(
-    name="light",
-    display_name="浅色",
-    bg_app="#FFFFFF",
-    bg_muted="#EEF2F4",
-    bg_input="#FFFFFF",
-    text_primary="#1F2D3D",
-    text_secondary="#5A6B7A",
-    text_on_primary="#FFFFFF",
-    text_disabled="#6F7D87",
-    nav_bg="#056574",
-    nav_bg_hover="#044E5A",
-    nav_bg_selected="#033F49",
-    nav_text="#FFFFFF",
-    nav_accent="#87C6BB",
-    primary="#056574",
-    primary_hover="#044E5A",
-    primary_pressed="#033F49",
-    primary_text="#FFFFFF",
-    selection_bg="#CDE8EE",
-    selection_text="#1F2D3D",
-    border="#C9D6DC",
-    border_strong="#7E99A5",
-    scrollbar="#B9C8D0",
-    scrollbar_hover="#8FA5B0",
-    success_text="#1B7A3A",
-    warning_text="#8C5E00",
-    danger_text="#C0392B",
-    error_text="#C0392B",
-)
+# ---------------------------------------------------------------------------
+# 主题加载（JSON 唯一来源，支持用户目录扩展）
+# ---------------------------------------------------------------------------
 
-#: 深色主题：深灰蓝底浅字，亮青主色
-DARK = Palette(
-    name="dark",
-    display_name="深色",
-    bg_app="#1E2429",
-    bg_muted="#2A333B",
-    bg_input="#262E35",
-    text_primary="#E8EDF0",
-    text_secondary="#A5B3BD",
-    text_on_primary="#FFFFFF",
-    text_disabled="#6B7A85",
-    nav_bg="#161B20",
-    nav_bg_hover="#2A333B",
-    nav_bg_selected="#0A4A57",
-    nav_text="#E8EDF0",
-    nav_accent="#3FC1D8",
-    primary="#2AA5C0",
-    primary_hover="#3BB3CC",
-    primary_pressed="#2195AE",
-    primary_text="#04222A",
-    selection_bg="#16505E",
-    selection_text="#E8EDF0",
-    border="#3A464F",
-    border_strong="#5A6B77",
-    scrollbar="#3A464F",
-    scrollbar_hover="#5A6B77",
-    success_text="#4CC38A",
-    warning_text="#E5A54B",
-    danger_text="#F0776A",
-    error_text="#F0937E",
-)
+#: 内置主题资源目录（随包分发的 assets/themes/*.json）
+_THEMES_DIR = Path(__file__).resolve().parent.parent / "assets" / "themes"
 
-#: 高对比主题（无障碍）：白底纯黑字，黑底导航，黄底选区
-HIGH_CONTRAST = Palette(
-    name="high_contrast",
-    display_name="高对比",
-    bg_app="#FFFFFF",
-    bg_muted="#F0F0F0",
-    bg_input="#FFFFFF",
-    text_primary="#000000",
-    text_secondary="#2B2B2B",
-    text_on_primary="#FFFFFF",
-    text_disabled="#595959",
-    nav_bg="#000000",
-    nav_bg_hover="#333333",
-    nav_bg_selected="#005A9E",
-    nav_text="#FFFFFF",
-    nav_accent="#FFD700",
-    primary="#000000",
-    primary_hover="#2B2B2B",
-    primary_pressed="#000000",
-    primary_text="#FFFFFF",
-    selection_bg="#FFD700",
-    selection_text="#000000",
-    border="#000000",
-    border_strong="#000000",
-    scrollbar="#555555",
-    scrollbar_hover="#000000",
-    success_text="#006600",
-    warning_text="#7A5900",
-    danger_text="#B30000",
-    error_text="#B30000",
-)
+_PALETTE_FIELDS = frozenset(f.name for f in fields(Palette))
 
-THEMES: dict[str, Palette] = {p.name: p for p in (LIGHT, DARK, HIGH_CONTRAST)}
+
+def _palette_from_json(data: dict, base: Palette | None = None) -> Palette:
+    """JSON 字典构建色板：``name``/``display_name`` 必填，色值缺省继承 base.
+
+    Args:
+        data: 主题 JSON 解析结果（``order`` 字段仅排序用，非色板字段）。
+        base: 同名既有主题（部分字段覆盖时继承其色值；完整定义传 None）。
+
+    Returns:
+        构建的色板。
+
+    Raises:
+        ValueError: 存在未知字段、色值非法或缺必填字段时抛出。
+    """
+    unknown = sorted(set(data) - _PALETTE_FIELDS - {"order"})
+    if unknown:
+        raise ValueError(f"未知色板字段: {unknown}")
+    merged: dict[str, str] = dict(vars(base)) if base is not None else {}
+    for key in sorted(_PALETTE_FIELDS):
+        value = data.get(key)
+        if value is None:
+            continue
+        if key in ("name", "display_name"):
+            merged[key] = str(value)
+            continue
+        color = str(value)
+        if len(color) != 7 or color[0] != "#":
+            raise ValueError(f"非法色值 {key}={color!r}")
+        merged[key] = color
+    if not merged.get("name") or not merged.get("display_name"):
+        raise ValueError("缺少必填字段 name/display_name")
+    if len(merged) != len(_PALETTE_FIELDS):
+        raise ValueError(f"缺少色板字段: {sorted(_PALETTE_FIELDS - set(merged))}")
+    return Palette(**merged)
+
+
+def load_themes_from_dir(directory: Path, base: dict[str, Palette] | None = None) -> dict[str, Palette]:
+    """扫描目录下 ``*.json`` 主题定义构建主题表.
+
+    Args:
+        directory: 主题 JSON 目录。
+        base: 基底主题表（同名主题部分字段覆盖时继承其色值）。
+
+    Returns:
+        ``{主题名: Palette}``（按 ``order`` 升序、同序按文件名；非法文件
+        跳过并告警，不影响其余主题）。
+    """
+    themes: dict[str, Palette] = dict(base) if base is not None else {}
+    entries: list[tuple[int, str, Path, dict]] = []
+    for path in sorted(directory.glob("*.json")):
+        try:
+            data = json.loads(path.read_text(encoding="utf-8"))
+            order = int(data.get("order", 100))
+        except (OSError, ValueError) as exc:  # JSONDecodeError 是 ValueError 子类
+            logger.warning("主题文件加载失败，已跳过: %s (%s)", path, exc)
+            continue
+        entries.append((order, path.name, path, data))
+    for _order, _fname, path, data in sorted(entries, key=lambda e: (e[0], e[1])):
+        try:
+            name = str(data.get("name", ""))
+            themes[name] = _palette_from_json(data, themes.get(name))
+        except ValueError as exc:
+            logger.warning("主题定义非法，已跳过: %s (%s)", path, exc)
+    return {name: pal for name, pal in themes.items() if name}
+
+
+THEMES: dict[str, Palette] = load_themes_from_dir(_THEMES_DIR)
+
+for _required in ("light", "dark", "high_contrast"):
+    if _required not in THEMES:
+        raise RuntimeError(f"内置主题资源缺失或不完整: {_THEMES_DIR}")
+
+#: 便捷引用（内置主题快照；运行时经 register_theme_dir 覆盖同名主题后请用 palette() 取新值）
+LIGHT = THEMES["light"]
+DARK = THEMES["dark"]
+HIGH_CONTRAST = THEMES["high_contrast"]
 
 DEFAULT_THEME = "light"
+
+
+def register_theme_dir(directory: Path) -> list[str]:
+    """注册用户主题扩展目录（同名覆盖内置、新主题追加），返回新增主题名.
+
+    供未来配置扩展：应用启动时扫描数据目录 ``themes/``，用户可放置
+    部分字段的自定义 JSON 微调内置主题，或新增完整主题。
+
+    Args:
+        directory: 用户主题 ``*.json`` 目录。
+
+    Returns:
+        本次新引入的主题名列表（覆盖内置的不计入）。
+    """
+    before = set(THEMES)
+    merged = load_themes_from_dir(directory, base=THEMES)
+    THEMES.clear()
+    THEMES.update(merged)
+    return sorted(set(THEMES) - before)
+
 
 # 模块级当前主题（GUI 单线程读写；set_current_theme 切换后由 app 重刷 QSS）
 _current: Palette = THEMES[DEFAULT_THEME]

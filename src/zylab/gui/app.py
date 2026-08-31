@@ -20,6 +20,7 @@ __all__ = [
     "load_theme_name",
     "main",
     "register_fonts",
+    "register_user_themes",
     "save_theme_name",
 ]
 
@@ -117,6 +118,28 @@ def create_app(argv: list[str] | None = None, theme_name: str = theme.DEFAULT_TH
     return app
 
 
+def register_user_themes(data_dir: Path) -> list[str]:
+    """注册用户主题扩展目录（数据目录 ``themes/``，未来配置扩展点）.
+
+    用户可放置部分字段 JSON 微调内置主题，或新增完整主题；
+    目录不存在时为无操作。
+
+    Args:
+        data_dir: 应用数据目录。
+
+    Returns:
+        本次新引入的主题名列表。
+    """
+    from .theme import register_theme_dir
+
+    directory = data_dir / "themes"
+    if not directory.is_dir():
+        return []
+    added = register_theme_dir(directory)
+    logger.debug("用户主题已注册: %s", added or "无")
+    return added
+
+
 def load_theme_name(data_dir: Path) -> str:
     """读取持久化的主题名；缺失或非法时回退默认主题."""
     path = data_dir / _THEME_FILE
@@ -146,6 +169,7 @@ def main() -> int:  # pragma: no cover（事件循环阻塞，需图形环境手
     from zylab.core.config import default_data_dir
 
     app = create_app(theme_name=load_theme_name(default_data_dir()))
+    register_user_themes(default_data_dir())
     from .main_window import MainWindow  # 惰性导入，加速 --help 等非 GUI 路径
 
     window = MainWindow()

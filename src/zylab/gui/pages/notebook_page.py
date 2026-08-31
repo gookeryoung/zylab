@@ -783,6 +783,18 @@ class NotebookPage(QWidget):
         if target:
             self.open_path(Path(target))
 
+    def new_notebook(self) -> None:
+        """新建笔记本（先询问保存未保存改动；命令面板入口）."""
+        self._on_new()
+
+    def open_notebook(self) -> None:
+        """打开笔记本文件（先询问保存未保存改动；命令面板入口）."""
+        self._on_open()
+
+    def save_notebook(self) -> None:
+        """保存笔记本（未保存过自动另存；命令面板入口）."""
+        self._on_save()
+
     def _save_to(self, path: Path) -> bool:
         """保存到指定路径（失败置状态提示，成功清 dirty）."""
         for widget in self._widgets:

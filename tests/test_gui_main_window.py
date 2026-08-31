@@ -7,6 +7,7 @@ from pathlib import Path
 import pytest
 
 from zylab.gui.main_window import MainWindow
+from zylab.gui.qt_compat import Qt
 
 
 @pytest.fixture
@@ -107,12 +108,41 @@ def test_nav_icon_overrides_embedded_fill(qtbot) -> None:
 
 @pytest.mark.gui
 def test_main_window_icons_follow_theme(qtbot, isolated_data_dir: Path) -> None:
-    """切换主题后侧边栏图标应重新着色（选中行 accent 三主题互不相同）."""
+    """切换主题后侧边栏图标应重新着色（命令面板预览联动，不持久化）."""
+    from zylab.gui import theme
+
     win = MainWindow()
     qtbot.addWidget(win)
-    combo = win._theme_combo
-    next_index = (combo.currentIndex() + 1) % combo.count()
     before = win._sidebar.item(0).icon().pixmap(18, 18).toImage()
-    combo.setCurrentIndex(next_index)
+    target = next(name for name in theme.THEMES if name != theme.current_palette().name)
+    win._set_theme(target, persist=False)
     after = win._sidebar.item(0).icon().pixmap(18, 18).toImage()
     assert before != after
+
+
+@pytest.mark.gui
+def test_main_window_command_search_opens_palette(qtbot, isolated_data_dir: Path) -> None:
+    """点击头部命令搜索框应弹出命令面板并列出全部命令."""
+    win = MainWindow()
+    qtbot.addWidget(win)
+    qtbot.mouseClick(win._command_search, Qt.MouseButton.LeftButton)
+    assert win._palette._list.count() == len(win._palette._commands) > 0
+    win._palette.close()
+
+
+@pytest.mark.gui
+def test_main_window_registers_global_commands(qtbot, isolated_data_dir: Path) -> None:
+    """全局命令（导航/笔记本/主题）应注册进面板命令表."""
+    win = MainWindow()
+    qtbot.addWidget(win)
+    assert {
+        "go.notebook",
+        "go.analysis",
+        "go.about",
+        "notebook.new",
+        "notebook.open",
+        "notebook.save",
+        "notebook.run_all",
+        "notebook.restart",
+        "theme.select",
+    } <= set(win._palette._by_id)
