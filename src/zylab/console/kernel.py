@@ -193,6 +193,12 @@ class ReplKernel:
         ns["help"] = _help
         self.builtin_names = frozenset(ns)
 
+    def restart_kernel(self) -> None:
+        """重启内核：清空命名空间并重建内置符号，执行计数归零（jupyter Restart Kernel 语义）."""
+        self.namespace.clear()
+        self.execution_count = 0
+        self._init_namespace()
+
     def execute(self, source: str) -> ExecResult:
         """执行代码片段.
 

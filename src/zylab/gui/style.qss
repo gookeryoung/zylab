@@ -122,9 +122,34 @@ QPlainTextEdit#cellEditor {
     padding: 6px;
 }
 QPlainTextEdit#cellEditor:focus { border: 1px solid ${QSS_PRIMARY}; }
+
+/* 单元级工具条（悬停浮现，固定占位不挤压格宽） */
+QWidget#cellToolbar { background: transparent; }
+QPushButton#cellToolButton {
+    background-color: ${QSS_BG_MUTED};
+    color: ${QSS_TEXT_SECONDARY};
+    border: 1px solid ${QSS_BORDER};
+    border-radius: ${RADIUS_SM};
+    padding: 0;
+}
+QPushButton#cellToolButton:hover {
+    background-color: ${QSS_SELECTION_BG};
+    color: ${QSS_TEXT_PRIMARY};
+    border-color: ${QSS_PRIMARY};
+}
+QPushButton#cellToolButton:pressed {
+    background-color: ${QSS_NAV_BG_SELECTED};
+    color: ${QSS_NAV_TEXT};
+}
 QLabel#notebookStatus {
     color: ${QSS_TEXT_SECONDARY};
     font-size: ${FONT_CAPTION};
+}
+/* 变量面板切换按钮：展开时主色高亮（active 状态语义） */
+QPushButton#notebookVarToggle:checked {
+    background-color: ${QSS_PRIMARY};
+    color: ${QSS_PRIMARY_TEXT};
+    border: 1px solid ${QSS_PRIMARY};
 }
 
 /* ------------------------------------------------ 模板选择对话框 */

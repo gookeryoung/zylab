@@ -29,11 +29,14 @@ try:
         QFontMetrics,
         QIcon,
         QKeyEvent,
+        QKeySequence,
         QMouseEvent,
         QPainter,
         QPainterPath,
         QPen,
         QPixmap,
+        QSyntaxHighlighter,
+        QTextCharFormat,
         QTextCursor,
     )
     from PySide6.QtWidgets import (
@@ -65,6 +68,7 @@ try:
         QProgressBar,
         QPushButton,
         QScrollArea,
+        QShortcut,
         QSlider,
         QSpinBox,
         QSplitter,
@@ -104,11 +108,14 @@ except ImportError:  # pragma: no cover（3.8 环境走此分支）
         QFontMetrics,  # type: ignore[missing-import]
         QIcon,
         QKeyEvent,
+        QKeySequence,  # type: ignore[missing-import]
         QMouseEvent,
         QPainter,
         QPainterPath,
         QPen,
         QPixmap,
+        QSyntaxHighlighter,  # type: ignore[missing-import]
+        QTextCharFormat,  # type: ignore[missing-import]
         QTextCursor,
     )
     from PySide2.QtWidgets import (  # type: ignore[missing-import]
@@ -140,6 +147,7 @@ except ImportError:  # pragma: no cover（3.8 环境走此分支）
         QProgressBar,
         QPushButton,
         QScrollArea,
+        QShortcut,
         QSlider,
         QSpinBox,
         QSplitter,
@@ -185,6 +193,7 @@ __all__ = [
     "QIcon",
     "QInputDialog",
     "QKeyEvent",
+    "QKeySequence",
     "QLabel",
     "QLineEdit",
     "QListWidget",
@@ -206,15 +215,18 @@ __all__ = [
     "QPushButton",
     "QRectF",
     "QScrollArea",
+    "QShortcut",
     "QSize",
     "QSlider",
     "QSpinBox",
     "QSplitter",
     "QStackedWidget",
+    "QSyntaxHighlighter",
     "QTabWidget",
     "QTableView",
     "QTableWidget",
     "QTableWidgetItem",
+    "QTextCharFormat",
     "QTextCursor",
     "QTimer",
     "QTreeWidget",

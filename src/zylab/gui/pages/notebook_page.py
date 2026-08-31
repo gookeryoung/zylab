@@ -1,11 +1,13 @@
-"""笔记本页：Jupyter 风格单元流（代码 + inline 输出 + 内嵌绘图）+ 变量侧栏.
+"""笔记本页：Jupyter 风格单元流（代码 + inline 输出 + 内嵌绘图）+ 可折叠变量侧栏.
 
 - :class:`CellEditor`：单元代码编辑器（Ctrl+Enter 运行本格、Shift+Enter
   运行并推进下格、Tab 插入 4 空格缩进）；
-- :class:`CellWidget`：单格卡片（``In [n]:`` 序号栏 + 编辑器 + 输出区，
-  输出按类型分发：流文本/结果 repr/错误回溯/pyqtgraph 内嵌绘图）；
-- :class:`NotebookPage`：单元流 + 工具栏（运行/插入/删除/移动/保存）+
-  右侧变量浏览器；``.znbk`` 打开/保存/另存、dirty 跟踪与关闭前保存询问。
+- :class:`CellWidget`：单格卡片（``In [n]:`` 序号栏 + 编辑器 + 输出区 +
+  悬停浮现的单元级工具条：运行/上移/下移/插入/删除），
+  输出按类型分发：流文本/结果 repr/错误回溯/pyqtgraph 内嵌绘图；
+- :class:`NotebookPage`：顶部文档级工具栏（新建/打开/保存/全部运行/重启内核/
+  变量面板切换）+ 单元流 + 可折叠变量侧栏（默认收起，展开 4:1）；
+  ``.znbk`` 打开/保存/另存、dirty 跟踪与关闭前保存询问。
 """
 
 from __future__ import annotations
@@ -33,6 +35,7 @@ from zylab.sci import (
 )
 
 from .. import theme
+from ..highlight import PythonHighlighter
 from ..qt_compat import (
     QAbstractTableModel,
     QColor,
@@ -42,12 +45,14 @@ from ..qt_compat import (
     QHBoxLayout,
     QHeaderView,
     QKeyEvent,
+    QKeySequence,
     QLabel,
     QMessageBox,
     QModelIndex,
     QPlainTextEdit,
     QPushButton,
     QScrollArea,
+    QShortcut,
     QSplitter,
     Qt,
     QTableView,
@@ -63,6 +68,7 @@ _INVALID_INDEX = QModelIndex()
 # 新笔记本默认首格（演示单元执行与内嵌绘图）
 _WELCOME_SOURCE = """\
 # zylab 笔记本：Ctrl+Enter 运行本格，Shift+Enter 运行并新建下格
+# Alt+Enter 下方插入，Ctrl+Shift+Enter 从此运行，工具栏可切换变量面板
 x = linspace(0, 4 * pi, 200)
 y = sin(x) * exp(-x / 10)
 plot(x, y, title="衰减振荡", xlabel="x", ylabel="y")
@@ -71,6 +77,15 @@ y[:5]
 
 #: 绘图多曲线着色循环（主题色板取色）
 _CURVE_KEYS = ("primary", "success_text", "warning_text", "danger_text", "border_strong")
+
+#: 单元级工具条按钮提示文案（按动作名）
+_TOOL_TIPS = {
+    "run": "运行本格 (Ctrl+Enter)",
+    "up": "上移 (Ctrl+Shift+Up)",
+    "down": "下移 (Ctrl+Shift+Down)",
+    "insert": "下方插入 (Alt+Enter)",
+    "delete": "删除本格",
+}
 
 
 class VarTableModel(QAbstractTableModel):
@@ -139,7 +154,13 @@ class CellEditor(QPlainTextEdit):
 
 
 class CellWidget(QFrame):
-    """单格卡片：序号栏 + 代码编辑器 + 输出区（渲染 cell.outputs）."""
+    """单格卡片：序号栏 + 代码编辑器 + 输出区 + 悬停浮现的单元级工具条."""
+
+    #: 单元级动作请求（"run"/"up"/"down"/"insert"/"delete"，页面解析执行）
+    action_requested = Signal(str)
+
+    #: 工具条按钮（符号, 动作名）——悬停卡片时浮现
+    _TOOL_ITEMS = (("\u25b6", "run"), ("\u2191", "up"), ("\u2193", "down"), ("\uff0b", "insert"), ("\u2715", "delete"))
 
     def __init__(self, cell: NotebookCell, parent: QWidget | None = None) -> None:
         """初始化卡片并装载单元源码与既有输出.
@@ -152,6 +173,7 @@ class CellWidget(QFrame):
         self._editor = CellEditor(objectName="cellEditor")
         self._editor.setPlainText(cell.source)
         self._editor.setFont(_mono_font())
+        self._highlighter = PythonHighlighter(self._editor.document())
         self._editor.textChanged.connect(self._on_text_changed)
         self._output_host = QWidget()
         self._output_layout = QVBoxLayout(self._output_host)
@@ -169,15 +191,45 @@ class CellWidget(QFrame):
         self._count_label.setAlignment(Qt.AlignRight | Qt.AlignTop)
         self._count_label.setFixedWidth(64)
 
+        # 单元级工具条：固定占位宽度，悬停时按钮可见（不挤压格宽）
+        self._tool_buttons: list[QPushButton] = []
+        toolbar = QWidget(objectName="cellToolbar")
+        toolbar.setFixedWidth(30)
+        tool_layout = QVBoxLayout(toolbar)
+        tool_layout.setContentsMargins(0, 0, 0, 0)
+        tool_layout.setSpacing(2)
+        for symbol, action in self._TOOL_ITEMS:
+            button = QPushButton(symbol, objectName="cellToolButton")
+            button.setFixedSize(26, 22)
+            button.setToolTip(_TOOL_TIPS[action])
+            button.setVisible(False)
+            button.clicked.connect(lambda _checked=False, name=action: self.action_requested.emit(name))
+            tool_layout.addWidget(button)
+            self._tool_buttons.append(button)
+        tool_layout.addStretch(1)
+
         row = QHBoxLayout(self)
         row.setContentsMargins(0, 0, 0, 0)
         row.setSpacing(theme.SPACING_SM)
         row.addWidget(self._count_label)
         row.addLayout(body, stretch=1)
+        row.addWidget(toolbar)
 
         self._editor.setMinimumHeight(56)
         self._update_count_label()
         self.render_outputs()
+
+    def enterEvent(self, event) -> None:  # Qt 命名约定
+        """鼠标进入卡片：浮现单元级工具条."""
+        for button in self._tool_buttons:
+            button.setVisible(True)
+        super().enterEvent(event)
+
+    def leaveEvent(self, event) -> None:  # Qt 命名约定
+        """鼠标离开卡片：隐藏单元级工具条."""
+        for button in self._tool_buttons:
+            button.setVisible(False)
+        super().leaveEvent(event)
 
     @property
     def cell(self) -> NotebookCell:
@@ -188,6 +240,11 @@ class CellWidget(QFrame):
     def editor(self) -> CellEditor:
         """代码编辑器（页面接焦/安装运行信号用）."""
         return self._editor
+
+    @property
+    def highlighter(self) -> PythonHighlighter:
+        """编辑器语法高亮器."""
+        return self._highlighter
 
     def sync_to_model(self) -> None:
         """编辑器文本回写单元模型（运行/保存前调用）."""
@@ -359,6 +416,25 @@ class NotebookPage(QWidget):
         """按命名空间当前状态刷新变量浏览器."""
         self._var_model.set_vars(whos(self._kernel.namespace, self._kernel.builtin_names))
 
+    def restart_kernel(self) -> None:
+        """重启内核：确认后清空命名空间/计数并失效全部单元输出（jupyter Restart Kernel 语义）."""
+        ret = QMessageBox.question(
+            self,
+            "重启内核",
+            "重启将清空全部变量与单元输出，确认重启？",
+            QMessageBox.Yes | QMessageBox.No,
+        )
+        if ret != QMessageBox.Yes:
+            return
+        self._kernel.restart_kernel()
+        for widget in self._widgets:
+            widget.cell.outputs.clear()
+            widget.cell.execution_count = None
+            widget.render_outputs()
+        self._dirty = True
+        self.refresh_vars()
+        self._set_status("内核已重启")
+
     # ------------------------------------------------------------ 文档操作
 
     def new_document(self) -> None:
@@ -455,34 +531,28 @@ class NotebookPage(QWidget):
     # ------------------------------------------------------------ 内部实现
 
     def _build_ui(self) -> None:
-        """组装工具栏 + 单元流滚动区 + 右侧变量侧栏."""
+        """组装文档级工具栏 + 单元流滚动区 + 可折叠变量侧栏 + 页面级快捷键."""
+        # 文档级操作（单元级操作在每格悬停工具条，jupyter 语义两极分化）
         bar = QHBoxLayout()
         bar.setSpacing(theme.SPACING_SM)
         self._btn_new = QPushButton("新建")
         self._btn_open = QPushButton("打开")
         self._btn_save = QPushButton("保存")
-        self._btn_save_as = QPushButton("另存")
-        self._btn_run = QPushButton("运行格")
+        self._btn_save.setToolTip("保存笔记本 (Ctrl+S)，未保存过自动弹出另存对话框")
         self._btn_run_all = QPushButton("全部运行")
-        self._btn_run_from = QPushButton("从此运行")
-        self._btn_insert = QPushButton("插入")
-        self._btn_delete = QPushButton("删除")
-        self._btn_up = QPushButton("上移")
-        self._btn_down = QPushButton("下移")
-        buttons = (
+        self._btn_restart = QPushButton("重启内核")
+        self._btn_restart.setToolTip("清空全部变量与单元输出，执行计数归零")
+        self._btn_vars = QPushButton("变量", objectName="notebookVarToggle")
+        self._btn_vars.setCheckable(True)
+        self._btn_vars.setToolTip("切换变量面板显示 (Ctrl+Shift+V)")
+        for button in (
             self._btn_new,
             self._btn_open,
             self._btn_save,
-            self._btn_save_as,
-            self._btn_run,
             self._btn_run_all,
-            self._btn_run_from,
-            self._btn_insert,
-            self._btn_delete,
-            self._btn_up,
-            self._btn_down,
-        )
-        for button in buttons:
+            self._btn_restart,
+            self._btn_vars,
+        ):
             bar.addWidget(button)
         self._status_label = QLabel(objectName="notebookStatus")
         self._status_label.setStyleSheet(f"color: {theme.current_palette().text_secondary};")
@@ -491,14 +561,9 @@ class NotebookPage(QWidget):
         self._btn_new.clicked.connect(self._on_new)
         self._btn_open.clicked.connect(self._on_open)
         self._btn_save.clicked.connect(self._on_save)
-        self._btn_save_as.clicked.connect(self._on_save_as)
-        self._btn_run.clicked.connect(self.run_current)
         self._btn_run_all.clicked.connect(self.run_all)
-        self._btn_run_from.clicked.connect(self.run_from_current)
-        self._btn_insert.clicked.connect(self.insert_after_current)
-        self._btn_delete.clicked.connect(self.delete_current)
-        self._btn_up.clicked.connect(lambda: self.move_current(-1))
-        self._btn_down.clicked.connect(lambda: self.move_current(1))
+        self._btn_restart.clicked.connect(self.restart_kernel)
+        self._btn_vars.toggled.connect(self._toggle_vars)
 
         self._cells_host = QWidget()
         self._cells_layout = QVBoxLayout(self._cells_host)
@@ -511,16 +576,18 @@ class NotebookPage(QWidget):
         scroll.setWidget(self._cells_host)
         scroll.setFrameShape(QFrame.NoFrame)
 
+        # 变量侧栏：默认收起，单元流占满全宽；展开时 4:1（jupyterlab 侧栏语义）
         self._var_model = VarTableModel(self)
-        var_view = QTableView(objectName="varBrowser")
-        var_view.setModel(self._var_model)
-        var_view.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
-        var_view.verticalHeader().setVisible(False)
+        self._var_view = QTableView(objectName="varBrowser")
+        self._var_view.setModel(self._var_model)
+        self._var_view.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
+        self._var_view.verticalHeader().setVisible(False)
+        self._var_view.setVisible(False)
 
         splitter = QSplitter(Qt.Horizontal)
         splitter.addWidget(scroll)
-        splitter.addWidget(var_view)
-        splitter.setStretchFactor(0, 3)
+        splitter.addWidget(self._var_view)
+        splitter.setStretchFactor(0, 4)
         splitter.setStretchFactor(1, 1)
 
         root = QVBoxLayout(self)
@@ -528,7 +595,24 @@ class NotebookPage(QWidget):
         root.setSpacing(theme.SPACING_SM)
         root.addLayout(bar)
         root.addWidget(splitter, stretch=1)
+        self._install_shortcuts()
         self.refresh_vars()
+
+    def _install_shortcuts(self) -> None:
+        """页面级快捷键：从此运行/下方插入/上下移格/另存/切换变量面板."""
+        bindings = (
+            ("Ctrl+Shift+Return", self.run_from_current),
+            ("Ctrl+Shift+Enter", self.run_from_current),
+            ("Alt+Return", self.insert_after_current),
+            ("Alt+Enter", self.insert_after_current),
+            ("Ctrl+Shift+Up", lambda: self.move_current(-1)),
+            ("Ctrl+Shift+Down", lambda: self.move_current(1)),
+            ("Ctrl+Shift+S", self.save_as),
+            ("Ctrl+Shift+V", self._btn_vars.toggle),
+        )
+        for key, handler in bindings:
+            shortcut = QShortcut(QKeySequence(key), self)
+            shortcut.activated.connect(handler)  # type: ignore[arg-type]（信号签名差异）
 
     def _rebuild_cells(self) -> None:
         """按 notebook.cells 重建单元控件列表（结构变化后调用）."""
@@ -543,10 +627,47 @@ class NotebookPage(QWidget):
         for index, cell in enumerate(self._notebook.cells):
             widget = CellWidget(cell)
             widget.editor.run_requested.connect(lambda advance, w=widget: self._on_run_shortcut(w, advance))
+            widget.action_requested.connect(lambda action, w=widget: self._on_cell_action(w, action))
             widget.editor.focusInEvent = self._wrap_focus_in(widget, index)
             self._cells_layout.insertWidget(self._cells_layout.count() - 1, widget)
             self._widgets.append(widget)
         self._current = min(self._current, max(0, len(self._widgets) - 1))
+
+    def _on_cell_action(self, widget: CellWidget, action: str) -> None:
+        """单元级工具条动作分发：运行/上移/下移/下方插入/删除."""
+        index = self._widgets.index(widget)
+        if action == "run":
+            self._run_at(index)
+        elif action == "up":
+            self._current = index
+            self.move_current(-1)
+        elif action == "down":
+            self._current = index
+            self.move_current(1)
+        elif action == "insert":
+            self.insert_at(index + 1)
+        elif action == "delete":
+            self._delete_at(index)
+
+    def _delete_at(self, index: int) -> None:
+        """删除指定格（不改变当前焦点格语义，删空自动补格）."""
+        if not 0 <= index < len(self._notebook.cells):
+            return
+        del self._notebook.cells[index]
+        self._dirty = True
+        if not self._notebook.cells:
+            self._notebook.cells.append(new_cell())
+            self._current = 0
+        else:
+            self._current = min(
+                self._current if self._current < index else self._current - 1, len(self._notebook.cells) - 1
+            )
+        self._rebuild_cells()
+        self._focus_index(max(0, min(self._current, len(self._widgets) - 1)))
+
+    def _toggle_vars(self, visible: bool) -> None:
+        """切换变量侧栏显示（jupyterlab 侧栏收起/展开）."""
+        self._var_view.setVisible(visible)
 
     def _wrap_focus_in(self, widget: CellWidget, index: int):
         """包装编辑器 focusInEvent：记录当前焦点格并保留默认聚焦行为."""

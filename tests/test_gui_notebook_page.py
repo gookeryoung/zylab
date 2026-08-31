@@ -294,6 +294,131 @@ def test_maybe_save_not_dirty_returns_true(page: NotebookPage) -> None:
     assert page.maybe_save() is True
 
 
+# ------------------------------------------------ 变量侧栏折叠（jupyterlab 语义）
+
+
+@pytest.mark.gui
+def test_var_panel_collapsed_by_default(page: NotebookPage) -> None:
+    """变量面板默认收起，单元流占满全宽."""
+    assert page._var_view.isHidden() is True
+    assert page._btn_vars.isChecked() is False
+
+
+@pytest.mark.gui
+def test_var_panel_toggle(page: NotebookPage) -> None:
+    """变量按钮切换侧栏显示并联动选中态."""
+    page._btn_vars.toggle()
+    assert page._var_view.isHidden() is False
+    assert page._btn_vars.isChecked() is True
+    page._toggle_vars(False)
+    assert page._var_view.isHidden() is True
+
+
+@pytest.mark.gui
+def test_run_does_not_auto_expand_var_panel(page: NotebookPage) -> None:
+    """运行单元不自动弹出变量面板（主动查看语义）."""
+    page._widgets[0].editor.setPlainText("auto = 1")
+    page.run_current()
+    assert page._var_view.isHidden() is True
+    # 面板展开时刷新仍生效
+    page._toggle_vars(True)
+    page.run_current()
+    assert page._var_model.rowCount() >= 1
+
+
+# ------------------------------------------------ 单元级工具条（悬停动作）
+
+
+@pytest.mark.gui
+def test_cell_toolbar_hidden_until_hover(qtbot) -> None:
+    """工具条按钮默认隐藏，进入/离开卡片切换可见性."""
+    widget = CellWidget(new_cell("a = 1"))
+    qtbot.addWidget(widget)
+    assert all(not b.isVisible() for b in widget._tool_buttons)
+
+
+@pytest.mark.gui
+def test_cell_action_run(page: NotebookPage) -> None:
+    """工具条 run 动作执行对应单元."""
+    page._widgets[0].editor.setPlainText("r = 7")
+    page._on_cell_action(page._widgets[0], "run")
+    assert page._widgets[0].cell.execution_count == 1
+    assert page._kernel.namespace["r"] == 7
+
+
+@pytest.mark.gui
+def test_cell_action_insert_and_delete(page: NotebookPage) -> None:
+    """工具条 insert 在目标格下方插入；delete 删除指定格."""
+    page._widgets[0].editor.setPlainText("first")
+    page._on_cell_action(page._widgets[0], "insert")
+    assert len(page._notebook.cells) == 2
+    page._widgets[1].editor.setPlainText("second")
+    page._on_cell_action(page._widgets[0], "insert")
+    assert page._notebook.cells[1].source == ""  # 插在 first 下方
+    # 删除中间空格：剩余 first/second 且顺序不变
+    page._on_cell_action(page._widgets[1], "delete")
+    assert [c.source for c in page._notebook.cells] == ["first", "second"]
+
+
+@pytest.mark.gui
+def test_cell_action_move(page: NotebookPage) -> None:
+    """工具条 up/down 移动指定格."""
+    page._on_cell_action(page._widgets[0], "insert")
+    page._widgets[0].editor.setPlainText("top")
+    page._on_cell_action(page._widgets[0], "down")
+    assert page._notebook.cells[1].source == "top"
+    page._on_cell_action(page._widgets[1], "up")
+    assert page._notebook.cells[0].source == "top"
+
+
+# ------------------------------------------------ 重启内核
+
+
+@pytest.mark.gui
+def test_restart_kernel_resets_outputs(page: NotebookPage, monkeypatch: pytest.MonkeyPatch) -> None:
+    """确认重启后：变量清空、单元输出失效、计数归零、状态提示."""
+    from zylab.gui.qt_compat import QMessageBox
+
+    monkeypatch.setattr(QMessageBox, "question", staticmethod(lambda *_a, **_k: QMessageBox.Yes))
+    page._widgets[0].editor.setPlainText("v = 3\nv")
+    page.run_current()
+    assert page._widgets[0].cell.execution_count == 1
+    page.restart_kernel()
+    assert page._widgets[0].cell.execution_count is None
+    assert page._widgets[0].cell.outputs == []
+    assert "v" not in page._kernel.namespace
+    assert page._kernel.execution_count == 0
+    assert "内核已重启" in page._status_label.text()
+
+
+@pytest.mark.gui
+def test_restart_kernel_cancel_keeps_state(page: NotebookPage, monkeypatch: pytest.MonkeyPatch) -> None:
+    """取消重启应保持变量与输出不变."""
+    from zylab.gui.qt_compat import QMessageBox
+
+    monkeypatch.setattr(QMessageBox, "question", staticmethod(lambda *_a, **_k: QMessageBox.No))
+    page._widgets[0].editor.setPlainText("keep = 1")
+    page.run_current()
+    page.restart_kernel()
+    assert page._kernel.namespace["keep"] == 1
+    assert page._widgets[0].cell.execution_count == 1
+
+
+# ------------------------------------------------ 顶部工具栏结构
+
+
+@pytest.mark.gui
+def test_toolbar_only_document_level_buttons(page: NotebookPage) -> None:
+    """工具栏仅保留文档级按钮（单元级操作在悬停工具条）."""
+    names = {
+        b.text()
+        for b in (page._btn_new, page._btn_open, page._btn_save, page._btn_run_all, page._btn_restart, page._btn_vars)
+    }
+    assert names == {"新建", "打开", "保存", "全部运行", "重启内核", "变量"}
+    assert not hasattr(page, "_btn_insert")
+    assert not hasattr(page, "_btn_delete")
+
+
 @pytest.mark.gui
 def test_var_table_model_data_roles(qtbot) -> None:
     """变量模型 data/headerData 各角色取值."""
@@ -378,7 +503,7 @@ def test_on_open_cancel_skips_dialog(page: NotebookPage, monkeypatch: pytest.Mon
 
 @pytest.mark.gui
 def test_on_save_slots(page: NotebookPage, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """工具栏保存/另存槽函数应转发文档操作（checked 参数丢弃）."""
+    """工具栏保存槽与另存快捷键应转发文档操作."""
     target = tmp_path / "slot.znbk"
     monkeypatch.setattr(
         "zylab.gui.pages.notebook_page.QFileDialog.getSaveFileName",
@@ -391,7 +516,7 @@ def test_on_save_slots(page: NotebookPage, tmp_path: Path, monkeypatch: pytest.M
         "zylab.gui.pages.notebook_page.QFileDialog.getSaveFileName",
         staticmethod(lambda *_a, **_k: (str(other), "")),
     )
-    page._on_save_as(False)
+    page.save_as()
     assert page.path == other
 
 

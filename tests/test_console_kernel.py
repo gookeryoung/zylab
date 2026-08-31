@@ -330,3 +330,31 @@ def test_execute_cell_stderr_emitted() -> None:
     assert [type(o).__name__ for o in execution.outputs] == ["StreamOutput"]
     assert execution.outputs[0].name == "stderr"
     assert "warn" in execution.outputs[0].text
+
+
+def test_restart_kernel_clears_state() -> None:
+    """重启内核：用户变量清空、内置符号重建、执行计数归零."""
+    kernel = ReplKernel()
+    kernel.execute_cell("x = 1\nx")
+    kernel.execute_cell("y = 2")
+    assert kernel.execution_count == 2
+    kernel.restart_kernel()
+    assert kernel.execution_count == 0
+    assert "x" not in kernel.namespace
+    assert "y" not in kernel.namespace
+    assert "ans" not in kernel.namespace
+    assert kernel.namespace["np"] is np  # 内置符号重建
+    assert "plot" in kernel.namespace
+    # 重启后可继续执行且计数从 1 开始
+    execution = kernel.execute_cell("x = 3\nx")
+    assert execution.count == 1
+    assert kernel.namespace["x"] == 3
+
+
+def test_restart_kernel_keeps_builtin_snapshot_consistent() -> None:
+    """重启后 builtin_names 与命名空间键一致（变量浏览器正确区分用户变量）."""
+    kernel = ReplKernel()
+    kernel.execute_cell("user_var = 1")
+    kernel.restart_kernel()
+    assert set(kernel.builtin_names) <= set(kernel.namespace)
+    assert "user_var" not in kernel.builtin_names
