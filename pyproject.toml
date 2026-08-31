@@ -75,3 +75,9 @@ url     = "https://mirrors.aliyun.com/pypi/simple/"
 
 [dependency-groups]
 dev = ["zylab[dev,docs]"]
+
+[tool.fspack]
+exclude = [".trae"]
+data-dirs = ["src/zylab/assets"]
+pyc_strip = true
+no_site = true
