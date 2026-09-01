@@ -14,7 +14,8 @@
 - :mod:`zylab.studio.project_io`：工程文件持久化（人类可读 JSON，兼容旧 HDF5）；
 - :mod:`zylab.studio.dsl`：DSL 分析模板（YAML 声明式模板解析/校验/参数绑定）；
 - :mod:`zylab.studio.expressions`：表达式安全求值（AST 白名单 + 受限命名空间）；
-- :mod:`zylab.studio.results`：DSL 结果视图数据解析（curve/table/text/cloud）。
+- :mod:`zylab.studio.results`：DSL 结果视图数据解析（curve/table/text/cloud）；
+- :mod:`zylab.studio.report`：DSL 报告生成器（Markdown/HTML 双载体，曲线内嵌 SVG）。
 """
 
 from __future__ import annotations
@@ -44,6 +45,7 @@ from .module import (
 )
 from .project_io import ProjectIOError, load_workflow, save_workflow
 from .registry import TemplateRegistry
+from .report import build_html, build_markdown
 from .results import CloudData, CurveData, CurveSeries, TableData, TextData, ViewData, build_result
 from .runner import NodeRunEvent, WorkflowRunner
 from .template import ParamGroup, Template, TemplateNode, load_template, save_template, template_from_json
@@ -85,6 +87,8 @@ __all__ = [
     "WorkflowGraph",
     "WorkflowRunner",
     "all_modules",
+    "build_html",
+    "build_markdown",
     "build_result",
     "load_template",
     "load_workflow",

@@ -190,16 +190,33 @@ def _build_text(result: DslResult, outputs: Mapping[str, Any]) -> TextData:
 
 
 def _resolve_path(ref: str, outputs: Mapping[str, Any]) -> Any:
-    """按 ``"节点id.字段路径"`` 引用取值（路径逐级下行映射键）."""
+    """按 ``"节点id.字段路径"`` 引用取值.
+
+    路径逐级下行：映射按键取值；序列（list/tuple）按数字段取下标
+    （支持负索引，如 ``sweep.series.y.-1`` 取末项）。段与当前值类型
+    不匹配或不存在时报错。
+    """
     node_id, _, rest = ref.partition(".")
     if node_id not in outputs:
         raise TemplateError(f"结果引用 {ref!r} 的节点 {node_id!r} 无输出（尚未运行）")
     value: Any = outputs[node_id]
     for segment in rest.split(".") if rest else ():
-        if not isinstance(value, Mapping) or segment not in value:
-            raise TemplateError(f"结果引用 {ref!r} 无法解析: {segment!r} 不存在")
-        value = value[segment]
+        value = _descend(value, segment, ref)
     return _plain(value)
+
+
+def _descend(value: Any, segment: str, ref: str) -> Any:
+    """路径单段下行（映射键或序列索引；不匹配/越界报错）."""
+    if isinstance(value, Mapping) and segment in value:
+        return value[segment]
+    if isinstance(value, (list, tuple)) and _index_text(segment) and -len(value) <= int(segment) < len(value):
+        return value[int(segment)]
+    raise TemplateError(f"结果引用 {ref!r} 无法解析: {segment!r} 不存在")
+
+
+def _index_text(segment: str) -> bool:
+    """段是否为合法整数文本（含负号；空串/单横杠均非）."""
+    return segment.lstrip("-").isdigit()
 
 
 def _resolve_sequence(ref: str, outputs: Mapping[str, Any]) -> tuple[Any, ...]:
