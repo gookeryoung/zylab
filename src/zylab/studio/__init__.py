@@ -11,7 +11,10 @@
 - :mod:`zylab.studio.graph`：工作流图（节点状态机 + 级联脏传播 + 拓扑执行计划）；
 - :mod:`zylab.studio.runner`：编排执行（拓扑序驱动 ProcessExecutor，缓存命中跳过）；
 - :mod:`zylab.studio.batch`：批处理执行（进程内拓扑序求解 + 参数覆盖/扫描 + 摘要）；
-- :mod:`zylab.studio.project_io`：工程文件持久化（人类可读 JSON，兼容旧 HDF5）。
+- :mod:`zylab.studio.project_io`：工程文件持久化（人类可读 JSON，兼容旧 HDF5）；
+- :mod:`zylab.studio.dsl`：DSL 分析模板（YAML 声明式模板解析/校验/参数绑定）；
+- :mod:`zylab.studio.expressions`：表达式安全求值（AST 白名单 + 受限命名空间）；
+- :mod:`zylab.studio.results`：DSL 结果视图数据解析（curve/table/text/cloud）。
 """
 
 from __future__ import annotations
@@ -41,13 +44,17 @@ from .module import (
 )
 from .project_io import ProjectIOError, load_workflow, save_workflow
 from .registry import TemplateRegistry
+from .results import CloudData, CurveData, CurveSeries, TableData, TextData, ViewData, build_result
 from .runner import NodeRunEvent, WorkflowRunner
 from .template import ParamGroup, Template, TemplateNode, load_template, save_template, template_from_json
 
 __all__ = [
     "BUILTIN_MODULES",
     "BUILTIN_TEMPLATES",
+    "CloudData",
     "ConductionBundle",
+    "CurveData",
+    "CurveSeries",
     "LinkError",
     "ModelBundle",
     "ModuleCategory",
@@ -67,14 +74,18 @@ __all__ = [
     "ReportFn",
     "RunOutcome",
     "StudioError",
+    "TableData",
     "Template",
     "TemplateError",
     "TemplateNode",
     "TemplateNotFoundError",
     "TemplateRegistry",
+    "TextData",
+    "ViewData",
     "WorkflowGraph",
     "WorkflowRunner",
     "all_modules",
+    "build_result",
     "load_template",
     "load_workflow",
     "module_spec",
