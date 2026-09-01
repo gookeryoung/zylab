@@ -61,6 +61,15 @@ def test_dixon_mood_rejects_unmixed_data() -> None:
         dixon_mood(np.array([9.0, 10.0]), np.array([1, 1]), 1.0)
 
 
+def test_dixon_mood_standard_errors() -> None:
+    """Dixon-Mood 协方差修正：Fisher 信息标准误为有限正值."""
+    x = np.array([9.0, 10.0, 11.0, 12.0])
+    y = np.array([0, 0, 1, 1])
+    estimate = dixon_mood(x, y, 1.0)
+    assert 0.0 < estimate.se_mu < estimate.sigma
+    assert estimate.se_sigma > 0.0
+
+
 def test_mle_recovers_parameters_from_large_sample() -> None:
     """MLE 大样本恢复真值（500 点网格化二项数据，容差 5%）."""
     rng = np.random.default_rng(11)
@@ -88,6 +97,12 @@ def test_mle_rejects_insufficient_points() -> None:
         mle_estimate("logistic", np.array([10.0]), np.array([1]))
 
 
+def test_mle_weibull_rejects_nonpositive_levels() -> None:
+    """Weibull 模型刺激量非全正报 ReliabilityError."""
+    with pytest.raises(ReliabilityError, match="全为正"):
+        mle_estimate("weibull", np.array([-1.0, 2.0, 3.0]), np.array([0, 0, 1]))
+
+
 # ------------------------------------------------ 蒙特卡洛一致性验证（计算示例）
 
 
@@ -98,12 +113,13 @@ def test_mle_rejects_insufficient_points() -> None:
         ("ostr", {}),  # 方法102 OSTR法
         ("updown", {}),  # 方法103 升降法
         ("doptimal", {}),  # 方法104 D优化法
+        ("neyer", {}),  # Neyer D-最优法
         ("probit", {}),  # 方法201 概率单位法
         ("stepstress", {}),  # 方法202 完全步进法
     ],
 )
 def test_run_sensitivity_test_recovers_truth(method: str, kwargs: dict) -> None:
-    """六方法固定种子模拟：估计 μ 落在真值 1.5σ 容差内、σ 量级正确.
+    """七方法固定种子模拟：估计 μ 落在真值 1.5σ 容差内、σ 量级正确.
 
     发数取 30（兰利法等序贯法标准推荐规模；发数过大时兰利区间塌缩
     到单点，σ 不可估）。
@@ -146,6 +162,43 @@ def test_run_probit_uses_normal_model() -> None:
     assert 0.4 < result.sigma_hat < 2.5
 
 
+def test_run_probit_gumbel_recovers_parameters() -> None:
+    """Gumbel（最小极值）模型：概率单位法 MLE 恢复位置-尺度双参数."""
+    result = run_sensitivity_test(
+        method="probit", model="gumbel", mu=10.0, sigma=1.0, x_low=6.0, x_high=14.0, n_levels=7, n_per_level=12, seed=9
+    )
+    assert result.model == "gumbel"
+    assert result.estimate.converged
+    assert result.mu_hat == pytest.approx(10.0, abs=1.0)
+    assert result.sigma_hat == pytest.approx(1.0, abs=0.3)
+
+
+def test_run_probit_weibull_recovers_parameters() -> None:
+    """Weibull 模型（η=10、k=1.5）：MLE 恢复尺度与形状双参数."""
+    result = run_sensitivity_test(
+        method="probit",
+        model="weibull",
+        mu=10.0,
+        sigma=1.5,
+        x_low=2.0,
+        x_high=25.0,
+        n_levels=7,
+        n_per_level=15,
+        seed=4,
+    )
+    assert result.model == "weibull"
+    assert result.estimate.converged
+    assert result.mu_hat == pytest.approx(10.0, rel=0.1)
+    assert result.sigma_hat == pytest.approx(1.5, rel=0.15)
+
+
+def test_run_neyer_uses_mle() -> None:
+    """Neyer D-最优法走序贯 MLE 分析."""
+    result = run_sensitivity_test(method="neyer", mu=10.0, sigma=1.0, n_total=30, seed=7)
+    assert result.method_label == "Neyer D-最优法"
+    assert result.estimate.estimator == "MLE"
+
+
 def test_run_updown_uses_dixon_mood() -> None:
     """升降法分析走 Dixon-Mood 公式（非 MLE）."""
     result = run_sensitivity_test(
@@ -185,5 +238,5 @@ def test_run_sensitivity_test_rejects_bad_arguments() -> None:
 
 
 def test_all_methods_covered() -> None:
-    """方法表完整（六方法与测试参数化一致）."""
-    assert METHOD_NAMES == ("langlie", "ostr", "updown", "doptimal", "probit", "stepstress")
+    """方法表完整（七方法与测试参数化一致）."""
+    assert METHOD_NAMES == ("langlie", "ostr", "updown", "doptimal", "neyer", "probit", "stepstress")

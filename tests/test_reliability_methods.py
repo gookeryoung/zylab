@@ -7,7 +7,9 @@ import pytest
 
 from zylab.reliability.errors import ReliabilityError
 from zylab.reliability.methods import (
+    doptimal_next,
     langlie_next,
+    neyer_next,
     probit_levels,
     stepstress_levels,
     updown_next,
@@ -49,6 +51,37 @@ def test_updown_rejects_nonpositive_step() -> None:
     """非正步长报 ReliabilityError."""
     with pytest.raises(ReliabilityError, match="步长须为正"):
         updown_next(np.asarray([10.0]), np.asarray([1]), 6.0, 14.0, step=0.0)
+
+
+def test_neyer_first_level_is_midpoint() -> None:
+    """无历史记录：Neyer 法取初始区间中点."""
+    x = neyer_next(np.asarray([]), np.asarray([], dtype=int), 6.0, 14.0, "logistic", 10.0, 1.0)
+    assert x == pytest.approx(10.0)
+
+
+def test_neyer_exponential_probe_upward() -> None:
+    """全不响应：向对侧以 σ·2^(m/2) 指数步长上探（m=2 → 步长 2σ）."""
+    levels = np.asarray([10.0, 11.9])
+    responses = np.asarray([0, 0])
+    x = neyer_next(levels, responses, 6.0, 14.0, "logistic", 10.0, 1.3)
+    assert x == pytest.approx(11.9 + 1.3 * 2.0)
+
+
+def test_neyer_exponential_probe_downward() -> None:
+    """全响应：向对侧下探（m=1 → 步长 σ·√2）."""
+    levels = np.asarray([10.0])
+    responses = np.asarray([1])
+    x = neyer_next(levels, responses, 6.0, 14.0, "logistic", 10.0, 2.0)
+    assert x == pytest.approx(10.0 - 2.0 * np.sqrt(2.0))
+
+
+def test_neyer_mixed_matches_doptimal() -> None:
+    """响应已翻转：与 D-优化法同一 D-最优选点规则."""
+    levels = np.asarray([9.0, 11.0])
+    responses = np.asarray([0, 1])
+    a = neyer_next(levels, responses, 6.0, 14.0, "logistic", 10.0, 1.0)
+    b = doptimal_next(levels, responses, 6.0, 14.0, "logistic", 10.0, 1.0)
+    assert a == pytest.approx(b)
 
 
 def test_probit_levels_uniform_grid() -> None:

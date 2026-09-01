@@ -25,12 +25,13 @@ from .methods import (
     METHOD_NAMES,
     doptimal_next,
     langlie_next,
+    neyer_next,
     ostr_next,
     probit_levels,
     stepstress_levels,
     updown_next,
 )
-from .model import MODEL_NAMES, neg_log_likelihood, response_prob
+from .model import MODEL_NAMES, _info_matrix, neg_log_likelihood, response_prob
 
 __all__ = [
     "SensitivityEstimate",
@@ -125,6 +126,8 @@ def mle_estimate(model: str, x: np.ndarray, y: np.ndarray) -> SensitivityEstimat
     y = np.asarray(y, dtype=int)
     if x.size < 2:
         raise ReliabilityError("MLE 至少需要 2 个试验点")
+    if model == "weibull" and np.any(x <= 0.0):
+        raise ReliabilityError("weibull 模型刺激量须全为正")
     if _is_separated(x, y):
         return SensitivityEstimate(
             mu=float(0.5 * (x.min() + x.max())),
@@ -135,23 +138,32 @@ def mle_estimate(model: str, x: np.ndarray, y: np.ndarray) -> SensitivityEstimat
     responded, silent = x[y > 0], x[y == 0]
     mu0 = 0.5 * (float(responded.mean()) + float(silent.mean()))
     sigma0 = max(float(x.std()) * 0.5, float(x.max() - x.min()) / 20.0, 1.0e-6)
+    if model == "weibull":
+        # Weibull 参数化 (ln η, ln k)：尺度初值取响应/不响应重心均值，形状初值 1.2
+        theta0 = np.array([np.log(max(mu0, 1.0e-6)), np.log(1.2)])
+    else:
+        theta0 = np.array([mu0, np.log(sigma0)])
     result = minimize(
         neg_log_likelihood,
-        np.array([mu0, np.log(sigma0)]),
+        theta0,
         args=(x, y, model),
         method="Nelder-Mead",
         options={"xatol": 1.0e-10, "fatol": 1.0e-12, "maxiter": 2000},
     )
-    mu_hat, sigma_hat = float(result.x[0]), float(np.exp(result.x[1]))
+    mu_hat, sigma_hat = (
+        (float(np.exp(result.x[0])), float(np.exp(result.x[1])))
+        if model == "weibull"
+        else (float(result.x[0]), float(np.exp(result.x[1])))
+    )
     hessian = _numerical_hessian(result.x, x, y, model)
     covariance = np.linalg.inv(hessian) if np.all(np.isfinite(hessian)) else np.full((2, 2), np.nan)
-    # 参数化 (μ, ln σ)：δ法传导 σ 的标准误
+    # 参数化 (μ, ln σ) 或 (ln η, ln k)：δ法传导至原参数尺度
     se_mu = float(np.sqrt(covariance[0, 0])) if covariance[0, 0] > 0.0 else float("nan")
     se_log_sigma = float(np.sqrt(covariance[1, 1])) if covariance[1, 1] > 0.0 else float("nan")
     return SensitivityEstimate(
         mu=mu_hat,
         sigma=sigma_hat,
-        se_mu=se_mu,
+        se_mu=mu_hat * se_mu if model == "weibull" else se_mu,
         se_sigma=abs(sigma_hat * se_log_sigma),
         estimator="MLE",
         converged=bool(result.success),
@@ -185,6 +197,9 @@ def dixon_mood(x: np.ndarray, y: np.ndarray, step: float) -> SensitivityEstimate
 
         μ̂ = x_min + d·(A/n ± 0.5)    （不响应计数取 +0.5，响应计数取 -0.5）
         σ̂ = 1.620·d·sqrt((n·B − A²)/n² + 0.029)
+
+    协方差修正：标准误按 Dixon-Mood 隐含的正态假设，取试验点上期望
+    Fisher 信息矩阵（正态模型）逆的对角元（大样本近似）。
     """
     x = np.asarray(x, dtype=float)
     y = np.asarray(y, dtype=int)
@@ -205,7 +220,29 @@ def dixon_mood(x: np.ndarray, y: np.ndarray, step: float) -> SensitivityEstimate
     mu_hat = float(x.min() + step * mean_shift)
     variance = max((n_used * b_value - a_value**2) / n_used**2 + 0.029, 0.0)
     sigma_hat = float(1.620 * step * np.sqrt(variance))
-    return SensitivityEstimate(mu=mu_hat, sigma=max(sigma_hat, step * 0.1), estimator="Dixon-Mood")
+    sigma_final = max(sigma_hat, step * 0.1)
+    se_mu, se_sigma = _fisher_standard_errors(x, "normal", mu_hat, sigma_final)
+    return SensitivityEstimate(
+        mu=mu_hat,
+        sigma=sigma_final,
+        se_mu=se_mu,
+        se_sigma=se_sigma,
+        estimator="Dixon-Mood",
+    )
+
+
+def _fisher_standard_errors(x: np.ndarray, model: str, mu: float, sigma: float) -> tuple[float, float]:
+    """期望 Fisher 信息矩阵逆的对角元平方根（协方差修正，大样本近似）.
+
+    信息矩阵奇异（试验点信息不足）时返回 NaN。
+    """
+    try:
+        covariance = np.linalg.inv(_info_matrix(x, model, mu, sigma))
+    except np.linalg.LinAlgError:
+        return float("nan"), float("nan")
+    se_mu = float(np.sqrt(covariance[0, 0])) if covariance[0, 0] > 0.0 else float("nan")
+    se_sigma = float(np.sqrt(covariance[1, 1])) if covariance[1, 1] > 0.0 else float("nan")
+    return se_mu, se_sigma
 
 
 def karber(x_levels: np.ndarray, hits: np.ndarray, n_per_level: int) -> SensitivityEstimate:
@@ -248,9 +285,10 @@ def run_sensitivity_test(  # noqa: PLR0913  六方法统一入口，参数即标
     """总装感度试验：设计生成 → 蒙特卡洛模拟 → 统计分析.
 
     :param method: 试验方法名（:data:`~zylab.reliability.methods.METHOD_NAMES`）。
-    :param model: 响应模型名（``logistic``/``normal``）。
-    :param mu: 真值 50% 响应点（模拟用）。
-    :param sigma: 真值感度标准差（模拟用）。
+    :param model: 响应模型名（``logistic``/``normal``/``gumbel``/``weibull``，
+        Weibull 参数化为 ``μ=尺度 η``、``σ=形状 k``）。
+    :param mu: 真值 50% 响应点（``weibull`` 为尺度 η，模拟用）。
+    :param sigma: 真值感度标准差（``weibull`` 为形状 k，模拟用）。
     :param n_total: 序贯法总发数。
     :param x_low: 初始区间下界（全不响应估计界）。
     :param x_high: 初始区间上界（全响应估计界）。
@@ -267,7 +305,7 @@ def run_sensitivity_test(  # noqa: PLR0913  六方法统一入口，参数即标
     if sigma <= 0.0 or n_total < 4:
         raise ReliabilityError("真值 σ 须为正且序贯发数 ≥ 4")
     rng = np.random.default_rng(seed)
-    if method in ("langlie", "ostr", "updown", "doptimal"):
+    if method in ("langlie", "ostr", "updown", "doptimal", "neyer"):
         levels, responses = _run_sequential(method, model, mu, sigma, n_total, x_low, x_high, step, rng)
         estimate = dixon_mood(levels, responses, step) if method == "updown" else mle_estimate(model, levels, responses)
     elif method == "probit":
@@ -322,6 +360,8 @@ def _run_sequential(  # noqa: PLR0913, PLR0917  序贯法共享逐发循环，�
             sigma_use = usable.sigma if usable is not None else sigma_guess
             if method == "ostr":
                 x_next = ostr_next(history_x, history_y, x_low, x_high, model, mu_use, sigma_use)
+            elif method == "neyer":
+                x_next = neyer_next(history_x, history_y, x_low, x_high, model, mu_use, sigma_use)
             else:
                 x_next = doptimal_next(history_x, history_y, x_low, x_high, model, mu_use, sigma_use)
         probability = float(response_prob(model, x_next, mu, sigma))

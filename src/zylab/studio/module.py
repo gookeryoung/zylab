@@ -652,14 +652,20 @@ BUILTIN_MODULES: tuple[ModuleSpec, ...] = (
                 "试验方法",
                 ParamType.STR,
                 "langlie",
-                doc="GJB/Z 377A 方法名: langlie(101)/ostr(102)/updown(103)/doptimal(104)/probit(201)/stepstress(202)",
+                doc="方法名: langlie(101)/ostr(102)/updown(103)/doptimal(104)/neyer/probit(201)/stepstress(202)",
             ),
             ParamSpec(
-                "model", "响应模型", ParamType.STR, "logistic", doc="logistic（Logistic）/ normal（正态，Probit）"
+                "model",
+                "响应模型",
+                ParamType.STR,
+                "logistic",
+                doc="logistic/normal/gumbel/weibull(μ=尺度η, σ=形状k, 刺激量为正)",
             ),
-            ParamSpec("mu", "真值 μ", ParamType.FLOAT, 10.0, -1.0e9, 1.0e9, 0.5, "", "50% 响应点（模拟真值）"),
-            ParamSpec("sigma", "真值 σ", ParamType.FLOAT, 1.0, 1.0e-9, 1.0e9, 0.1, "", "感度标准差（模拟真值）"),
-            ParamSpec("n_total", "序贯发数", ParamType.INT, 30, 4, 10000, 1, "", "序贯法（方法101-104）总发数"),
+            ParamSpec("mu", "真值 μ", ParamType.FLOAT, 10.0, -1.0e9, 1.0e9, 0.5, "", "50% 响应点（weibull 为尺度 η）"),
+            ParamSpec(
+                "sigma", "真值 σ", ParamType.FLOAT, 1.0, 1.0e-9, 1.0e9, 0.1, "", "感度标准差（weibull 为形状 k）"
+            ),
+            ParamSpec("n_total", "序贯发数", ParamType.INT, 30, 4, 10000, 1, "", "序贯法（方法101-104/Neyer）总发数"),
             ParamSpec("x_low", "初始下界", ParamType.FLOAT, 6.0, -1.0e9, 1.0e9, 0.5, "", "估计全不响应刺激量下界"),
             ParamSpec("x_high", "初始上界", ParamType.FLOAT, 14.0, -1.0e9, 1.0e9, 0.5, "", "估计全响应刺激量上界"),
             ParamSpec("step", "固定步长", ParamType.FLOAT, 0.8, 1.0e-9, 1.0e9, 0.1, "", "升降法/步进法步长"),

@@ -1,0 +1,63 @@
+meta:
+  id: dsl.sensitivity_weibull
+  name: Weibull 感度模型
+  discipline: reliability
+  description: 双参数 Weibull 响应模型感度试验（概率单位法设计 + 极大似然估计，μ 为尺度 η、σ 为形状 k）。
+  tags: [可靠性, 感度试验]
+params:
+  试验设置:
+    items:
+      mu: {value: 10.0, min: 0.001, max: 1000.0}
+      sigma: {value: 1.5, min: 0.05, max: 100.0}
+      n_levels: {value: 7, min: 2, max: 50}
+      n_per_level: {value: 15, min: 1, max: 100}
+      x_low: {value: 2.0, min: 0.001, max: 1000.0}
+      x_high: {value: 25.0, min: 0.001, max: 1000.0}
+      seed: {value: 4, min: 0, max: 1000000}
+pipeline:
+  - id: test
+    type: reliability.sensitivity_test
+    params:
+      method: probit
+      model: weibull
+      mu: "$mu"
+      sigma: "$sigma"
+      n_levels: "$n_levels"
+      n_per_level: "$n_per_level"
+      x_low: "$x_low"
+      x_high: "$x_high"
+      seed: "$seed"
+results:
+  - id: curve
+    kind: curve
+    title: Weibull 响应概率拟合曲线
+    x: test.curve_x
+    y: test.curve_p
+    x_label: 刺激量
+    y_label: 响应概率
+  - id: summary
+    kind: text
+    title: 估计摘要
+    text: "η̂ = {mu:.4f}，k̂ = {sigma:.4f}（{estimator}，收敛={converged}）"
+    values:
+      mu: "test.mu_hat"
+      sigma: "test.sigma_hat"
+      estimator: "test.estimate.estimator"
+      converged: "test.estimate.converged"
+  - id: records
+    kind: table
+    title: 试验记录
+    columns:
+      - {title: 刺激量, ref: test.levels}
+      - {title: 响应, ref: test.responses}
+report:
+  exports: [md, html]
+  sections:
+    - title: 响应概率曲线
+      figure: curve
+    - title: 估计摘要
+      figure: summary
+    - title: 试验记录
+      figure: records
+docs:
+  intro: {text: 双参数 Weibull 感度模型以尺度参数 η（特征临界刺激量）与形状参数 k 描述非对称感度分布；概率单位法固定水平表布置试验，极大似然估计两参数，水平表覆盖高响应区（接近 100%）时形状参数估计最稳定。}

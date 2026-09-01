@@ -13,6 +13,9 @@
 - **方法104 D-优化法**：候选点覆盖全区间 ``F⁻¹(p)`` 网格，以当前
   MLE（不可估时用初始猜测）计算期望信息行列式取最大。
 
+另提供国际通用的 **Neyer D-最优序贯法**（Neyer 1994 简化实现）：
+响应未翻转时以指数递增步长快速外推定位，翻转后与 D-优化法一致。
+
 非序贯法（201-202）提供固定/步进设计表：
 
 - **方法201 概率单位法**：等间隔水平表，每水平 ``n_per_level`` 发；
@@ -28,28 +31,30 @@ from typing import Callable
 import numpy as np
 
 from .errors import ReliabilityError
-from .model import inverse_prob, response_prob
+from .model import _info_matrix, inverse_prob
 
 __all__ = [
     "METHOD_LABELS",
     "METHOD_NAMES",
     "doptimal_next",
     "langlie_next",
+    "neyer_next",
     "ostr_next",
     "probit_levels",
     "stepstress_levels",
     "updown_next",
 ]
 
-#: 支持的感度试验方法名（GJB/Z 377A 方法编号）
-METHOD_NAMES = ("langlie", "ostr", "updown", "doptimal", "probit", "stepstress")
+#: 支持的感度试验方法名（GJB/Z 377A 方法编号 + Neyer 扩充）
+METHOD_NAMES = ("langlie", "ostr", "updown", "doptimal", "neyer", "probit", "stepstress")
 
-#: 方法编号与中文名（报告/界面展示用）
+#: 方法编号与中文名（报告/界面展示用；Neyer 为国际通用方法，非国标编号）
 METHOD_LABELS = {
     "langlie": "方法101 兰利法",
     "ostr": "方法102 OSTR法",
     "updown": "方法103 升降法",
     "doptimal": "方法104 D优化法",
+    "neyer": "Neyer D-最优法",
     "probit": "方法201 概率单位法",
     "stepstress": "方法202 完全步进法",
 }
@@ -123,11 +128,7 @@ def _argmax_d_criterion(
     mu: float,
     sigma: float,
 ) -> float:
-    """在候选点中选使加入该点后期望 Fisher 信息行列式最大者.
-
-    期望信息按伯努利响应计算：单点信息 ``I(x) = g gᵀ / (p(1-p))``，
-    其中 ``g = ∂p/∂θ = [f(z)/σ, z·f(z)/σ]ᵀ``（位置-尺度参数化）。
-    """
+    """在候选点中选使加入该点后期望 Fisher 信息行列式最大者."""
     best_x, best_det = float(candidates[0]), -np.inf
     for x in candidates:
         info = _info_matrix(np.append(levels, x), model, mu, sigma)
@@ -137,20 +138,34 @@ def _argmax_d_criterion(
     return best_x
 
 
-def _info_matrix(xs: np.ndarray, model: str, mu: float, sigma: float) -> np.ndarray:
-    """位置-尺度参数的期望 Fisher 信息矩阵（2×2）."""
-    z = (np.asarray(xs, dtype=float) - mu) / sigma
-    p = np.asarray(response_prob(model, z, 0.0, 1.0), dtype=float)
-    density = p * (1.0 - p) if model == "logistic" else np.exp(-0.5 * z * z) / np.sqrt(2.0 * np.pi)
-    weight = np.where((p > 0.0) & (p < 1.0), density / np.maximum(p * (1.0 - p), 1.0e-300), 0.0) / sigma
-    g0 = weight
-    g1 = weight * z
-    return np.array(
-        [
-            [float(np.sum(g0 * g0)), float(np.sum(g0 * g1))],
-            [float(np.sum(g0 * g1)), float(np.sum(g1 * g1))],
-        ]
-    )
+def neyer_next(  # noqa: PLR0913, PLR0917  设计器签名与标准方法规则一一对应
+    levels: np.ndarray,
+    responses: np.ndarray,
+    x_low: float,
+    x_high: float,
+    model: str,
+    mu: float,
+    sigma: float,
+) -> float:
+    """Neyer D-最优序贯法下一水平（Neyer 1994 简化实现）.
+
+    - 无记录：取区间中点；
+    - 响应未翻转（全不响应或全响应）：向对侧以指数递增步长
+      ``σ·2^(m/2)``（``m`` 为已发数）快速外推定位翻转区；
+    - 已翻转：与 D-优化法一致，全区间 ``F⁻¹(p)`` 网格 D-最优选点。
+
+    :param mu: 当前参数估计 μ（MLE 或初始猜测）。
+    :param sigma: 当前参数估计 σ（外推步长基准）。
+    """
+    if levels.size == 0:
+        return 0.5 * (x_low + x_high)
+    mixed = bool((responses > 0).any()) and bool((responses == 0).any())
+    if not mixed:
+        direction = 1.0 if responses[-1] == 0 else -1.0
+        probe = float(sigma) * 2.0 ** (0.5 * levels.size)
+        return float(levels[-1] + direction * probe)
+    candidates = np.unique(np.clip(np.array([inverse_prob(model, p, mu, sigma) for p in _D_P_GRID]), x_low, x_high))
+    return _argmax_d_criterion(candidates, levels, model, mu, sigma)
 
 
 def updown_next(levels: np.ndarray, responses: np.ndarray, x_low: float, x_high: float, step: float) -> float:

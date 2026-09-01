@@ -277,18 +277,19 @@ results:
 
 
 def test_build_result_from_reliability_templates() -> None:
-    """六个感度试验 DSL 模板端到端：节点执行 + 曲线/文本/表格三视图解析.
+    """八个感度试验 DSL 模板端到端：节点执行 + 曲线/文本/表格三视图解析.
 
-    固定种子蒙特卡洛一致性：μ̂ 落在真值 1.5σ 容差内、曲线概率单调
-    非降且落在 [0, 1]，试验记录表两列等长。
+    固定种子蒙特卡洛一致性：μ̂（Weibull 为 η̂）落在真值 1.5 容差内、
+    曲线概率单调非降且落在 [0, 1]，试验记录表两列等长。
     """
     from zylab.studio import BUILTIN_TEMPLATES
     from zylab.studio.nodes import run_sensitivity_test_node
 
     templates = [t for t in BUILTIN_TEMPLATES if t.discipline == "reliability"]
-    assert len(templates) == 6
+    assert len(templates) == 8
     for template in templates:
-        outputs = {"test": run_sensitivity_test_node({}, template.node("test").params)}
+        params = template.node("test").params
+        outputs = {"test": run_sensitivity_test_node({}, params)}
         views = {result.kind: build_result(result, outputs) for result in template.dsl_results}
 
         curve = views["curve"]
@@ -298,9 +299,17 @@ def test_build_result_from_reliability_templates() -> None:
         assert np.all((probabilities >= 0.0) & (probabilities <= 1.0))
         text = views["text"]
         assert isinstance(text, TextData)
-        assert "μ̂" in text.text
-        mu_hat = float(text.text.partition("μ̂ = ")[2].split("，")[0])
-        assert mu_hat == pytest.approx(10.0, abs=1.5)
+        if params["model"] == "weibull":
+            # Weibull 参数化：μ 为尺度 η、σ 为形状 k
+            assert "η̂" in text.text
+            eta_hat = float(text.text.partition("η̂ = ")[2].split("，")[0])
+            assert eta_hat == pytest.approx(10.0, abs=1.5)
+            k_hat = float(text.text.partition("k̂ = ")[2].split("（")[0])
+            assert 1.0 < k_hat < 2.0
+        else:
+            assert "μ̂" in text.text
+            mu_hat = float(text.text.partition("μ̂ = ")[2].split("，")[0])
+            assert mu_hat == pytest.approx(10.0, abs=1.5)
         table = views["table"]
         assert isinstance(table, TableData)
         assert table.columns == ("刺激量", "响应")
