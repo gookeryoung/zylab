@@ -25,7 +25,8 @@ from typing import Any, Mapping
 
 import yaml
 
-from .errors import TemplateError
+from .errors import ParamError, TemplateError
+from .expressions import expr_names, safe_eval
 from .template import Template, TemplateNode
 
 __all__ = [
@@ -165,15 +166,32 @@ class DslTemplate(Template):
             if not param.derived and param.value is not None
         }
 
+    def evaluate(self, values: Mapping[str, Any] | None = None) -> dict[str, Any]:
+        """求值完整参数命名空间（输入参数 + 表达式派生量）.
+
+        :param values: 用户输入覆盖（缺省参数用声明默认值补齐）。
+        :raises ParamError: 派生表达式非法、引用未声明变量或循环依赖。
+        """
+        merged: dict[str, Any] = {**self.param_defaults(), **dict(values or {})}
+        derived: dict[str, DslParam] = {
+            name: param for group in self.dsl_params for name, param in group.items if param.derived
+        }
+        resolved: dict[str, Any] = {}
+        for name in derived:
+            _resolve_derived(name, derived, merged, resolved, visiting=())
+        merged.update(resolved)
+        return merged
+
     def bind_params(self, values: Mapping[str, Any]) -> Template:
         """以用户参数值代入 ``$`` 引用生成可执行模板（节点参数整体重写）.
 
-        以 :attr:`raw_params` 保留的原始引用为源重新代入；未声明 ``$``
+        以 :attr:`raw_params` 保留的原始引用为源重新代入（派生参数先经
+        :meth:`evaluate` 求值，``$派生量`` 引用同样可绑定）；未声明 ``$``
         引用的节点参数保持构造期已代入的默认值。
 
         :param values: 参数名 -> 值（缺省参数用声明默认值补齐）。
         """
-        merged = {**self.param_defaults(), **dict(values)}
+        merged = self.evaluate(values)
         raw_by_node = dict(self.raw_params)
         nodes = tuple(
             TemplateNode(
@@ -206,18 +224,26 @@ class DslTemplate(Template):
             raise TemplateError(f"DSL 模板定义缺字段: {exc}") from exc
         except TypeError as exc:
             raise TemplateError(f"DSL 模板定义类型错误: {exc}") from exc
+        except ParamError as exc:
+            raise TemplateError(f"DSL 模板派生参数非法: {exc}") from exc
         template.validate()
         return template
 
     @classmethod
     def _build(cls, data: Mapping[str, Any]) -> DslTemplate:
-        """构造字段（校验由 :meth:`from_dict` 统一执行）."""
+        """构造字段（校验由 :meth:`from_mapping` 统一执行）."""
         meta = _expect_mapping(data.get("meta", data), "meta")
         theme = str(data.get("theme", ""))
         dsl_params = _parse_param_groups(data.get("params", {}))
         defaults = {
             name: p.value for group in dsl_params for name, p in group.items if not p.derived and p.value is not None
         }
+        # 派生参数以默认值命名空间求值（含 $派生量 引用的构造期代入）
+        derived: dict[str, DslParam] = {name: p for group in dsl_params for name, p in group.items if p.derived}
+        resolved: dict[str, Any] = {}
+        for name in derived:
+            _resolve_derived(name, derived, defaults, resolved, visiting=())
+        defaults.update(resolved)
         pipeline = data.get("pipeline", data.get("nodes"))
         if pipeline is None:
             raise TemplateError("DSL 模板应含 'pipeline' 计算过程声明")
@@ -409,6 +435,42 @@ def _substitute_refs(params: Mapping[str, Any], values: Mapping[str, Any], templ
         else:
             resolved[key] = value
     return resolved
+
+
+def _resolve_derived(
+    name: str,
+    derived: Mapping[str, DslParam],
+    inputs: dict[str, Any],
+    resolved: dict[str, Any],
+    visiting: tuple[str, ...],
+) -> Any:
+    """递归求值派生参数（依赖其它派生量时先解依赖；环报 ParamError）.
+
+    :param name: 待求值派生参数名。
+    :param derived: 全部派生参数声明表。
+    :param inputs: 输入参数值（含默认值）。
+    :param resolved: 已求值派生量缓存（就地更新）。
+    :param visiting: 求值路径（环检测）。
+    """
+    if name in resolved:
+        return resolved[name]
+    if name in visiting:
+        chain = " -> ".join([*visiting, name])
+        raise ParamError(f"派生参数循环依赖: {chain}")
+    param = derived[name]
+    # 先解派生依赖（表达式引用的其它派生量），再以完整命名空间求值
+    for dep in sorted(expr_names(param.expr) & set(derived)):
+        if dep not in resolved:
+            _resolve_derived(dep, derived, inputs, resolved, (*visiting, name))
+    namespace = {**inputs, **resolved}
+    try:
+        value = safe_eval(param.expr, namespace)
+    except ParamError as exc:
+        raise ParamError(f"派生参数 {name!r} 求值失败: {exc}") from exc
+    except NameError as exc:
+        raise ParamError(f"派生参数 {name!r} 引用未声明变量: {exc}") from exc
+    resolved[name] = value
+    return value
 
 
 def _expect_mapping(value: Any, where: str) -> Mapping[str, Any]:
