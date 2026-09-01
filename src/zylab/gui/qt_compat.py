@@ -1,6 +1,10 @@
 """Qt 兼容层：PySide2（Python<=3.10 / Win7）与 PySide6（>=3.11）统一导入.
 
 GUI 模块一律从这里导入 Qt 符号，版本差异（exec_/exec、枚举路径）在此收拢。
+
+QtSvg 在此显式导入（re-export ``QSvgRenderer``）：图标资源为 SVG，运行时依赖
+imageformats/qsvg 插件；fspack 按子模块闭包裁剪 Qt 插件，代码无 QtSvg 导入时
+qsvg.dll 会被剥离，图标全部静默丢失（QPixmap 加载失败仅返回空对象）。
 """
 
 from __future__ import annotations
@@ -41,6 +45,7 @@ try:
         QTextCharFormat,
         QTextCursor,
     )
+    from PySide6.QtSvg import QSvgRenderer
     from PySide6.QtWidgets import (
         QAbstractItemView,
         QApplication,
@@ -126,6 +131,7 @@ except ImportError:  # pragma: no cover（3.8 环境走此分支）
         QTextCharFormat,  # type: ignore[missing-import]
         QTextCursor,
     )
+    from PySide2.QtSvg import QSvgRenderer  # type: ignore[missing-import]
     from PySide2.QtWidgets import (  # type: ignore[missing-import]
         QAbstractItemView,
         QApplication,
@@ -239,6 +245,7 @@ __all__ = [
     "QStyle",
     "QStyleOptionViewItem",
     "QStyledItemDelegate",
+    "QSvgRenderer",
     "QSyntaxHighlighter",
     "QTabWidget",
     "QTableView",

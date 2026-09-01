@@ -81,6 +81,20 @@ def test_load_icon_renders_and_falls_back(qtbot) -> None:
 
 
 @pytest.mark.gui
+def test_qt_compat_declares_qsvg(qtbot) -> None:
+    """qt_compat 显式声明 QtSvg 导入：锁定 SVG 运行时依赖不被当作无用导入清理.
+
+    图标资源为 SVG，运行时依赖 imageformats/qsvg 插件；fspack 按 QtSvg
+    是否出现在 import 闭包决定插件去留，该导入被移除时打包产物中 qsvg.dll
+    会被裁剪、图标全部静默丢失（QPixmap 加载失败仅返回空对象）。
+    """
+    from zylab.gui import qt_compat
+
+    assert "QSvgRenderer" in qt_compat.__all__
+    assert qt_compat.QSvgRenderer is not None
+
+
+@pytest.mark.gui
 def test_nav_icon_background_transparent(qtbot) -> None:
     """图标角落像素应全透明（无背景色块；采样图标四角均无笔画）."""
     from zylab.gui.icons import nav_icon
