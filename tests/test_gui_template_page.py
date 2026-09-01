@@ -291,18 +291,48 @@ def test_page_run_worker_exception(qtbot, monkeypatch) -> None:
 
 
 @pytest.mark.gui
-def test_page_builtin_combo(qtbot, monkeypatch, tmp_path: Path) -> None:
-    """内置模板下拉列出 DSL 模板，选择即加载定制化界面."""
+def test_page_market_dialog(qtbot, monkeypatch, tmp_path: Path) -> None:
+    """模板市场对话框列出全部 DSL 模板，确认选择后加载定制化界面."""
+    from zylab.gui.widgets.template_dialog import TemplateDialog
+
     monkeypatch.setattr("zylab.core.config.default_data_dir", lambda: tmp_path)
     page = TemplatePage()
     qtbot.addWidget(page)
-    names = [page._builtin_combo.itemText(i) for i in range(page._builtin_combo.count())]
-    assert names[0] == "内置模板…"
-    assert "函数逼近对比" in names and "悬臂梁长度扫参" in names
-    page._builtin_combo.setCurrentIndex(names.index("函数逼近对比"))
+    shown: list[TemplateDialog] = []
+
+    def fake_exec(dialog: TemplateDialog) -> int:
+        shown.append(dialog)
+        # 选中「函数逼近对比」并确认
+        for i in range(dialog._tree.topLevelItemCount()):
+            group = dialog._tree.topLevelItem(i)
+            for j in range(group.childCount()):
+                item = group.child(j)
+                if item.text(0) == "函数逼近对比":
+                    item.setSelected(True)
+                    dialog._tree.setCurrentItem(item)
+        dialog._on_accept()
+        return 1
+
+    monkeypatch.setattr("zylab.gui.pages.template_page.exec_dialog", fake_exec)
+    page.open_market()
+    assert len(shown) == 1
     assert page._template is not None and page._template.id == "dsl.math_compare"
     assert page._run_btn.isEnabled()
     assert page._tabs.count() == 2  # 对比曲线 + 摘要两结果页
+
+
+@pytest.mark.gui
+def test_page_market_empty(qtbot, monkeypatch, tmp_path: Path) -> None:
+    """模板市场为空（无 DSL 模板）时提示且不弹对话框."""
+    monkeypatch.setattr("zylab.core.config.default_data_dir", lambda: tmp_path)
+    monkeypatch.setattr("zylab.gui.pages.template_page._builtin_dsl_templates", lambda: [])
+    page = TemplatePage()
+    qtbot.addWidget(page)
+    messages: list[str] = []
+    page.status_message.connect(messages.append)
+    page.open_market()
+    assert any("模板市场为空" in m for m in messages)
+    assert page._template is None
 
 
 @pytest.mark.gui

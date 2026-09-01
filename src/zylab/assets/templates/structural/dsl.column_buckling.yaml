@@ -1,0 +1,56 @@
+meta:
+  id: dsl.column_buckling
+  name: 悬臂柱屈曲分析
+  discipline: structural
+  description: BEAM2 悬臂柱特征值屈曲，输出各阶临界载荷因子表、一阶摘要与报告。
+  tags: [CAE, 屈曲]
+params:
+  几何:
+    items:
+      height: {value: 100.0, unit: mm, min: 1.0, max: 10000.0}
+      n_elem: {value: 20, min: 2, max: 200}
+      area: {value: 1.0, unit: mm², min: 1.0e-6, max: 1.0e4}
+      inertia: {value: 1.0e-4, unit: mm⁴, min: 1.0e-12, max: 1.0e6}
+  材料:
+    items:
+      e_modulus: {value: 2.1e5, unit: MPa, min: 1.0e3, max: 1.0e12}
+  载荷:
+    items:
+      tip_load: {value: -1.0, unit: N, min: -1.0e6, max: 0.0}
+  求解:
+    items:
+      n_modes: {value: 4, min: 1, max: 20}
+pipeline:
+  - id: model
+    type: example.column_beam2
+    params:
+      height: "$height"
+      n_elem: "$n_elem"
+      area: "$area"
+      inertia: "$inertia"
+      e_modulus: "$e_modulus"
+      tip_load: "$tip_load"
+  - id: solve
+    type: analysis.buckling
+    params:
+      n_modes: "$n_modes"
+    inputs: {model: model.model}
+results:
+  - id: factor_table
+    kind: table
+    title: 临界载荷因子
+    columns:
+      - {ref: solve.load_factors, title: 载荷因子}
+  - id: summary
+    kind: text
+    title: 摘要
+    text: "一阶临界载荷因子 {lf:.6g}（临界载荷 = 因子 × 参考轴力绝对值）"
+    values: {lf: solve.load_factors.0}
+report:
+  exports: [md, html]
+  sections:
+    - title: 临界载荷因子
+      table: factor_table
+      text: "柱高 {height} mm、惯性矩 {inertia} mm⁴；两端铰支柱欧拉解 P_cr=π²EI/L²，悬臂柱为 π²EI/(4L²)。"
+docs:
+  intro: {text: 特征值屈曲给出理想线弹性失稳的临界载荷因子，实际结构需结合非线性分析评估。}

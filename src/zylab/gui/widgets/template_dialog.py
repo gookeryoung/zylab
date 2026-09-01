@@ -8,6 +8,8 @@
 
 from __future__ import annotations
 
+from typing import Sequence
+
 from zylab.studio import Template
 
 from .. import theme
@@ -34,6 +36,7 @@ DISCIPLINE_LABELS = {
     "electromagnetic": "电磁分析",
     "acoustic": "声学分析",
     "fluid": "流体分析",
+    "math": "数学计算",
 }
 
 
@@ -45,17 +48,17 @@ def discipline_label(discipline: str) -> str:
 class TemplateDialog(QDialog):
     """模板选择对话框（分组树 + 搜索 + 详情面板，Workbench Analysis Systems 风格）."""
 
-    def __init__(self, templates: list[Template], parent: QWidget | None = None) -> None:
+    def __init__(self, templates: Sequence[Template], parent: QWidget | None = None) -> None:
         """初始化对话框.
 
         Args:
-            templates: 可选模板表（按注册表顺序；分组在内部完成）。
+            templates: 可选模板表（按注册表顺序；分组在内部完成，接受 DSL 模板子类表）。
             parent: 父窗口。
         """
         super().__init__(parent)
         self.setWindowTitle("选择分析模板")
         self.resize(720, 480)
-        self._templates = templates
+        self._templates: Sequence[Template] = templates
         self._selected_id: str | None = None
 
         layout = QVBoxLayout(self)

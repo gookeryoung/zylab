@@ -34,7 +34,6 @@ from zylab.studio.results import CloudData, build_result
 from .. import theme
 from ..icons import nav_icon
 from ..qt_compat import (
-    QComboBox,
     QFileDialog,
     QHBoxLayout,
     QLabel,
@@ -46,10 +45,12 @@ from ..qt_compat import (
     QVBoxLayout,
     QWidget,
     Signal,
+    exec_dialog,
 )
 from ..widgets.dsl_param_form import DslParamForm
 from ..widgets.dsl_result_view import DslResultView
 from ..widgets.result_view import ResultView
+from ..widgets.template_dialog import TemplateDialog
 
 __all__ = ["TemplatePage"]
 
@@ -126,15 +127,12 @@ class TemplatePage(QWidget):
         return splitter
 
     def _build_run_bar(self) -> QWidget:
-        """底部运行条：内置模板下拉/加载/运行/导报告 + 状态提示."""
+        """底部运行条：模板市场/加载/运行/导报告 + 状态提示."""
         bar = QWidget(objectName="runBar")
         layout = QHBoxLayout(bar)
         layout.setContentsMargins(theme.SPACING_MD, theme.SPACING_SM, theme.SPACING_MD, theme.SPACING_SM)
-        self._builtin_combo = QComboBox()
-        self._builtin_combo.addItem("内置模板…")
-        for template in _builtin_dsl_templates():
-            self._builtin_combo.addItem(template.name, template)
-        self._builtin_combo.currentIndexChanged.connect(self._on_builtin_selected)
+        self._market_btn = QPushButton("模板市场")
+        self._market_btn.clicked.connect(self.open_market)
         self._load_btn = QPushButton("加载模板")
         self._load_btn.clicked.connect(self.load_template_file)
         self._run_btn = QPushButton("运行")
@@ -145,7 +143,7 @@ class TemplatePage(QWidget):
         self._export_btn.clicked.connect(self.export_report)
         self._export_btn.setEnabled(False)
         self._status_label = QLabel("未加载模板", objectName="secondaryText")
-        layout.addWidget(self._builtin_combo)
+        layout.addWidget(self._market_btn)
         layout.addWidget(self._load_btn)
         layout.addWidget(self._run_btn)
         layout.addWidget(self._export_btn)
@@ -153,12 +151,18 @@ class TemplatePage(QWidget):
         layout.addWidget(self._status_label)
         return bar
 
-    def _on_builtin_selected(self, index: int) -> None:
-        """内置模板下拉选择：加载选中 DSL 模板（占位项不动）."""
-        template = self._builtin_combo.itemData(index)
-        if not isinstance(template, DslTemplate):
+    def open_market(self) -> None:
+        """打开模板市场对话框（分组/搜索/详情），确认后加载选中 DSL 模板."""
+        templates = _builtin_dsl_templates()
+        if not templates:
+            self.status_message.emit("模板市场为空：未发现 DSL 模板")
             return
-        self.load_template(template)
+        dialog = TemplateDialog(templates, self)
+        dialog.setWindowTitle("模板市场")
+        if exec_dialog(dialog) and dialog.selected_id is not None:
+            template = next((t for t in templates if t.id == dialog.selected_id), None)
+            if template is not None:
+                self.load_template(template)
 
     # ------------------------------------------------------------------ 模板加载
 
