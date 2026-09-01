@@ -59,7 +59,7 @@ build-backend = "hatchling.build"
 requires      = ["hatchling"]
 
 [project.scripts]
-zylab     = "zylab.cli:main"
+zylab     = "zylab.gui.__main__:main"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/zylab"]
