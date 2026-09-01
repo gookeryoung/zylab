@@ -12,7 +12,7 @@ classifiers = [
     "Topic :: Software Development :: Libraries :: Python Modules",
 ]
 
-dependencies    = [
+dependencies = [
     "PySide2>=5.15.2.1; python_version <= '3.10'",
     "PySide6>=6.5.0; python_version >= '3.11'",
     # PySide2/shiboken2 以 NumPy 1.x 编译，2.x 会触发兼容警告甚至崩溃；现代线不受限
@@ -27,20 +27,15 @@ dependencies    = [
     # DSL 模板载体（YAML 是 JSON 超集，两类模板共用同一解析管线）
     "PyYAML>=6.0",
 ]
-description     = "通用科学计算仿真分析平台。"
-license         = "MIT"
-name            = "zylab"
-readme          = "README.md"
+description = "通用科学计算仿真分析平台。"
+license = "MIT"
+name = "zylab"
+readme = "README.md"
 requires-python = ">=3.8"
-version         = "0.1.3"
+version = "0.1.3"
 
 [project.optional-dependencies]
-dev = [
-    "zylab[lint,test]",
-    "prek>=0.4.5",
-    "tox-uv>=1.13.1",
-    "tox>=4.25.0",
-]
+dev = ["zylab[lint,test]", "prek>=0.4.5", "tox-uv>=1.13.1", "tox>=4.25.0"]
 docs = ["myst-parser>=3.0", "sphinx-rtd-theme>=2.0", "sphinx>=7.0"]
 lint = ["pyrefly>=1.1.1", "ruff>=0.8.0"]
 test = [
@@ -56,10 +51,10 @@ test = [
 ]
 [build-system]
 build-backend = "hatchling.build"
-requires      = ["hatchling"]
+requires = ["hatchling"]
 
 [project.scripts]
-zylab     = "zylab.gui.__main__:main"
+zylab = "zylab.gui.__main__:main"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/zylab"]
@@ -72,7 +67,7 @@ required-version = ">=0.5.0"
 
 [[tool.uv.index]]
 default = true
-url     = "https://mirrors.aliyun.com/pypi/simple/"
+url = "https://mirrors.aliyun.com/pypi/simple/"
 
 
 [dependency-groups]
