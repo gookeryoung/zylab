@@ -166,6 +166,67 @@ def test_cloud_ref() -> None:
     data = build_result(result, {"solve": object()})
     assert isinstance(data, CloudData)
     assert data.node_id == "solve"
+    assert data.payload is not None  # 载荷随视图携带（报告渲染用）
+
+
+def test_cloud_spec_fields() -> None:
+    """cloud 声明的 field/cmap/deform 透传到视图数据."""
+    result = _result("cloud", {"ref": "solve", "field": "temperature", "cmap": "inferno", "deform": 50.0})
+    data = build_result(result, {"solve": object()})
+    assert data.field == "temperature"
+    assert data.cmap == "inferno"
+    assert data.deform == 50.0
+
+
+def test_cloud_node_missing_rejected() -> None:
+    """cloud 引用未运行节点报错."""
+    result = _result("cloud", {"ref": "ghost"})
+    with pytest.raises(TemplateError, match="无输出"):
+        build_result(result, {})
+
+
+# ------------------------------------------------ 对象属性与数组索引引用
+
+
+class _FakeSolution:
+    """属性访问引用的假解对象（公开字段 + property）."""
+
+    times = [0.0, 0.1, 0.2]
+    displacements = np.array([[0.0, 1.0, 4.0], [0.0, 2.0, 8.0]])
+
+    @property
+    def t_max(self) -> float:
+        """最高温度（property 引用目标）."""
+        return 85.3
+
+
+def test_reference_object_attribute() -> None:
+    """引用路径支持解对象公开属性/property（下划线属性不可达）."""
+    result = _result("text", {"text": "最高 {tmax:.1f}", "values": {"tmax": "solve.t_max"}})
+    data = build_result(result, {"solve": _FakeSolution()})
+    assert data.text == "最高 85.3"
+
+
+def test_reference_object_attribute_nested() -> None:
+    """属性与数组下标混用：末行（负索引）全时程序列."""
+    result = _result("curve", {"x": "solve.times", "y": "solve.displacements.-1"})
+    data = build_result(result, {"solve": _FakeSolution()})
+    assert data.series[0].x == (0.0, 0.1, 0.2)
+    assert data.series[0].y == (0.0, 2.0, 8.0)
+
+
+def test_reference_private_attribute_rejected() -> None:
+    """下划线开头属性引用拒绝（防内部属性逃逸）."""
+    result = _result("text", {"text": "{v}", "values": {"v": "solve._secret"}})
+    with pytest.raises(TemplateError, match="无法解析"):
+        build_result(result, {"solve": _FakeSolution()})
+
+
+def test_reference_ndarray_out_of_range_rejected() -> None:
+    """ndarray 数字下标越界报错."""
+    result = _result("curve", {"x": "solve.times", "y": "solve.displacements.99"})
+    with pytest.raises(TemplateError, match="无法解析"):
+        build_result(result, {"solve": _FakeSolution()})
 
 
 # ------------------------------------------------ DSL 端到端（声明 -> 解析）

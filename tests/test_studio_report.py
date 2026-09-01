@@ -138,10 +138,10 @@ def test_section_figure_unknown_result_rejected() -> None:
 
 
 def test_section_figure_kind_mismatch_rejected() -> None:
-    """figure 引用非曲线结果报错."""
+    """figure 引用非曲线/云图结果报错."""
     yaml_text = _YAML.replace("figure: curve_y", "figure: table_y")
     template = dsl_from_yaml(yaml_text)
-    with pytest.raises(TemplateError, match="应为曲线结果"):
+    with pytest.raises(TemplateError, match="应为曲线或云图结果"):
         build_markdown(template, _outputs(template))
 
 
@@ -207,7 +207,7 @@ results:
 
 
 def test_cloud_and_degenerate_curve_views() -> None:
-    """cloud 结果占位文本 + 单点退化区间曲线（HTML/Markdown 双载体）."""
+    """dict 载荷云图回落占位文本 + 单点退化区间曲线（HTML/Markdown 双载体）."""
     yaml_text = (
         _YAML
         + """
@@ -231,8 +231,83 @@ def test_cloud_and_degenerate_curve_views() -> None:
     outputs = {"sweep": {"var": "x", "values": [1.0, 2.0, 3.0], "series": {"y": [4.0, 4.0, 4.0]}}}
     md = build_markdown(template, outputs)
     html = build_html(template, outputs)
-    assert "云图结果 'sweep' 由应用界面渲染" in md
-    assert "（云图结果 sweep 由应用界面渲染）" in html
+    # 扫参 dict 载荷非解对象：云图回落占位文字（报告仍生成）
+    assert "载荷暂不支持报告渲染" in md
+    assert "载荷暂不支持报告渲染" in html
     # 常值曲线 y 区间退化为 ±1 保护，仍可拼出 SVG
     assert "![常值曲线](data:image/svg+xml;base64," in md
     assert '<img alt="常值曲线"' in html
+
+
+# ------------------------------------------------ 云图 SVG
+
+
+def _static_outputs() -> dict:
+    """悬臂梁小模型静力求解输出（2D Q4 云图数据源）."""
+    from zylab.studio import nodes
+
+    model = nodes.build_cantilever({}, {"length": 8.0, "height": 2.0, "nx": 4, "ny": 1, "tip_load": -10.0})
+    return {"solve": nodes.run_static({"model": model}, {})}
+
+
+_CLOUD_YAML = """
+meta: {id: t.cloud, name: 云图模板}
+pipeline:
+  - id: model
+    type: example.cantilever_q4
+    params: {length: 8.0, height: 2.0, nx: 4, ny: 1}
+  - id: solve
+    type: analysis.static
+    inputs: {model: model.model}
+results:
+  - id: cloud1
+    kind: cloud
+    title: 位移云图
+    ref: solve
+    field: displacement
+  - id: cloud_bad
+    kind: cloud
+    title: 非法场量
+    ref: solve
+    field: ghost_field
+report:
+  sections:
+    - title: 位移云图章节
+      figure: cloud1
+    - title: 非法场量章节
+      figure: cloud_bad
+"""
+
+
+def test_cloud_svg_static_solution_embedded() -> None:
+    """静力解云图：SVG data URI 内嵌（单元填充 + 线框 + 色标）."""
+    template = dsl_from_yaml(_CLOUD_YAML)
+    outputs = _static_outputs()
+    md = build_markdown(template, outputs)
+    uri = next(line for line in md.splitlines() if line.startswith("![位移云图]"))
+    svg = base64.b64decode(uri.split("(", 1)[1].rstrip(")").split(",", 1)[1]).decode("utf-8")
+    assert svg.startswith("<svg")
+    assert svg.count("<polygon") == 4  # 4 个 Q4 单元填充
+    assert "<line " in svg  # 线框
+    assert "位移模" in svg  # 场量标注
+    html = build_html(template, outputs)
+    assert '<img alt="位移云图" src="data:image/svg+xml;base64,' in html
+
+
+def test_cloud_svg_unsupported_field_falls_back() -> None:
+    """field 声明非法：该云图回落占位文字，报告整体仍生成."""
+    template = dsl_from_yaml(_CLOUD_YAML)
+    md = build_markdown(template, _static_outputs())
+    assert "![位移云图]" in md  # 合法云图正常渲染
+    assert "载荷暂不支持报告渲染" in md  # 非法场量回落
+    assert "## 非法场量章节" in md
+
+
+def test_cloud_svg_not_run_falls_back() -> None:
+    """云图节点未运行（无输出）：build_result 报错由声明解析层抛出."""
+    from zylab.studio.results import build_result
+
+    template = dsl_from_yaml(_CLOUD_YAML)
+    (result, _) = template.dsl_results
+    with pytest.raises(TemplateError, match="无输出"):
+        build_result(result, {})

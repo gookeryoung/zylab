@@ -222,3 +222,151 @@ def test_registry_loads_yaml_dir(tmp_path: Path) -> None:
     count = registry.load_dir(tmp_path)
     assert count == 1
     assert isinstance(registry.get("structural.cantilever_dsl"), DslTemplate)
+
+
+# ------------------------------------------------ 声明边界（容错路径）
+
+
+def test_dsl_param_query_miss_returns_none() -> None:
+    """dsl_param 查询未声明参数返回 None（跨分组扁平命名空间）."""
+    t = dsl_from_yaml(_MINIMAL_YAML)
+    assert t.dsl_param("ghost") is None
+
+
+def test_from_mapping_type_error_wrapped() -> None:
+    """构造期 TypeError 包装为 TemplateError（不可哈希/不可迭代等坏声明）."""
+    base = _minimal_dict()
+    base["params"] = {"geometry": {"label": "几何", "items": None}}  # items 非 Mapping
+    with pytest.raises(TemplateError):
+        DslTemplate.from_mapping(base)
+
+
+def test_params_non_mapping_rejected() -> None:
+    """params 顶层非对象报错."""
+    base = _minimal_dict()
+    base["params"] = ["not", "a", "mapping"]
+    with pytest.raises(TemplateError, match="params"):
+        DslTemplate.from_mapping(base)
+
+
+def test_bool_bound_rejected() -> None:
+    """min/max/step 为布尔值报错（bool 是 int 子类，须显式拒绝）."""
+    base = _minimal_dict()
+    base["params"]["geometry"]["items"]["length"] = {"value": 1.0, "min": True}
+    with pytest.raises(TemplateError, match="应为数值"):
+        DslTemplate.from_mapping(base)
+    base["params"]["geometry"]["items"]["length"] = {"value": 1.0, "step": False}
+    with pytest.raises(TemplateError, match="应为数值"):
+        DslTemplate.from_mapping(base)
+
+
+def test_non_numeric_step_type_rejected() -> None:
+    """step 为列表等非数值类型报错."""
+    base = _minimal_dict()
+    base["params"]["geometry"]["items"]["length"] = {"value": 1.0, "step": [1.0]}
+    with pytest.raises(TemplateError, match="应为数值"):
+        DslTemplate.from_mapping(base)
+
+
+def test_empty_result_id_rejected() -> None:
+    """结果声明缺 id 报错."""
+    base = _minimal_dict()
+    base["results"] = [{"kind": "cloud", "ref": "solve"}]
+    with pytest.raises(TemplateError, match="非空 id"):
+        DslTemplate.from_mapping(base)
+
+
+def test_cloud_missing_ref_rejected() -> None:
+    """cloud 结果缺 ref 报错."""
+    base = _minimal_dict()
+    base["results"] = [{"id": "r", "kind": "cloud"}]
+    with pytest.raises(TemplateError, match="ref"):
+        DslTemplate.from_mapping(base)
+
+
+def test_sweep_without_body_params_kept() -> None:
+    """compute.sweep 无 body 声明：头参数正常代入（body 分支跳过）."""
+    text = _MINIMAL_YAML.replace(
+        'params: {length: "$length", height: "$height", e_modulus: "$e_modulus", poisson: "$poisson"}',
+        'params: {var: L, from: "$lo", to: "$hi", count: 3}',
+    ).replace(
+        "  - id: solve\n    type: analysis.static\n    inputs: {model: model.model}\n",
+        "",
+    )
+    text = text.replace(
+        "      e_modulus: {label: 弹性模量, value: 2.1e5, unit: MPa}\n",
+        "      e_modulus: {label: 弹性模量, value: 2.1e5, unit: MPa}\n      lo: {value: 1.0}\n      hi: {value: 2.0}\n",
+    )
+    # 替换 model 节点类型为 compute.sweep，结果引用改为 model 节点
+    text = text.replace("    type: example.cantilever_q4", "    type: compute.sweep")
+    text = text.replace("    ref: solve", "    ref: model")
+    t = dsl_from_yaml(text)
+    assert t.node("model").params["from"] == 1.0  # 头参数代入默认值
+    assert "body" not in t.node("model").params
+
+
+def test_substitute_value_list_recursion() -> None:
+    """$ 引用在列表值内逐项替换."""
+    from zylab.studio.dsl import substitute_refs
+
+    result = substitute_refs({"items": ["$a", "$b", 3.0], "nest": {"k": "$a"}}, {"a": 1, "b": 2}, "t.x")
+    assert result == {"items": [1, 2, 3.0], "nest": {"k": 1}}
+
+
+def test_derived_chain_cached_resolution() -> None:
+    """派生链 b<-a 多次求值命中缓存（同值不再重复求值）."""
+    text = _MINIMAL_YAML.replace(
+        '      inertia: {label: 惯性矩, expr: "height ** 3 / 12"}',
+        '      half: {expr: "height / 2"}\n      inertia: {label: 惯性矩, expr: "half ** 3 / 12"}',
+    )
+    t = dsl_from_yaml(text)
+    namespace = t.evaluate({})
+    assert namespace["half"] == 4.0
+    assert namespace["inertia"] == pytest.approx(64.0 / 12.0)
+
+
+def test_derived_name_error_wrapped() -> None:
+    """派生表达式引用未声明变量包装为 TemplateError."""
+    base = _minimal_dict()
+    base["params"]["derived"] = {"label": "派生", "items": {"bad": {"expr": "no_such_var * 2"}}}
+
+    with pytest.raises(TemplateError, match="引用未定义名称"):
+        DslTemplate.from_mapping(base)
+
+
+def test_yaml_top_level_non_mapping_rejected() -> None:
+    """YAML 顶层非对象报错."""
+    with pytest.raises(TemplateError, match="顶层应为对象"):
+        dsl_from_yaml("- just\n- a\n- list\n")
+
+
+def test_load_dsl_read_error_wrapped(tmp_path: Path) -> None:
+    """文件读取失败（权限/不存在）包装 TemplateError."""
+    with pytest.raises(TemplateError, match="读取失败"):
+        load_dsl(tmp_path / "no_such_file.yaml")
+
+
+def test_load_dsl_json_top_level_rejected(tmp_path: Path) -> None:
+    """JSON 载体顶层非对象报错."""
+    import json
+
+    path = tmp_path / "t.json"
+    path.write_text(json.dumps([1, 2]), encoding="utf-8")
+    with pytest.raises(TemplateError, match="顶层应为对象"):
+        load_dsl(path)
+
+
+def test_load_dsl_json_syntax_error_wrapped(tmp_path: Path) -> None:
+    """JSON 载体语法错误包装 TemplateError."""
+    path = tmp_path / "t.json"
+    path.write_text("{bad json", encoding="utf-8")
+    with pytest.raises(TemplateError, match="JSON 解析失败"):
+        load_dsl(path)
+
+
+def test_load_dsl_yaml_error_wrapped_with_filename(tmp_path: Path) -> None:
+    """YAML 文件模板非法时错误消息携带文件名."""
+    path = tmp_path / "bad.yaml"
+    path.write_text("meta: {id: a, name: b}\npipeline: []\n", encoding="utf-8")  # 空节点列表
+    with pytest.raises(TemplateError, match=r"bad\.yaml 非法"):
+        load_dsl(path)

@@ -98,10 +98,19 @@ class CloudData:
 
     :param title: 视图标题。
     :param node_id: 解算节点 id。
+    :param field: 场量声明（``temperature``/``voltage``/``displacement``/``stress``，
+        缺省按载荷类型自适应）。
+    :param cmap: 色带键（默认 ``jet``，见 :func:`zylab.fea.viewdata.cmap_keys`）。
+    :param deform: 位移放大系数（位移场绘制变形轮廓，默认 1.0 真实变形）。
+    :param payload: 节点输出载荷（解对象，报告 SVG 渲染用）。
     """
 
     title: str
     node_id: str = ""
+    field: str = ""
+    cmap: str = "jet"
+    deform: float = 1.0
+    payload: Any = None
 
 
 #: 视图数据联合类型
@@ -121,7 +130,18 @@ def build_result(result: DslResult, outputs: Mapping[str, Any]) -> ViewData:
         return _build_table(result, outputs)
     if result.kind == "text":
         return _build_text(result, outputs)
-    return CloudData(title=result.title, node_id=str(result.spec.get("ref", "")))
+    ref = str(result.spec.get("ref", ""))
+    node_id = ref.partition(".")[0]
+    if node_id not in outputs:
+        raise TemplateError(f"结果引用 {ref!r} 的节点 {node_id!r} 无输出（尚未运行）")
+    return CloudData(
+        title=result.title,
+        node_id=node_id,
+        field=str(result.spec.get("field", "")),
+        cmap=str(result.spec.get("cmap", "jet")),
+        deform=float(result.spec.get("deform", 1.0)),
+        payload=outputs[node_id],
+    )
 
 
 def _build_curve(result: DslResult, outputs: Mapping[str, Any]) -> CurveData:
@@ -193,8 +213,9 @@ def _resolve_path(ref: str, outputs: Mapping[str, Any]) -> Any:
     """按 ``"节点id.字段路径"`` 引用取值.
 
     路径逐级下行：映射按键取值；序列（list/tuple）按数字段取下标
-    （支持负索引，如 ``sweep.series.y.-1`` 取末项）。段与当前值类型
-    不匹配或不存在时报错。
+    （支持负索引，如 ``sweep.series.y.-1`` 取末项）；其余对象（解
+    对象等）按公开属性取值（如 ``solve.t_max``/``solve.times``）。
+    段与当前值类型不匹配或不存在时报错。
     """
     node_id, _, rest = ref.partition(".")
     if node_id not in outputs:
@@ -206,11 +227,19 @@ def _resolve_path(ref: str, outputs: Mapping[str, Any]) -> Any:
 
 
 def _descend(value: Any, segment: str, ref: str) -> Any:
-    """路径单段下行（映射键或序列索引；不匹配/越界报错）."""
+    """路径单段下行（映射键/序列或数组索引/对象公开属性；不匹配/越界报错）."""
     if isinstance(value, Mapping) and segment in value:
         return value[segment]
     if isinstance(value, (list, tuple)) and _index_text(segment) and -len(value) <= int(segment) < len(value):
         return value[int(segment)]
+    if isinstance(value, np.ndarray) and _index_text(segment):
+        index = int(segment)
+        if -value.shape[0] <= index < value.shape[0]:
+            return value[index]
+    if not isinstance(value, (Mapping, list, tuple, np.ndarray)) and not segment.startswith("_"):
+        attribute = getattr(value, segment, None)
+        if attribute is not None:
+            return attribute
     raise TemplateError(f"结果引用 {ref!r} 无法解析: {segment!r} 不存在")
 
 

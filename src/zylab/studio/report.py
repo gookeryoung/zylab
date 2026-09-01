@@ -5,13 +5,15 @@
 
 - 曲线（CurveData）→ 纯 Python 拼装的 SVG（零绘图依赖），Markdown 以
   base64 data URI 内嵌，HTML 直接内联；
+- 云图（CloudData）→ 纯 Python 拼装的 SVG（节点标量场着色：2D 单元
+  填充 + 线框，3D 等轴测投影散点 + 线框，附色标），渲染失败回落
+  文字占位（报告总能生成）；
 - 表格（TableData）→ Markdown 管道表 / HTML ``<table>``；
-- 文本（TextData）→ 段落；
-- 云图（CloudData）→ 占位说明（云图由 GUI 解算视图渲染，报告以文字
-  指明节点）。
+- 文本（TextData）→ 段落。
 
 报告结构（``report`` 声明）：标题 + 参数概览表 + 章节序列（标题/正文/
-图表按 results id 引用）；未声明 report 时自动收录全部 results 兜底。
+图表按 results id 引用，figure 可引用曲线或云图）；未声明 report 时自动
+收录全部 results 兜底。
 """
 
 from __future__ import annotations
@@ -20,9 +22,13 @@ import base64
 from html import escape
 from typing import Any, Mapping
 
+import numpy as np
+
+from zylab.fea.viewdata import cmap_lut, deformed_coords, mesh_edges, nodal_stress_field, project3d, scalar_colors
+
 from .dsl import DslReportSection, DslTemplate
 from .errors import TemplateError
-from .results import CurveData, TableData, TextData, ViewData, build_result
+from .results import CloudData, CurveData, TableData, TextData, ViewData, build_result
 
 __all__ = ["build_html", "build_markdown"]
 
@@ -135,8 +141,8 @@ def _resolve_section_view(
     if ref not in views:
         raise TemplateError(f"模板 {template.id!r} 报告章节 {section.title!r} 引用未声明的结果 {ref!r}")
     view = views[ref]
-    if section.figure and not isinstance(view, CurveData):
-        raise TemplateError(f"报告章节 {section.title!r} 的 figure 引用 {ref!r} 应为曲线结果")
+    if section.figure and not isinstance(view, (CurveData, CloudData)):
+        raise TemplateError(f"报告章节 {section.title!r} 的 figure 引用 {ref!r} 应为曲线或云图结果")
     if section.table and not isinstance(view, TableData):
         raise TemplateError(f"报告章节 {section.title!r} 的 table 引用 {ref!r} 应为表格结果")
     return view
@@ -195,7 +201,7 @@ def _param_rows(template: DslTemplate, values: Mapping[str, Any] | None) -> list
 
 
 def _md_view(view: ViewData) -> list[str]:
-    """Markdown 视图块（曲线图 data URI / 管道表 / 段落）."""
+    """Markdown 视图块（曲线/云图 data URI / 管道表 / 段落）."""
     if isinstance(view, CurveData):
         uri = _svg_data_uri(_curve_svg(view))
         return [f"![{view.title}]({uri})", ""]
@@ -205,7 +211,7 @@ def _md_view(view: ViewData) -> list[str]:
         return [*lines, ""]
     if isinstance(view, TextData):
         return [view.text, ""]
-    return [f"（云图结果 {view.node_id!r} 由应用界面渲染）", ""]
+    return [*_cloud_md(view), ""]
 
 
 def _html_view(view: ViewData) -> str:
@@ -220,7 +226,18 @@ def _html_view(view: ViewData) -> str:
         return f"<table><tr>{head}</tr>{body}</table>"
     if isinstance(view, TextData):
         return f"<p>{escape(view.text)}</p>"
-    return f"<p>（云图结果 {escape(view.node_id)} 由应用界面渲染）</p>"
+    svg, fallback = _cloud_svg(view)
+    if svg is None:
+        return f"<p>{escape(fallback)}</p>"
+    return f'<img alt="{escape(view.title)}" src="{_svg_data_uri(svg)}">'
+
+
+def _cloud_md(view: CloudData) -> list[str]:
+    """Markdown 云图块：SVG 成功内嵌 data URI，失败回落文字占位."""
+    svg, fallback = _cloud_svg(view)
+    if svg is None:
+        return [fallback]
+    return [f"![{view.title}]({_svg_data_uri(svg)})"]
 
 
 def _fmt(value: Any) -> str:
@@ -315,3 +332,198 @@ def _svg_legend(data: CurveData) -> list[str]:
             f'<text x="{x - 6}" y="{y + 11}" font-size="12" fill="#333" text-anchor="end">{escape(series.name)}</text>'
         )
     return parts
+
+
+# ------------------------------------------------------------------ 云图 SVG
+
+#: 云图场量显示名（field 声明 -> 标注文本）
+_CLOUD_FIELD_LABELS = {"temperature": "温度", "voltage": "电压", "displacement": "位移模", "stress": "应力"}
+
+_CLOUD_W = 640  # 云图 SVG 画布宽（像素）
+_CLOUD_H = 420  # 云图 SVG 画布高（像素）
+_CLOUD_BAR_W = 20  # 色标条宽
+_CLOUD_BAR_H = 260  # 色标条高
+_CLOUD_R = 3.0  # 3D 节点散点半径
+
+
+def _cloud_svg(view: CloudData) -> tuple[str | None, str]:
+    """云图 SVG（节点标量场着色 + 色标）；载荷不可渲染时返回占位文字.
+
+    :param view: 云图视图数据（payload 为解对象）。
+    :returns: ``(svg 文本, 占位文字)``——渲染成功占位为空描述，失败 svg 为 None。
+    """
+    try:
+        return _build_cloud_svg(view), ""
+    except (AttributeError, IndexError, TypeError, ValueError, TemplateError):
+        return None, f"（云图结果 {view.node_id!r} 载荷暂不支持报告渲染，由应用界面查看）"
+
+
+def _build_cloud_svg(view: CloudData) -> str:
+    """拼装云图 SVG（2D 单元填充 / 3D 等轴测投影散点 + 线框 + 色标）."""
+    payload = view.payload
+    if payload is None or isinstance(payload, Mapping):
+        raise TypeError("云图载荷缺失或非解对象")
+    mesh = payload.mesh
+    values, label = _cloud_field(payload, view.field, mesh.n_nodes)
+    coords = _cloud_coords(payload, mesh, values, view.deform)
+    colors = scalar_colors(values, cmap=view.cmap)
+    parts = [
+        f'<svg xmlns="http://www.w3.org/2000/svg" width="{_CLOUD_W}" height="{_CLOUD_H}">',
+        f'<rect width="{_CLOUD_W}" height="{_CLOUD_H}" fill="#ffffff"/>',
+        f'<text x="{_SVG_PAD_L}" y="24" font-size="14" fill="#333">{escape(view.title)} · {escape(label)}</text>',
+    ]
+    if mesh.dim >= 3:
+        parts += _cloud_3d(mesh, coords, colors)
+    else:
+        parts += _cloud_2d(mesh, coords, colors)
+    parts.append(_cloud_colorbar(values, label, view.cmap))
+    parts.append("</svg>")
+    return "".join(parts)
+
+
+def _cloud_field(payload: Any, field: str, n_nodes: int) -> tuple[np.ndarray, str]:
+    """提取节点标量场（field 显式声明优先，缺省按载荷属性自适应）.
+
+    :returns: ``(n_nodes,) 标量数组, 场量显示名``。
+    """
+    declared = field or _auto_field(payload)
+    if declared == "temperature":
+        return _last_frame(np.asarray(payload.temperatures), n_nodes), _CLOUD_FIELD_LABELS[declared]
+    if declared == "voltage":
+        return np.asarray(payload.voltages), _CLOUD_FIELD_LABELS[declared]
+    if declared == "displacement":
+        disp = np.asarray(payload.displacements, dtype=float)
+        if disp.ndim == 2 and disp.shape[0] != n_nodes:  # (n_dofs, n_times) 全时程：取末帧
+            disp = disp[:, -1].reshape(n_nodes, -1)
+        dim = payload.mesh.dim
+        return np.linalg.norm(disp[:, :dim], axis=1), _CLOUD_FIELD_LABELS[declared]
+    if declared == "stress":
+        return nodal_stress_field(payload), _CLOUD_FIELD_LABELS[declared]
+    raise TemplateError(f"云图场量 {declared!r} 不受支持（可选 temperature/voltage/displacement/stress）")
+
+
+def _auto_field(payload: Any) -> str:
+    """按载荷属性自适应场量（温度优先，其次位移/电压/应力）."""
+    for name, attribute in (
+        ("temperature", "temperatures"),
+        ("displacement", "displacements"),
+        ("voltage", "voltages"),
+        ("stress", "element_results"),
+    ):
+        if getattr(payload, attribute, None) is not None:
+            return name
+    raise TypeError("载荷不含可渲染的节点标量场")
+
+
+def _last_frame(values: np.ndarray, n_nodes: int) -> np.ndarray:
+    """瞬态场 ``(n_frames, n_nodes)`` 取末帧，节点场原样返回."""
+    if values.ndim == 2 and values.shape[0] != n_nodes:
+        return values[-1]
+    return values
+
+
+def _cloud_coords(payload: Any, mesh: Any, values: np.ndarray, deform: float) -> np.ndarray:
+    """云图绘制坐标：位移场叠加变形（放大 ``deform`` 倍），其余原坐标."""
+    if values.shape == (mesh.n_nodes,) and getattr(payload, "displacements", None) is not None:
+        disp = np.asarray(payload.displacements, dtype=float)
+        if disp.ndim == 2 and disp.shape[0] != mesh.n_nodes:
+            disp = disp[:, -1].reshape(mesh.n_nodes, -1)
+        return deformed_coords(mesh, disp, scale=deform)
+    return np.asarray(mesh.coords, dtype=float)
+
+
+def _cloud_frame(coords: np.ndarray) -> tuple[np.ndarray, float]:
+    """坐标归一化到绘图区（保持纵横比，中心对齐），返回屏幕坐标与缩放系数."""
+    plot_w = _CLOUD_W - _SVG_PAD_L - _SVG_PAD_R - 96  # 右侧留出色标区
+    plot_h = _CLOUD_H - _SVG_PAD_T - _SVG_PAD_B - 16
+    x_min, x_max = coords[:, 0].min(), coords[:, 0].max()
+    y_min, y_max = coords[:, 1].min(), coords[:, 1].max()
+    span_x = x_max - x_min if x_max > x_min else 1.0
+    span_y = y_max - y_min if y_max > y_min else 1.0
+    scale = min(plot_w / span_x, plot_h / span_y)
+    offset_x = _SVG_PAD_L + (plot_w - span_x * scale) / 2
+    offset_y = _SVG_PAD_T + 16 + (plot_h - span_y * scale) / 2
+    screen = np.column_stack(
+        (
+            offset_x + (coords[:, 0] - x_min) * scale,
+            offset_y + (1.0 - (coords[:, 1] - y_min) / span_y) * span_y * scale,
+        )
+    )
+    return screen, scale
+
+
+def _cloud_2d(mesh: Any, coords: np.ndarray, colors: np.ndarray) -> list[str]:
+    """2D 云图：闭合单元多边形填充（节点平均色）+ 全网格线框."""
+    screen, _ = _cloud_frame(coords)
+    parts: list[str] = []
+    for block in mesh.blocks:
+        conn = np.asarray(block.conn)
+        is_line = block.etype.value in ("truss2", "beam2") or conn.shape[1] <= 2
+        for row in conn:
+            points = " ".join(f"{screen[n, 0]:.1f},{screen[n, 1]:.1f}" for n in row)
+            fill = _rgb(colors[list(row)].mean(axis=0))
+            if is_line:  # 线单元：粗线段按场着色
+                parts.append(f'<polyline points="{points}" fill="none" stroke="{fill}" stroke-width="4"/>')
+            else:
+                parts.append(f'<polygon points="{points}" fill="{fill}" stroke="none"/>')
+    edges = mesh_edges(mesh)
+    for a, b in edges:
+        parts.append(
+            f'<line x1="{screen[a, 0]:.1f}" y1="{screen[a, 1]:.1f}" '
+            f'x2="{screen[b, 0]:.1f}" y2="{screen[b, 1]:.1f}" stroke="#00000033" stroke-width="0.6"/>'
+        )
+    return parts
+
+
+def _cloud_3d(mesh: Any, coords: np.ndarray, colors: np.ndarray) -> list[str]:
+    """3D 云图：等轴测投影，边线框 + 按观察深度排序的节点散点着色."""
+    xy, depth = project3d(coords)
+    screen, _ = _cloud_frame(xy)
+    parts: list[str] = []
+    edges = mesh_edges(mesh)
+    for a, b in edges:
+        parts.append(
+            f'<line x1="{screen[a, 0]:.1f}" y1="{screen[a, 1]:.1f}" '
+            f'x2="{screen[b, 0]:.1f}" y2="{screen[b, 1]:.1f}" stroke="#00000022" stroke-width="0.6"/>'
+        )
+    for index in np.argsort(depth)[::-1]:  # 远者先画，近者覆盖
+        parts.append(
+            f'<circle cx="{screen[index, 0]:.1f}" cy="{screen[index, 1]:.1f}" '
+            f'r="{_CLOUD_R:.1f}" fill="{_rgb(colors[index])}"/>'
+        )
+    return parts
+
+
+def _cloud_colorbar(values: np.ndarray, label: str, cmap: str) -> str:
+    """右侧色标（渐变条 + 场名 + 最值标注）."""
+    bar_x = _CLOUD_W - _SVG_PAD_R - _CLOUD_BAR_W - 52
+    bar_y = (_CLOUD_H - _CLOUD_BAR_H) / 2
+    parts = [
+        f'<text x="{bar_x + _CLOUD_BAR_W / 2:.0f}" y="{bar_y - 10:.0f}" font-size="12" fill="#333" '
+        f'text-anchor="middle">{escape(label)}</text>'
+    ]
+    segments = 16
+    lut = cmap_lut(cmap, samples=segments)
+    for index in range(segments):
+        y = bar_y + _CLOUD_BAR_H * (1.0 - (index + 1) / segments)
+        parts.append(
+            f'<rect x="{bar_x:.0f}" y="{y:.0f}" width="{_CLOUD_BAR_W}" '
+            f'height="{_CLOUD_BAR_H / segments + 0.5:.1f}" fill="{_rgb(lut[index])}"/>'
+        )
+    parts.append(
+        f'<rect x="{bar_x:.0f}" y="{bar_y:.0f}" width="{_CLOUD_BAR_W}" height="{_CLOUD_BAR_H}" fill="none" stroke="#999"/>'
+    )
+    parts.append(
+        f'<text x="{bar_x + _CLOUD_BAR_W + 6:.0f}" y="{bar_y + 12:.0f}" font-size="11" fill="#333" '
+        f'text-anchor="start">{_fmt(float(values.max()))}</text>'
+    )
+    parts.append(
+        f'<text x="{bar_x + _CLOUD_BAR_W + 6:.0f}" y="{bar_y + _CLOUD_BAR_H:.0f}" font-size="11" fill="#333" '
+        f'text-anchor="start">{_fmt(float(values.min()))}</text>'
+    )
+    return "".join(parts)
+
+
+def _rgb(color: np.ndarray) -> str:
+    """浮点 RGB 转 ``#rrggbb`` 色值文本."""
+    return "#{:02x}{:02x}{:02x}".format(*(round(max(0.0, min(1.0, c)) * 255) for c in color))

@@ -277,7 +277,7 @@ class TemplatePage(QWidget):
     def _build_cloud_page(self, data: CloudData) -> QWidget:
         """云图页：既有解算视图渲染（解对象/模型预览，失败回落错误页）."""
         view = ResultView()
-        payload = self._outputs.get(data.node_id)
+        payload = data.payload
         if isinstance(payload, (ModelBundle, ConductionBundle)):
             view.show_mesh(payload)
         else:

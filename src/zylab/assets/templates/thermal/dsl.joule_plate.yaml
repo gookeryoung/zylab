@@ -1,0 +1,62 @@
+meta:
+  id: dsl.joule_plate
+  name: 通电加热板稳态温升
+  discipline: thermal
+  description: Q4 电-热耦合顺序求解，输出温度场云图、最高温摘要与报告。
+  tags: [CAE, 电热耦合]
+params:
+  几何:
+    items:
+      length: {value: 40.0, unit: mm, min: 1.0, max: 500.0}
+      height: {value: 10.0, unit: mm, min: 1.0, max: 200.0}
+      nx: {value: 24, min: 2, max: 200}
+      ny: {value: 6, min: 1, max: 100}
+      thickness: {value: 1.0, unit: mm, min: 0.01, max: 20.0}
+  电学:
+    items:
+      voltage: {value: 1.0, unit: V, min: 0.0, max: 100.0}
+      electric_sigma: {value: 1.0, unit: S/mm, min: 1.0e-6, max: 1.0e4}
+  热学:
+    items:
+      thermal_k: {value: 1.0, unit: W/mm·K, min: 1.0e-6, max: 100.0}
+      t_base: {value: 20.0, unit: "°C", min: -100.0, max: 1000.0}
+      h_conv: {value: 1.0e-5, unit: W/mm²·K, min: 1.0e-9, max: 1.0e-2}
+      t_ambient: {value: 20.0, unit: "°C", min: -100.0, max: 1000.0}
+pipeline:
+  - id: model
+    type: example.joule_plate_2d
+    params:
+      length: "$length"
+      height: "$height"
+      nx: "$nx"
+      ny: "$ny"
+      thickness: "$thickness"
+      voltage: "$voltage"
+      electric_sigma: "$electric_sigma"
+      thermal_k: "$thermal_k"
+      t_base: "$t_base"
+      h_conv: "$h_conv"
+      t_ambient: "$t_ambient"
+  - id: solve
+    type: analysis.electrothermal
+    inputs: {model: model.model}
+results:
+  - id: temp_cloud
+    kind: cloud
+    title: 温度场
+    ref: solve
+    field: temperature
+    cmap: inferno
+  - id: summary
+    kind: text
+    title: 摘要
+    text: "全场最高温度 {tmax:.4g} °C"
+    values: {tmax: solve.t_max}
+report:
+  exports: [md, html]
+  sections:
+    - title: 温度场云图
+      figure: temp_cloud
+      text: "通电板 {length} mm × {height} mm，电极电压 {voltage} V，底边恒温 {t_base} °C。"
+docs:
+  intro: {text: 电流焦耳热与对流散热的稳态平衡，温度场在电阻区中心最高、向电极与底边递减。}

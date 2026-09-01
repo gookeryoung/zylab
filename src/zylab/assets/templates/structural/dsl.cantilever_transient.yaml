@@ -1,0 +1,67 @@
+meta:
+  id: dsl.cantilever_transient
+  name: 悬臂梁瞬态冲击
+  discipline: structural
+  description: Q4 悬臂梁阶跃端部载荷瞬态响应，输出末端挠度时程曲线、末态位移云图与报告。
+  tags: [CAE, 动力学]
+params:
+  几何:
+    items:
+      length: {value: 40.0, unit: mm, min: 1.0, max: 500.0}
+      height: {value: 8.0, unit: mm, min: 0.5, max: 100.0}
+      nx: {value: 20, min: 2, max: 200}
+      ny: {value: 4, min: 1, max: 50}
+  载荷:
+    items:
+      tip_load: {value: -100.0, unit: N, min: -10000.0, max: 0.0}
+  瞬态:
+    items:
+      duration: {value: 2.0e-3, unit: s, min: 1.0e-6, max: 1.0}
+      n_steps: {value: 120, min: 10, max: 5000}
+      alpha: {value: 0.1, unit: 1/s, min: 0.0, max: 1000.0}
+      beta: {value: 0.0, min: 0.0, max: 100.0}
+pipeline:
+  - id: model
+    type: example.cantilever_q4
+    params:
+      length: "$length"
+      height: "$height"
+      nx: "$nx"
+      ny: "$ny"
+      tip_load: "$tip_load"
+  - id: solve
+    type: analysis.transient
+    params:
+      duration: "$duration"
+      n_steps: "$n_steps"
+      alpha: "$alpha"
+      beta: "$beta"
+    inputs: {model: model.model}
+results:
+  - id: tip_history
+    kind: curve
+    title: 末端挠度时程
+    x: solve.times
+    y: solve.displacements.-1
+    x_label: 时间 t (s)
+    y_label: 末端挠度 (mm)
+  - id: disp_cloud
+    kind: cloud
+    title: 末态位移模
+    ref: solve
+    field: displacement
+  - id: summary
+    kind: text
+    title: 摘要
+    text: "末端稳态挠度 {tip:.4g} mm"
+    values: {tip: solve.displacements.-1.-1}
+report:
+  exports: [md, html]
+  sections:
+    - title: 末端挠度时程
+      figure: tip_history
+      text: "阶跃载荷 {tip_load} N，Rayleigh 阻尼 α={alpha}，时长 {duration} s。"
+    - title: 末态位移云图
+      figure: disp_cloud
+docs:
+  intro: {text: 阶跃端部载荷激励悬臂梁一阶弯曲主导的衰减振荡，末端挠度围绕静力解振荡并收敛。}
