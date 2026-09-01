@@ -29,6 +29,7 @@ from .methods import (
     ostr_next,
     probit_levels,
     stepstress_levels,
+    updown_adaptive_next,
     updown_next,
 )
 from .model import MODEL_NAMES, _info_matrix, neg_log_likelihood, response_prob
@@ -189,22 +190,11 @@ def _numerical_hessian(
     return hessian
 
 
-def dixon_mood(x: np.ndarray, y: np.ndarray, step: float) -> SensitivityEstimate:
-    """升降法 Dixon-Mood 分析（以频数较少的响应类别计数）.
+def _dixon_mood_core(x: np.ndarray, y: np.ndarray, step: float) -> tuple[float, float]:
+    """Dixon-Mood 点估计核心（无标准误，供 bootstrap 批量复用）.
 
-    设 ``n_i`` 为较少类别在第 ``i`` 级（自最低试验水平起算）的计数，
-    ``A = Σ i·n_i``、``B = Σ i²·n_i``，则::
-
-        μ̂ = x_min + d·(A/n ± 0.5)    （不响应计数取 +0.5，响应计数取 -0.5）
-        σ̂ = 1.620·d·sqrt((n·B − A²)/n² + 0.029)
-
-    协方差修正：标准误按 Dixon-Mood 隐含的正态假设，取试验点上期望
-    Fisher 信息矩阵（正态模型）逆的对角元（大样本近似）。
+    返回 ``(μ̂, σ̂)``，σ̂ 以 ``step·0.1`` 为下限防止退化。
     """
-    x = np.asarray(x, dtype=float)
-    y = np.asarray(y, dtype=int)
-    if step <= 0.0:
-        raise ReliabilityError(f"升降法步长须为正，得到 {step!r}")
     n_response = int(np.sum(y > 0))
     use_response = n_response <= (y.size - n_response)
     counts = y > 0 if use_response else y == 0
@@ -220,14 +210,80 @@ def dixon_mood(x: np.ndarray, y: np.ndarray, step: float) -> SensitivityEstimate
     mu_hat = float(x.min() + step * mean_shift)
     variance = max((n_used * b_value - a_value**2) / n_used**2 + 0.029, 0.0)
     sigma_hat = float(1.620 * step * np.sqrt(variance))
-    sigma_final = max(sigma_hat, step * 0.1)
+    return mu_hat, max(sigma_hat, step * 0.1)
+
+
+def _simulate_updown(  # noqa: PLR0913, PLR0917  bootstrap 模拟参数即试验配置项
+    mu: float, sigma: float, n_total: int, step: float, x_start: float, rng: np.random.Generator
+) -> tuple[np.ndarray, np.ndarray]:
+    """按正态模型模拟一组升降试验（固定步长，供参数 bootstrap）."""
+    levels: list[float] = []
+    responses: list[int] = []
+    x_current = float(x_start)
+    for _ in range(n_total):
+        probability = float(response_prob("normal", x_current, mu, sigma))
+        hit = 1 if rng.random() < probability else 0
+        levels.append(x_current)
+        responses.append(hit)
+        x_current = x_current - step if hit else x_current + step
+    return np.asarray(levels), np.asarray(responses, dtype=int)
+
+
+def dixon_mood(  # noqa: PLR0913
+    x: np.ndarray,
+    y: np.ndarray,
+    step: float,
+    *,
+    n_boot: int = 0,
+    x_start: float | None = None,
+    seed: int = 0,
+) -> SensitivityEstimate:
+    """升降法 Dixon-Mood 分析（以频数较少的响应类别计数）.
+
+    设 ``n_i`` 为较少类别在第 ``i`` 级（自最低试验水平起算）的计数，
+    ``A = Σ i·n_i``、``B = Σ i²·n_i``，则::
+
+        μ̂ = x_min + d·(A/n ± 0.5)    （不响应计数取 +0.5，响应计数取 -0.5）
+        σ̂ = 1.620·d·sqrt((n·B − A²)/n² + 0.029)
+
+    协方差修正：标准误按 Dixon-Mood 隐含的正态假设，取试验点上期望
+    Fisher 信息矩阵（正态模型）逆的对角元（大样本近似）。
+
+    小样本偏差修正（``n_boot > 0``）：参数 bootstrap——以 ``(μ̂, σ̂)``
+    为真值模拟 ``n_boot`` 组同规模固定步长升降试验（初始水平取
+    ``x_start``，缺省以 μ̂ 近似），重估 Dixon-Mood 得偏差均值，
+    按 ``2·估计 − 偏差均值`` 校正小样本下 σ̂ 的系统性低估。
+
+    :param n_boot: bootstrap 模拟组数（0 关闭修正）。
+    :param x_start: 模拟试验初始水平（真实试验的起点；缺省用 μ̂ 近似）。
+    :param seed: bootstrap 随机种子（固定保证可重复）。
+    """
+    x = np.asarray(x, dtype=float)
+    y = np.asarray(y, dtype=int)
+    if step <= 0.0:
+        raise ReliabilityError(f"升降法步长须为正，得到 {step!r}")
+    if n_boot < 0:
+        raise ReliabilityError(f"bootstrap 组数须 ≥ 0，得到 {n_boot}")
+    mu_hat, sigma_final = _dixon_mood_core(x, y, step)
+    estimator = "Dixon-Mood"
+    if n_boot > 0:
+        rng = np.random.default_rng(seed)
+        start = float(mu_hat if x_start is None else x_start)
+        mu_boot = np.empty(n_boot)
+        sigma_boot = np.empty(n_boot)
+        for i in range(n_boot):
+            levels, responses = _simulate_updown(mu_hat, sigma_final, int(y.size), step, start, rng)
+            mu_boot[i], sigma_boot[i] = _dixon_mood_core(levels, responses, step)
+        mu_hat = 2.0 * mu_hat - float(mu_boot.mean())
+        sigma_final = max(2.0 * sigma_final - float(sigma_boot.mean()), step * 0.1)
+        estimator = "Dixon-Mood（bootstrap修正）"
     se_mu, se_sigma = _fisher_standard_errors(x, "normal", mu_hat, sigma_final)
     return SensitivityEstimate(
         mu=mu_hat,
         sigma=sigma_final,
         se_mu=se_mu,
         se_sigma=se_sigma,
-        estimator="Dixon-Mood",
+        estimator=estimator,
     )
 
 
@@ -280,6 +336,7 @@ def run_sensitivity_test(  # noqa: PLR0913  六方法统一入口，参数即标
     step: float = 1.0,
     n_per_level: int = 10,
     n_levels: int = 7,
+    n_boot: int = 0,
     seed: int = 7,
 ) -> SensitivityTestResult:
     """总装感度试验：设计生成 → 蒙特卡洛模拟 → 统计分析.
@@ -292,9 +349,10 @@ def run_sensitivity_test(  # noqa: PLR0913  六方法统一入口，参数即标
     :param n_total: 序贯法总发数。
     :param x_low: 初始区间下界（全不响应估计界）。
     :param x_high: 初始区间上界（全响应估计界）。
-    :param step: 升降法/步进法固定步长。
+    :param step: 升降法/步进法固定步长（自适应变体为初始步长）。
     :param n_per_level: 概率单位法/步进法每水平发数。
     :param n_levels: 概率单位法水平数。
+    :param n_boot: 升降法 Dixon-Mood bootstrap 偏差修正组数（0 关闭）。
     :param seed: 随机种子（固定种子保证可重复验证）。
     :raises ReliabilityError: 方法/模型名非法或参数配置不合法。
     """
@@ -305,9 +363,16 @@ def run_sensitivity_test(  # noqa: PLR0913  六方法统一入口，参数即标
     if sigma <= 0.0 or n_total < 4:
         raise ReliabilityError("真值 σ 须为正且序贯发数 ≥ 4")
     rng = np.random.default_rng(seed)
-    if method in ("langlie", "ostr", "updown", "doptimal", "neyer"):
+    if method in ("langlie", "ostr", "updown", "updown_adaptive", "doptimal", "neyer"):
         levels, responses = _run_sequential(method, model, mu, sigma, n_total, x_low, x_high, step, rng)
-        estimate = dixon_mood(levels, responses, step) if method == "updown" else mle_estimate(model, levels, responses)
+        if method == "updown":
+            # bootstrap 模拟以真实初始水平（区间中点）起步，避免偏差估计失真
+            estimate = dixon_mood(
+                levels, responses, step, n_boot=n_boot, x_start=0.5 * (x_low + x_high), seed=int(rng.integers(0, 2**31))
+            )
+        else:
+            # 自适应步长试验水平不在等间隔网格上，Dixon-Mood 级索引失效，改用 MLE
+            estimate = mle_estimate(model, levels, responses)
     elif method == "probit":
         levels, responses = _run_probit(model, mu, sigma, x_low, x_high, n_levels, n_per_level, rng)
         estimate = mle_estimate(model, levels, responses)
@@ -362,6 +427,8 @@ def _run_sequential(  # noqa: PLR0913, PLR0917  序贯法共享逐发循环，�
                 x_next = ostr_next(history_x, history_y, x_low, x_high, model, mu_use, sigma_use)
             elif method == "neyer":
                 x_next = neyer_next(history_x, history_y, x_low, x_high, model, mu_use, sigma_use)
+            elif method == "updown_adaptive":
+                x_next = updown_adaptive_next(history_x, history_y, x_low, x_high, step, sigma_use)
             else:
                 x_next = doptimal_next(history_x, history_y, x_low, x_high, model, mu_use, sigma_use)
         probability = float(response_prob(model, x_next, mu, sigma))

@@ -9,7 +9,8 @@
   以 D-最优准则（Fisher 信息行列式最大化）选点，MLE 不可估时回退
   兰利中点规则；
 - **方法103 升降法**（Bruceton）：固定步长，上发响应则降一级、
-  不响应则升一级；
+  不响应则升一级；另有自适应步长变体（``updown_adaptive``）：
+  步长跟踪在线 MLE 的 σ 估计，对初始步长选取不敏感；
 - **方法104 D-优化法**：候选点覆盖全区间 ``F⁻¹(p)`` 网格，以当前
   MLE（不可估时用初始猜测）计算期望信息行列式取最大。
 
@@ -42,17 +43,19 @@ __all__ = [
     "ostr_next",
     "probit_levels",
     "stepstress_levels",
+    "updown_adaptive_next",
     "updown_next",
 ]
 
-#: 支持的感度试验方法名（GJB/Z 377A 方法编号 + Neyer 扩充）
-METHOD_NAMES = ("langlie", "ostr", "updown", "doptimal", "neyer", "probit", "stepstress")
+#: 支持的感度试验方法名（GJB/Z 377A 方法编号 + Neyer/自适应变体扩充）
+METHOD_NAMES = ("langlie", "ostr", "updown", "updown_adaptive", "doptimal", "neyer", "probit", "stepstress")
 
-#: 方法编号与中文名（报告/界面展示用；Neyer 为国际通用方法，非国标编号）
+#: 方法编号与中文名（报告/界面展示用；Neyer 为国际通用方法，自适应变体非国标编号）
 METHOD_LABELS = {
     "langlie": "方法101 兰利法",
     "ostr": "方法102 OSTR法",
     "updown": "方法103 升降法",
+    "updown_adaptive": "方法103 升降法（自适应步长）",
     "doptimal": "方法104 D优化法",
     "neyer": "Neyer D-最优法",
     "probit": "方法201 概率单位法",
@@ -179,6 +182,41 @@ def updown_next(levels: np.ndarray, responses: np.ndarray, x_low: float, x_high:
         return 0.5 * (x_low + x_high)
     previous = float(levels[-1])
     return previous - step if responses[-1] > 0 else previous + step
+
+
+def updown_adaptive_next(  # noqa: PLR0913, PLR0917  设计器签名与标准方法规则一一对应
+    levels: np.ndarray,
+    responses: np.ndarray,
+    x_low: float,
+    x_high: float,
+    step: float,
+    sigma: float,
+    floor_factor: float = 0.2,
+) -> float:
+    """升降法（自适应步长）下一水平：步长跟踪当前 σ 估计.
+
+    当前步长取 ``max(σ, step × floor_factor)``——σ 估计偏大时允许步长
+    增长（初始步长选小可自动放大），偏小时以 ``floor_factor`` 比例下限
+    防止试验水平退化为原地循环。σ 估计由调用方以在线 MLE 提供
+    （不可估时退回区间宽度/6 的粗猜）。相比固定步长，该规则对初始
+    步长的选取不敏感：蒙特卡洛验证三种初始步长（0.5σ/σ/2σ）下
+    σ̂ 的 RMSE 均稳定，而固定步长在步长选偏时显著恶化。
+
+    :param step: 初始步长（须为正，亦为步长下限的基准）。
+    :param sigma: 当前 σ 估计（步长跟踪目标，须为正）。
+    :param floor_factor: 步长下限比例（0 < floor_factor < 1）。
+    """
+    if step <= 0.0:
+        raise ReliabilityError(f"升降法步长须为正，得到 {step!r}")
+    if sigma <= 0.0:
+        raise ReliabilityError(f"σ 估计须为正，得到 {sigma!r}")
+    if not 0.0 < floor_factor < 1.0:
+        raise ReliabilityError(f"步长下限比例须在 (0, 1) 内，得到 {floor_factor!r}")
+    if levels.size == 0:
+        return 0.5 * (x_low + x_high)
+    current = max(float(sigma), float(step) * floor_factor)
+    previous = float(levels[-1])
+    return previous - current if responses[-1] > 0 else previous + current
 
 
 def probit_levels(x_low: float, x_high: float, n_levels: int) -> np.ndarray:

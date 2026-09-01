@@ -112,6 +112,7 @@ def test_mle_weibull_rejects_nonpositive_levels() -> None:
         ("langlie", {}),  # 方法101 兰利法
         ("ostr", {}),  # 方法102 OSTR法
         ("updown", {}),  # 方法103 升降法
+        ("updown_adaptive", {}),  # 方法103 升降法（自适应步长）
         ("doptimal", {}),  # 方法104 D优化法
         ("neyer", {}),  # Neyer D-最优法
         ("probit", {}),  # 方法201 概率单位法
@@ -119,7 +120,7 @@ def test_mle_weibull_rejects_nonpositive_levels() -> None:
     ],
 )
 def test_run_sensitivity_test_recovers_truth(method: str, kwargs: dict) -> None:
-    """七方法固定种子模拟：估计 μ 落在真值 1.5σ 容差内、σ 量级正确.
+    """八方法固定种子模拟：估计 μ 落在真值 1.5σ 容差内、σ 量级正确.
 
     发数取 30（兰利法等序贯法标准推荐规模；发数过大时兰利区间塌缩
     到单点，σ 不可估）。
@@ -208,6 +209,71 @@ def test_run_updown_uses_dixon_mood() -> None:
     assert result.mu_hat == pytest.approx(10.0, abs=1.5)
 
 
+def test_run_updown_adaptive_uses_mle() -> None:
+    """自适应步长升降法：试验水平非等间隔，分析走 MLE（非 Dixon-Mood）."""
+    result = run_sensitivity_test(
+        method="updown_adaptive", mu=10.0, sigma=1.0, n_total=30, x_low=7.0, x_high=13.0, step=1.5, seed=5
+    )
+    assert result.method_label == "方法103 升降法（自适应步长）"
+    assert result.estimate.estimator == "MLE"
+    assert result.estimate.converged
+    assert result.mu_hat == pytest.approx(10.0, abs=1.5)
+    assert 0.3 < result.sigma_hat < 3.0
+
+
+def test_run_updown_bootstrap_correction() -> None:
+    """升降法 bootstrap 偏差修正：标注修正估计器且同种子可重复."""
+    kwargs = {
+        "method": "updown",
+        "mu": 10.0,
+        "sigma": 1.0,
+        "n_total": 30,
+        "x_low": 8.0,
+        "x_high": 12.0,
+        "step": 2.0,
+        "n_boot": 100,
+        "seed": 11,
+    }
+    first = run_sensitivity_test(**kwargs)
+    second = run_sensitivity_test(**kwargs)
+    assert first.estimate.estimator == "Dixon-Mood（bootstrap修正）"
+    assert first.mu_hat == second.mu_hat
+    assert first.sigma_hat == second.sigma_hat
+
+
+def test_dixon_mood_bootstrap_reduces_sigma_bias() -> None:
+    """步长偏大场景（step=2σ）：bootstrap 修正显著降低 σ̂ 的 RMSE.
+
+    MC 25 组固定种子：未修正 σ̂ 系统性高估（步长偏大时 Dixon-Mood
+    σ̂ 随 d 放大），修正后 RMSE 至少缩小两成。
+    """
+    mu, sigma, n_total, step = 10.0, 1.0, 20, 2.0
+    raw_sq, corr_sq = [], []
+    for mc in range(25):
+        result = run_sensitivity_test(
+            method="updown",
+            model="normal",
+            mu=mu,
+            sigma=sigma,
+            n_total=n_total,
+            x_low=8.0,
+            x_high=12.0,
+            step=step,
+            seed=300 + mc,
+        )
+        raw = dixon_mood(result.levels, result.responses, step)
+        corr = dixon_mood(result.levels, result.responses, step, n_boot=200, x_start=mu, seed=mc)
+        raw_sq.append((raw.sigma - sigma) ** 2)
+        corr_sq.append((corr.sigma - sigma) ** 2)
+    assert np.sqrt(np.mean(corr_sq)) < 0.8 * np.sqrt(np.mean(raw_sq))
+
+
+def test_dixon_mood_rejects_negative_boot() -> None:
+    """bootstrap 组数为负报 ReliabilityError."""
+    with pytest.raises(ReliabilityError, match="bootstrap 组数"):
+        dixon_mood(np.array([9.0, 10.0, 11.0, 12.0]), np.array([0, 0, 1, 1]), 1.0, n_boot=-1)
+
+
 def test_run_stepstress_uses_karber() -> None:
     """完全步进法分析走 Kärber 公式（非参数）."""
     result = run_sensitivity_test(
@@ -238,5 +304,5 @@ def test_run_sensitivity_test_rejects_bad_arguments() -> None:
 
 
 def test_all_methods_covered() -> None:
-    """方法表完整（七方法与测试参数化一致）."""
-    assert METHOD_NAMES == ("langlie", "ostr", "updown", "doptimal", "neyer", "probit", "stepstress")
+    """方法表完整（八方法与测试参数化一致）."""
+    assert METHOD_NAMES == ("langlie", "ostr", "updown", "updown_adaptive", "doptimal", "neyer", "probit", "stepstress")

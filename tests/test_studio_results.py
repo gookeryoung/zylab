@@ -277,7 +277,7 @@ results:
 
 
 def test_build_result_from_reliability_templates() -> None:
-    """八个感度试验 DSL 模板端到端：节点执行 + 曲线/文本/表格三视图解析.
+    """九个感度试验 DSL 模板端到端：节点执行 + 曲线/文本/表格三视图解析.
 
     固定种子蒙特卡洛一致性：μ̂（Weibull 为 η̂）落在真值 1.5 容差内、
     曲线概率单调非降且落在 [0, 1]，试验记录表两列等长。
@@ -286,7 +286,7 @@ def test_build_result_from_reliability_templates() -> None:
     from zylab.studio.nodes import run_sensitivity_test_node
 
     templates = [t for t in BUILTIN_TEMPLATES if t.discipline == "reliability"]
-    assert len(templates) == 8
+    assert len(templates) == 9
     for template in templates:
         params = template.node("test").params
         outputs = {"test": run_sensitivity_test_node({}, params)}

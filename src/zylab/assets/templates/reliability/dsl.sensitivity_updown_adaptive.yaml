@@ -1,0 +1,63 @@
+meta:
+  id: dsl.sensitivity_updown_adaptive
+  name: 方法103 升降法（自适应步长）
+  discipline: reliability
+  description: 自适应步长升降法感度试验模拟与极大似然估计（GJB/Z 377A 方法103 变体，步长跟踪在线 σ 估计）。
+  tags: [可靠性, 感度试验]
+params:
+  试验设置:
+    items:
+      mu: {value: 10.0, min: -1000.0, max: 1000.0}
+      sigma: {value: 1.0, min: 0.001, max: 100.0}
+      n_total: {value: 30, min: 4, max: 1000}
+      step: {value: 1.5, min: 0.001, max: 100.0}
+      x_low: {value: 7.0, min: -1000.0, max: 1000.0}
+      x_high: {value: 13.0, min: -1000.0, max: 1000.0}
+      seed: {value: 5, min: 0, max: 1000000}
+pipeline:
+  - id: test
+    type: reliability.sensitivity_test
+    params:
+      method: updown_adaptive
+      model: normal
+      mu: "$mu"
+      sigma: "$sigma"
+      n_total: "$n_total"
+      step: "$step"
+      x_low: "$x_low"
+      x_high: "$x_high"
+      seed: "$seed"
+results:
+  - id: curve
+    kind: curve
+    title: 响应概率拟合曲线
+    x: test.curve_x
+    y: test.curve_p
+    x_label: 刺激量
+    y_label: 响应概率
+  - id: summary
+    kind: text
+    title: 估计摘要
+    text: "μ̂ = {mu:.4f}，σ̂ = {sigma:.4f}（{estimator}，收敛={converged}）"
+    values:
+      mu: "test.mu_hat"
+      sigma: "test.sigma_hat"
+      estimator: "test.estimate.estimator"
+      converged: "test.estimate.converged"
+  - id: records
+    kind: table
+    title: 试验记录
+    columns:
+      - {title: 刺激量, ref: test.levels}
+      - {title: 响应, ref: test.responses}
+report:
+  exports: [md, html]
+  sections:
+    - title: 响应概率曲线
+      figure: curve
+    - title: 估计摘要
+      figure: summary
+    - title: 试验记录
+      figure: records
+docs:
+  intro: {text: 自适应步长升降法在经典 Bruceton 升降规则基础上，令步长跟踪在线极大似然的 σ 估计（步长可增可减，下限为初始步长的 0.2 倍）：初始步长选取偏大时自动收缩、偏小时自动放大，对初始步长不敏感；试验水平不在等间隔网格上，故以极大似然而非 Dixon-Mood 公式分析。}

@@ -12,6 +12,7 @@ from zylab.reliability.methods import (
     neyer_next,
     probit_levels,
     stepstress_levels,
+    updown_adaptive_next,
     updown_next,
 )
 
@@ -51,6 +52,35 @@ def test_updown_rejects_nonpositive_step() -> None:
     """非正步长报 ReliabilityError."""
     with pytest.raises(ReliabilityError, match="步长须为正"):
         updown_next(np.asarray([10.0]), np.asarray([1]), 6.0, 14.0, step=0.0)
+
+
+def test_updown_adaptive_first_level_is_midpoint() -> None:
+    """无历史记录：自适应升降法取初始区间中点."""
+    x = updown_adaptive_next(np.asarray([]), np.asarray([], dtype=int), 6.0, 14.0, 1.0, 1.0)
+    assert x == pytest.approx(10.0)
+
+
+def test_updown_adaptive_tracks_sigma() -> None:
+    """步长跟踪 σ 估计：σ 偏大时增长、偏小时受初始步长下限约束.
+
+    上一发响应（y=1）则下调：x = 10 − max(σ, step×floor_factor)。
+    """
+    # σ 估计 2.0 > 初始步长 1.0 → 步长增长至 2.0
+    assert updown_adaptive_next(np.asarray([10.0]), np.asarray([1]), 6.0, 14.0, 1.0, 2.0) == pytest.approx(8.0)
+    # σ 估计 0.1 < 下限 1.0×0.2 → 步长取下限 0.2
+    assert updown_adaptive_next(np.asarray([10.0]), np.asarray([1]), 6.0, 14.0, 1.0, 0.1) == pytest.approx(9.8)
+    # 不响应（y=0）则上调
+    assert updown_adaptive_next(np.asarray([10.0]), np.asarray([0]), 6.0, 14.0, 1.0, 0.5) == pytest.approx(10.5)
+
+
+def test_updown_adaptive_rejects_bad_arguments() -> None:
+    """非正步长/非正 σ 估计/下限比例越界报 ReliabilityError."""
+    with pytest.raises(ReliabilityError, match="步长须为正"):
+        updown_adaptive_next(np.asarray([10.0]), np.asarray([1]), 6.0, 14.0, 0.0, 1.0)
+    with pytest.raises(ReliabilityError, match="σ 估计须为正"):
+        updown_adaptive_next(np.asarray([10.0]), np.asarray([1]), 6.0, 14.0, 1.0, 0.0)
+    with pytest.raises(ReliabilityError, match="下限比例"):
+        updown_adaptive_next(np.asarray([10.0]), np.asarray([1]), 6.0, 14.0, 1.0, 1.0, 1.5)
 
 
 def test_neyer_first_level_is_midpoint() -> None:
