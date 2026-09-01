@@ -78,3 +78,6 @@ exclude = [".trae"]
 data-dirs = ["src/zylab/assets"]
 pyc_strip = true
 no_site = true
+# 入口 __main__ 延迟导入 GUI（静态扫描判为 CLI），显式声明为 gui 使 loader
+# 以 -mwindows（GUI 子系统）编译，运行时不显示控制台窗口
+entry-app-types = { zylab = "gui" }
