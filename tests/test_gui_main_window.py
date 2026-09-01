@@ -129,9 +129,12 @@ def test_main_window_icons_follow_theme(qtbot, isolated_data_dir: Path) -> None:
     qtbot.addWidget(win)
     before = win._sidebar.item(0).icon().pixmap(18, 18).toImage()
     target = next(name for name in theme.THEMES if name != theme.current_palette().name)
-    win._set_theme(target, persist=False)
-    after = win._sidebar.item(0).icon().pixmap(18, 18).toImage()
-    assert before != after
+    try:
+        win._set_theme(target, persist=False)
+        after = win._sidebar.item(0).icon().pixmap(18, 18).toImage()
+        assert before != after
+    finally:
+        theme.set_current_theme(theme.DEFAULT_THEME)
 
 
 @pytest.mark.gui
