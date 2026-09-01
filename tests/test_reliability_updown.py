@@ -5,7 +5,13 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
-from zylab.reliability.analysis import dixon_mood, response_points, run_sensitivity_test
+from zylab.reliability.analysis import (
+    analyze_updown_records,
+    dixon_mood,
+    parse_trial_records,
+    response_points,
+    run_sensitivity_test,
+)
 from zylab.reliability.errors import ReliabilityError
 from zylab.reliability.updown import dixon_mood_core, gh_factors
 
@@ -44,6 +50,9 @@ _X = np.array(
 )
 _Y = np.array([1, 0, 0, 0, 0, 1, 1, 1, 1, 0, 0, 0, 1, 1, 1, 1, 1, 0, 0, 1, 1, 0, 0, 1])
 _STEP = 0.05
+
+#: 金标准记录的序列化文本（TrialRecordEdit 控件同款格式）
+_RECORDS = ", ".join(f"{level:.2f} {'O' if hit else 'X'}" for level, hit in zip(_X, _Y))
 
 
 def test_dixon_mood_core_excel_golden() -> None:
@@ -188,3 +197,57 @@ def test_run_updown_carries_detail_and_points() -> None:
     assert probit.detail is None
     assert probit.points is not None
     assert np.all(np.isfinite(probit.points.se))
+
+
+# ------------------------------------------------ 实测记录分析
+
+
+def test_parse_trial_records_formats() -> None:
+    """记录解析：逗号/分号/冒号/无分隔与 1/0 记号均收敛同一结果."""
+    for text in (
+        "3.20 O, 3.15 X, 3.20 X",
+        "3.20O 3.15X 3.20X",
+        "3.2:o;3.15:x;3.2:0",
+        "3.20 1, 3.15 0, 3.20 0",
+    ):
+        levels, responses = parse_trial_records(text)
+        assert levels == pytest.approx([3.20, 3.15, 3.20])
+        assert responses.tolist() == [1, 0, 0]
+
+
+def test_parse_trial_records_rejects_invalid_text() -> None:
+    """空文本与含无法解析残余的文本报 ReliabilityError."""
+    for text in ("", "   ", "3.20 A, 3.15 X", "3.20 O abc", "O X O"):
+        with pytest.raises(ReliabilityError, match="试验记录格式非法"):
+            parse_trial_records(text)
+
+
+def test_analyze_updown_records_excel_golden() -> None:
+    """实测记录分析全链路：与 Excel 金标准 μ̂/σ̂/中间参数/响应点对齐.
+
+    结果载荷 method=updown，估计器 Dixon-Mood，与逐发数组直算一致
+    （曲线、响应点、试验记录齐全）。
+    """
+    result = analyze_updown_records(_RECORDS, _STEP, model="normal")
+    assert result.method == "updown"
+    assert result.estimate.estimator == "Dixon-Mood"
+    assert result.levels == pytest.approx(_X)
+    assert result.responses.tolist() == _Y.tolist()
+    assert result.mu_hat == pytest.approx(3.225, abs=1.0e-9)
+    assert result.sigma_hat == pytest.approx(0.0759854, rel=1.0e-4)
+    assert result.detail is not None
+    assert result.detail.n_used == 11
+    assert result.detail.m_value == pytest.approx(110.0 / 121.0, rel=1.0e-6)
+    assert result.points is not None
+    assert result.points.x[2] == pytest.approx(3.46004, abs=1.0e-3)
+    assert result.curve_x.size == result.curve_p.size > 0
+
+
+def test_analyze_updown_records_rejects_bad_inputs() -> None:
+    """模型名/步长非法与无混合响应数据报 ReliabilityError."""
+    with pytest.raises(ReliabilityError, match="不受支持"):
+        analyze_updown_records(_RECORDS, _STEP, model="unknown")
+    with pytest.raises(ReliabilityError, match="步长须为正"):
+        analyze_updown_records(_RECORDS, 0.0)
+    with pytest.raises(ReliabilityError, match="无混合响应"):
+        analyze_updown_records("3.20 O, 3.25 O, 3.30 O", _STEP)

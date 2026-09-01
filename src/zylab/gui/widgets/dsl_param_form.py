@@ -1,7 +1,10 @@
 """DSL 参数表单：按 DslTemplate 的 params 声明自动生成输入 UI.
 
 - 数值参数（float/int 默认值）：QDoubleSpinBox（单位后缀/范围/步进）；
-- 文本参数（str 默认值）：QLineEdit；
+- 文本参数（``str`` 默认值）：QLineEdit；
+- 定制参数（``widget`` 声明非空）：按类型分发定制控件（如
+  ``response_sequence`` 为逐发试验记录输入，
+  :class:`~.trial_record_edit.TrialRecordEdit`）；
 - 派生参数（``expr`` 非空）：只读行，值随其它输入实时重算
   （:meth:`DslTemplate.evaluate`），模板应用页据此展示派生量。
 
@@ -25,6 +28,7 @@ from ..qt_compat import (
     QVBoxLayout,
     QWidget,
 )
+from .trial_record_edit import TrialRecordEdit
 
 __all__ = ["DslParamForm"]
 
@@ -45,6 +49,7 @@ class DslParamForm(QWidget):
         self._template: DslTemplate | None = None
         self._spins: dict[str, QDoubleSpinBox] = {}
         self._edits: dict[str, QLineEdit] = {}
+        self._record_edits: dict[str, TrialRecordEdit] = {}
         self._derived_labels: dict[str, QLabel] = {}
 
     def set_template(self, template: DslTemplate) -> None:
@@ -52,6 +57,7 @@ class DslParamForm(QWidget):
         self._template = template
         self._spins.clear()
         self._edits.clear()
+        self._record_edits.clear()
         self._derived_labels.clear()
         while self._layout.count():
             item = self._layout.takeAt(0)
@@ -67,12 +73,19 @@ class DslParamForm(QWidget):
                 self._add_row(form, name, param)
             self._layout.addWidget(box)
         self._layout.addStretch()
+        # 同名 step 数值参数联动定制控件的升降建议步长（记录网格须与分析一致）
+        step_spin = self._spins.get("step")
+        if step_spin is not None:
+            for record_edit in self._record_edits.values():
+                step_spin.valueChanged.connect(record_edit.set_suggest_step)
+                record_edit.set_suggest_step(step_spin.value())
         self._refresh_derived()
 
     def values(self) -> dict[str, Any]:
         """收集用户输入（非派生参数；派生量由表达式运行期求值）."""
         values: dict[str, Any] = {name: spin.value() for name, spin in self._spins.items()}
         values.update({name: edit.text() for name, edit in self._edits.items()})
+        values.update({name: edit.text() for name, edit in self._record_edits.items()})
         return values
 
     def set_fields_enabled(self, enabled: bool) -> None:
@@ -81,17 +94,27 @@ class DslParamForm(QWidget):
             spin.setEnabled(enabled)
         for edit in self._edits.values():
             edit.setEnabled(enabled)
+        for record_edit in self._record_edits.values():
+            record_edit.setEnabled(enabled)
 
     # ------------------------------------------------------------------ 内部
 
     def _add_row(self, form: QFormLayout, name: str, param: DslParam) -> None:
-        """添加单个参数行（数值/文本输入或派生只读行）."""
+        """添加单个参数行（数值/文本/定制输入或派生只读行）."""
         label = param.label or name
         if param.derived:
             value_label = QLabel("—", objectName="derivedValue")
             value_label.setToolTip(f"派生表达式: {param.expr}")
             form.addRow(label, value_label)
             self._derived_labels[name] = value_label
+            return
+        if param.widget == "response_sequence":
+            record_edit = TrialRecordEdit()
+            if isinstance(param.value, str) and param.value:
+                record_edit.setText(param.value)
+            record_edit.textChanged.connect(lambda _text: self._refresh_derived())
+            form.addRow(label, record_edit)
+            self._record_edits[name] = record_edit
             return
         if isinstance(param.value, str):
             edit = QLineEdit(str(param.value))

@@ -47,7 +47,7 @@ from zylab.fea import (
     solve_static,
     solve_transient,
 )
-from zylab.reliability import run_sensitivity_test
+from zylab.reliability import analyze_updown_records, run_sensitivity_test
 
 from .batch import run_workflow
 from .bundle import ConductionBundle, ModelBundle
@@ -62,6 +62,7 @@ if TYPE_CHECKING:
     import numpy.typing as npt
 
 __all__ = [
+    "analyze_updown_records_node",
     "build_cantilever",
     "build_column",
     "build_cylinder_resistor",
@@ -818,4 +819,19 @@ def run_sensitivity_test_node(inputs: NodeInputs, params: NodeParams, report: Re
     _report(report, 0.3, "感度试验模拟中")
     result = run_sensitivity_test(**p)
     _report(report, 1.0, f"{result.method_label}分析完成")
+    return result
+
+
+def analyze_updown_records_node(inputs: NodeInputs, params: NodeParams, report: ReportFn | None = None) -> Any:
+    """升降法实测记录分析节点：逐发「刺激量 + 响应」记录 → Dixon-Mood 估计.
+
+    载荷与 :func:`run_sensitivity_test_node` 同为
+    :class:`~zylab.reliability.SensitivityTestResult`（method=updown），
+    区别在于输入为实测记录而非真值模拟。
+    """
+    del inputs  # 源节点无输入
+    p = _params("reliability.updown_records", params)
+    _report(report, 0.3, "升降法实测记录分析中")
+    result = analyze_updown_records(**p)
+    _report(report, 1.0, f"{result.method_label}实测分析完成")
     return result

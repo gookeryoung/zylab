@@ -7,5 +7,6 @@ from .dsl_result_view import DslResultView
 from .node_canvas import NodeCanvasWidget
 from .param_form import ParamForm
 from .result_view import ResultView
+from .trial_record_edit import TrialRecordEdit
 
-__all__ = ["DslParamForm", "DslResultView", "NodeCanvasWidget", "ParamForm", "ResultView"]
+__all__ = ["DslParamForm", "DslResultView", "NodeCanvasWidget", "ParamForm", "ResultView", "TrialRecordEdit"]

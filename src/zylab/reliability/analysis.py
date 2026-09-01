@@ -16,6 +16,7 @@
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass, field
 from typing import Sequence
 
@@ -43,9 +44,11 @@ __all__ = [
     "ResponsePoints",
     "SensitivityEstimate",
     "SensitivityTestResult",
+    "analyze_updown_records",
     "dixon_mood",
     "karber",
     "mle_estimate",
+    "parse_trial_records",
     "profile_ci",
     "response_points",
     "run_sensitivity_test",
@@ -531,6 +534,17 @@ def run_sensitivity_test(  # noqa: PLR0913  六方法统一入口，参数即标
         estimate = karber(
             unique_levels, np.array([int(responses[levels == lv].sum()) for lv in unique_levels]), n_per_level
         )
+    return _assemble_result(method, model, levels, responses, estimate)
+
+
+def _assemble_result(
+    method: str,
+    model: str,
+    levels: np.ndarray,
+    responses: np.ndarray,
+    estimate: SensitivityEstimate,
+) -> SensitivityTestResult:
+    """组装感度试验结果载荷（拟合曲线 + 轮廓似然区间 + 响应点表）."""
     curve_x = np.linspace(float(levels.min()), float(levels.max()), _CURVE_POINTS)
     curve_p = np.asarray(response_prob(model, curve_x, estimate.mu, estimate.sigma), dtype=float)
     # 轮廓似然置信区间：仅在数据非分离（MLE 存在）时有定义
@@ -549,6 +563,61 @@ def run_sensitivity_test(  # noqa: PLR0913  六方法统一入口，参数即标
         ci_sigma=ci_sigma,
         points=response_points(model, estimate),
     )
+
+
+#: 逐发试验记录 token：刺激量 + 可选分隔符 + 响应记号（O/1 响应、X/0 不响应）
+_RECORD_TOKEN = re.compile(r"(-?\d+(?:\.\d+)?)\s*[:，,;；]?\s*([OoXx01])")
+
+#: 记录文本中允许的 token 间分隔字符（解析后剩余物须仅含这些字符）
+_RECORD_SEPARATORS = re.compile(r"[\s,;:，；]*")
+
+
+def parse_trial_records(records: str) -> tuple[np.ndarray, np.ndarray]:
+    """解析升降法逐发实测试验记录文本为 ``(levels, responses)``.
+
+    记录格式：每发一个「刺激量 响应」token，以逗号/分号/冒号/空白
+    分隔，响应记号 ``O``/``1`` 为响应、``X``/``0`` 为不响应，如
+    ``"3.20 O, 3.15 X, 3.20 X"``。
+
+    :raises ReliabilityError: 文本不含任何有效 token 或含无法解析的残余。
+    """
+    tokens = _RECORD_TOKEN.findall(records)
+    leftover = _RECORD_TOKEN.sub("", records)
+    if not tokens or _RECORD_SEPARATORS.fullmatch(leftover) is None:
+        raise ReliabilityError(f"试验记录格式非法: {records!r}（应为形如 '3.20 O, 3.15 X' 的逐发记录）")
+    levels = np.asarray([float(level) for level, _ in tokens])
+    responses = np.asarray([1 if mark.upper() == "O" or mark == "1" else 0 for _, mark in tokens], dtype=int)
+    return levels, responses
+
+
+def analyze_updown_records(
+    records: str,
+    step: float,
+    *,
+    model: str = "normal",
+    n_boot: int = 0,
+    seed: int = 7,
+) -> SensitivityTestResult:
+    """升降法实测记录分析（GJB/Z 377A 方法103：Dixon-Mood 估计）.
+
+    以逐发「刺激量 + 响应/不响应」实测记录为输入，直接计算 μ̂/σ̂、
+    Dixon-Mood 中间参数（n/A/B/M/ρ/G/H）与 0.999、0.9999 等响应点
+    估计，无需真值模拟；记录格式见 :func:`parse_trial_records`。
+
+    :param records: 逐发试验记录文本。
+    :param step: 升降法固定步长 d（等间隔水平网格间距）。
+    :param model: 响应模型名（曲线拟合与响应点反演用，估计为正态假设）。
+    :param n_boot: 参数 bootstrap 偏差修正组数（0 关闭）。
+    :param seed: 随机种子。
+    :raises ReliabilityError: 模型名/步长非法、记录格式非法或数据无混合响应。
+    """
+    if model not in MODEL_NAMES:
+        raise ReliabilityError(f"响应模型 {model!r} 不受支持（可选 {MODEL_NAMES}）")
+    if step <= 0.0:
+        raise ReliabilityError(f"升降法步长须为正，得到 {step!r}")
+    levels, responses = parse_trial_records(records)
+    estimate = dixon_mood(levels, responses, step, n_boot=n_boot, x_start=float(levels[0]), seed=seed)
+    return _assemble_result("updown", model, levels, responses, estimate)
 
 
 def _run_sequential(  # noqa: PLR0913, PLR0917  序贯法共享逐发循环，参数即标准配置项

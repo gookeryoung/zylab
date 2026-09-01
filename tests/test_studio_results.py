@@ -279,19 +279,24 @@ results:
 
 
 def test_build_result_from_reliability_templates() -> None:
-    """九个感度试验 DSL 模板端到端：节点执行 + 曲线/文本/表格三视图解析.
+    """十个感度试验 DSL 模板端到端：节点执行 + 曲线/文本/表格三视图解析.
 
     固定种子蒙特卡洛一致性：μ̂（Weibull 为 η̂）落在真值 1.5 容差内、
-    曲线概率单调非降且落在 [0, 1]，试验记录表两列等长。
+    曲线概率单调非降且落在 [0, 1]，试验记录表两列等长；实测记录模板
+    μ̂ 与 Excel 金标准 3.225 对齐。
     """
     from zylab.studio import BUILTIN_TEMPLATES
-    from zylab.studio.nodes import run_sensitivity_test_node
+    from zylab.studio.nodes import analyze_updown_records_node, run_sensitivity_test_node
 
     templates = [t for t in BUILTIN_TEMPLATES if t.discipline == "reliability"]
-    assert len(templates) == 9
+    assert len(templates) == 10
     for template in templates:
-        params = template.node("test").params
-        outputs = {"test": run_sensitivity_test_node({}, params)}
+        node = template.node("test")
+        params = node.params
+        if node.type_id == "reliability.updown_records":
+            outputs = {"test": analyze_updown_records_node({}, params)}
+        else:
+            outputs = {"test": run_sensitivity_test_node({}, params)}
         views = {result.id: build_result(result, outputs) for result in template.dsl_results}
 
         curve = views["curve"]
@@ -301,7 +306,11 @@ def test_build_result_from_reliability_templates() -> None:
         assert np.all((probabilities >= 0.0) & (probabilities <= 1.0))
         text = views["summary"]
         assert isinstance(text, TextData)
-        if params["model"] == "weibull":
+        if template.id == "dsl.sensitivity_updown_records":
+            # Excel 金标准：24 发实测记录 μ̂ = 3.225
+            mu_hat = float(re.split("[，（]", text.text.partition("μ̂ = ")[2])[0])
+            assert mu_hat == pytest.approx(3.225, abs=0.01)
+        elif params.get("model") == "weibull":
             # Weibull 参数化：μ 为尺度 η、σ 为形状 k
             assert "η̂" in text.text
             eta_hat = float(text.text.partition("η̂ = ")[2].split("（")[0])
@@ -323,7 +332,7 @@ def test_build_result_from_reliability_templates() -> None:
         assert table.columns == ("刺激量", "响应")
         assert len(table.rows) > 0
         assert all(len(row) == 2 for row in table.rows)
-        if template.id == "dsl.sensitivity_updown":
+        if template.id in ("dsl.sensitivity_updown", "dsl.sensitivity_updown_records"):
             # 升降法模板：Dixon-Mood 中间参数文本 + 响应点估计表
             params_text = views["dixon_mood_params"]
             assert isinstance(params_text, TextData)

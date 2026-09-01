@@ -1,0 +1,88 @@
+meta:
+  id: dsl.sensitivity_updown_records
+  name: 方法103 升降法（实测记录分析）
+  discipline: reliability
+  description: 升降法（Bruceton）逐发实测试验记录的 Dixon-Mood 统计分析（GJB/Z 377A 方法103），以「刺激量 + 响应/不响应」记录为输入，输出中间参数（n/A/B/M/ρ/G/H）与 0.999、0.9999 等响应点估计。
+  tags: [可靠性, 感度试验, 实测数据]
+params:
+  试验记录:
+    items:
+      records:
+        label: 逐发试验记录
+        value: "3.20 O, 3.15 X, 3.20 X, 3.25 X, 3.30 X, 3.35 O, 3.30 O, 3.25 O, 3.20 O, 3.15 X, 3.20 X, 3.25 X, 3.30 O, 3.25 O, 3.20 O, 3.15 O, 3.10 O, 3.15 X, 3.20 X, 3.25 O, 3.20 O, 3.15 X, 3.20 X, 3.25 O"
+        widget: response_sequence
+  分析设置:
+    items:
+      step: {value: 0.05, min: 0.0001, max: 100.0, step: 0.01}
+      n_boot: {value: 0, min: 0, max: 5000}
+      seed: {value: 7, min: 0, max: 1000000}
+pipeline:
+  - id: test
+    type: reliability.updown_records
+    params:
+      records: "$records"
+      step: "$step"
+      n_boot: "$n_boot"
+      seed: "$seed"
+results:
+  - id: curve
+    kind: curve
+    title: 响应概率拟合曲线
+    x: test.curve_x
+    y: test.curve_p
+    x_label: 刺激量
+    y_label: 响应概率
+  - id: summary
+    kind: text
+    title: 估计摘要
+    text: "μ̂ = {mu:.4f}（95% CI [{mu_lo:.4f}, {mu_hi:.4f}]），σ̂ = {sigma:.4f}（95% CI [{sigma_lo:.4f}, {sigma_hi:.4f}]，{estimator}）"
+    values:
+      mu: "test.mu_hat"
+      mu_lo: "test.ci_mu_low"
+      mu_hi: "test.ci_mu_high"
+      sigma: "test.sigma_hat"
+      sigma_lo: "test.ci_sigma_low"
+      sigma_hi: "test.ci_sigma_high"
+      estimator: "test.estimate.estimator"
+  - id: dixon_mood_params
+    kind: text
+    title: Dixon-Mood 中间参数
+    text: "n = {n}，A = {a:.0f}，B = {b:.0f}，M = {m:.4f}，ρ = {rho:.5f}，G = {g:.3f}，H = {h:.3f}（se(μ̂) = G·σ̂/√n，se(σ̂) = H·σ̂/√n）"
+    values:
+      n: "test.detail.n_used"
+      a: "test.detail.a_value"
+      b: "test.detail.b_value"
+      m: "test.detail.m_value"
+      rho: "test.detail.rho"
+      g: "test.detail.g_factor"
+      h: "test.detail.h_factor"
+  - id: response_table
+    kind: table
+    title: 响应点估计（95% CI）
+    columns:
+      - {title: 响应概率, ref: test.points.probs}
+      - {title: 刺激量估计, ref: test.points.x}
+      - {title: 标准误, ref: test.points.se}
+      - {title: 置信下限, ref: test.points.x_low}
+      - {title: 置信上限, ref: test.points.x_high}
+  - id: records
+    kind: table
+    title: 试验记录
+    columns:
+      - {title: 刺激量, ref: test.levels}
+      - {title: 响应, ref: test.responses}
+report:
+  exports: [md, html]
+  sections:
+    - title: 响应概率曲线
+      figure: curve
+    - title: 估计摘要
+      figure: summary
+    - title: Dixon-Mood 中间参数
+      figure: dixon_mood_params
+    - title: 响应点估计
+      figure: response_table
+    - title: 试验记录
+      figure: records
+docs:
+  intro: {text: 升降法实测记录分析以逐发「刺激量 + 响应/不响应」记录为输入：上一发响应则降一个步长、不响应则升一个步长，试验水平在 50% 响应点附近振荡；Dixon-Mood 公式按较少响应类别的计数给出 μ 与 σ 的闭式估计（σ̂ = 1.620·d·(M + 0.029)，M < 0.3 时 σ̂ = 0.53·d），标准误系数 G/H 按 ρ 数值标定免查表，并给出 0.999、0.9999 等响应点的估计与区间。}

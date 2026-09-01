@@ -59,6 +59,8 @@ class DslParam:
     :param max: 取值上限（None 不限制）。
     :param step: UI 步进（None 用控件默认）。
     :param expr: 派生表达式（依赖其它参数，非空时为只读派生量）。
+    :param widget: 定制控件类型（空串用默认控件；``response_sequence``
+        为逐发试验记录输入，见 :mod:`.gui.widgets.trial_record_edit`）。
     """
 
     label: str = ""
@@ -68,6 +70,7 @@ class DslParam:
     max: float | None = None
     step: float | None = None
     expr: str = ""
+    widget: str = ""
 
     @property
     def derived(self) -> bool:
@@ -324,6 +327,7 @@ def _parse_param(raw: Mapping[str, Any], name: str) -> DslParam:
         max=hi,
         step=step,
         expr=str(raw.get("expr", "")),
+        widget=str(raw.get("widget", "")),
     )
 
 

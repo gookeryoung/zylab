@@ -695,6 +695,52 @@ BUILTIN_MODULES: tuple[ModuleSpec, ...] = (
             ParamSpec("seed", "随机种子", ParamType.INT, 7, 0, 2147483647, 1, "", "固定种子保证试验可重复"),
         ),
     ),
+    ModuleSpec(
+        type_id="reliability.updown_records",
+        name="升降法实测分析",
+        category=ModuleCategory.SOURCE,
+        target="zylab.studio.nodes:analyze_updown_records_node",
+        outputs=(PortSpec("data", PortType.DATA, "试验结果"),),
+        params=(
+            ParamSpec(
+                "records",
+                "试验记录",
+                ParamType.STR,
+                "",
+                doc="逐发实测记录，每发'刺激量 响应'以逗号分隔（O/1 响应、X/0 不响应），如 '3.20 O, 3.15 X'",
+            ),
+            ParamSpec(
+                "step",
+                "固定步长",
+                ParamType.FLOAT,
+                0.05,
+                1.0e-9,
+                1.0e9,
+                0.01,
+                "",
+                "升降法等间隔水平网格间距 d",
+            ),
+            ParamSpec(
+                "model",
+                "响应模型",
+                ParamType.STR,
+                "normal",
+                doc="曲线拟合与响应点反演模型: logistic/normal/gumbel/weibull",
+            ),
+            ParamSpec(
+                "n_boot",
+                "Bootstrap组数",
+                ParamType.INT,
+                0,
+                0,
+                5000,
+                10,
+                "",
+                "Dixon-Mood偏差修正模拟组数（0关闭）",
+            ),
+            ParamSpec("seed", "随机种子", ParamType.INT, 7, 0, 2147483647, 1, "", "bootstrap 固定种子"),
+        ),
+    ),
 )
 
 _MODULES_BY_ID: dict[str, ModuleSpec] = {spec.type_id: spec for spec in BUILTIN_MODULES}
