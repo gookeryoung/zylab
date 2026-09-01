@@ -63,7 +63,7 @@ def test_dixon_mood_rejects_unmixed_data() -> None:
 
 
 def test_dixon_mood_standard_errors() -> None:
-    """Dixon-Mood 协方差修正：Fisher 信息标准误为有限正值."""
+    """Dixon-Mood 标准误：G/H 系数式为有限正值（se(μ̂) < σ̂）."""
     x = np.array([9.0, 10.0, 11.0, 12.0])
     y = np.array([0, 0, 1, 1])
     estimate = dixon_mood(x, y, 1.0)
@@ -299,31 +299,37 @@ def test_run_updown_bootstrap_correction() -> None:
     assert first.sigma_hat == second.sigma_hat
 
 
-def test_dixon_mood_bootstrap_reduces_sigma_bias() -> None:
-    """步长偏大场景（step=2σ）：bootstrap 修正显著降低 σ̂ 的 RMSE.
+def test_dixon_mood_bootstrap_reduces_degenerate_bias() -> None:
+    """步长超适用域（d/σ=3）场景：bootstrap 修正降低 σ̂ 的系统偏差.
 
-    MC 25 组固定种子：未修正 σ̂ 系统性高估（步长偏大时 Dixon-Mood
-    σ̂ 随 d 放大），修正后 RMSE 至少缩小两成。
+    线性式 σ̂ 在 M < 0.3 时退化为 0.53·d，步长超出 2σ 适用域后随 d
+    系统性高估 σ。MC 40 组固定种子：修正后偏差至少缩小一成且 RMSE
+    不放大（适用域内线性式渐近无偏，修正收益主要体现在退化分支）。
     """
-    mu, sigma, n_total, step = 10.0, 1.0, 20, 2.0
-    raw_sq, corr_sq = [], []
-    for mc in range(25):
+    mu, sigma, n_total, step = 10.0, 1.0, 20, 3.0
+    raw_bias, corr_bias, raw_sq, corr_sq = [], [], [], []
+    for mc in range(40):
         result = run_sensitivity_test(
             method="updown",
             model="normal",
             mu=mu,
             sigma=sigma,
             n_total=n_total,
-            x_low=8.0,
-            x_high=12.0,
+            x_low=7.0,
+            x_high=13.0,
             step=step,
             seed=300 + mc,
         )
         raw = dixon_mood(result.levels, result.responses, step)
         corr = dixon_mood(result.levels, result.responses, step, n_boot=200, x_start=mu, seed=mc)
+        raw_bias.append(raw.sigma - sigma)
+        corr_bias.append(corr.sigma - sigma)
         raw_sq.append((raw.sigma - sigma) ** 2)
         corr_sq.append((corr.sigma - sigma) ** 2)
-    assert np.sqrt(np.mean(corr_sq)) < 0.8 * np.sqrt(np.mean(raw_sq))
+    raw_mean, corr_mean = float(np.mean(raw_bias)), float(np.mean(corr_bias))
+    assert raw_mean > 0.3  # 退化分支系统性高估在场
+    assert corr_mean < 0.9 * raw_mean  # 偏差至少缩小一成
+    assert np.sqrt(np.mean(corr_sq)) < np.sqrt(np.mean(raw_sq))  # RMSE 不放大
 
 
 def test_dixon_mood_rejects_negative_boot() -> None:

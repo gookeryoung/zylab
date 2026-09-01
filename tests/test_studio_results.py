@@ -292,14 +292,14 @@ def test_build_result_from_reliability_templates() -> None:
     for template in templates:
         params = template.node("test").params
         outputs = {"test": run_sensitivity_test_node({}, params)}
-        views = {result.kind: build_result(result, outputs) for result in template.dsl_results}
+        views = {result.id: build_result(result, outputs) for result in template.dsl_results}
 
         curve = views["curve"]
         assert isinstance(curve, CurveData)
         probabilities = np.asarray(curve.series[0].y, dtype=float)
         assert np.all(np.diff(probabilities) >= -1.0e-9)
         assert np.all((probabilities >= 0.0) & (probabilities <= 1.0))
-        text = views["text"]
+        text = views["summary"]
         assert isinstance(text, TextData)
         if params["model"] == "weibull":
             # Weibull 参数化：μ 为尺度 η、σ 为形状 k
@@ -318,8 +318,20 @@ def test_build_result_from_reliability_templates() -> None:
             bounds = text.text.partition("CI [")[2].split("]")[0].split(", ")
             low, high = float(bounds[0]), float(bounds[1])
             assert low < high
-        table = views["table"]
+        table = views["records"]
         assert isinstance(table, TableData)
         assert table.columns == ("刺激量", "响应")
         assert len(table.rows) > 0
         assert all(len(row) == 2 for row in table.rows)
+        if template.id == "dsl.sensitivity_updown":
+            # 升降法模板：Dixon-Mood 中间参数文本 + 响应点估计表
+            params_text = views["dixon_mood_params"]
+            assert isinstance(params_text, TextData)
+            assert "n = " in params_text.text and "ρ = " in params_text.text
+            points = views["response_table"]
+            assert isinstance(points, TableData)
+            assert points.columns == ("响应概率", "刺激量估计", "标准误", "置信下限", "置信上限")
+            assert len(points.rows) > 0
+            for row in points.rows:
+                low, high = float(row[3]), float(row[4])
+                assert low < high

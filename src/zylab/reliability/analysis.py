@@ -4,17 +4,20 @@
 
 - 序贯法（兰利/OSTR/D-优化）与方法201：极大似然估计（数值优化 +
   数值 Hessian 标准误，scipy 实现）；
-- 方法103 升降法：Dixon-Mood 公式（Bruceton 经典分析）；
+- 方法103 升降法：Dixon-Mood 公式（Bruceton 经典分析，核心与
+  G/H 标准误系数见 :mod:`.updown`）；
 - 方法202 完全步进法：Spearman-Kärber 非参数估计。
 
-:func:`run_sensitivity_test` 总装「设计 → 蒙特卡洛模拟 → 分析」全流程，
-给定真值参数 ``(μ, σ)`` 模拟感度试验并给出统计估计，供 DSL 模板以
-固定种子做示例验证。
+:func:`response_points` 由参数估计给出任意响应概率 p 下的刺激量估计
+（0.999/0.9999 等响应点）及 delta 法区间；:func:`run_sensitivity_test`
+总装「设计 → 蒙特卡洛模拟 → 分析」全流程，给定真值参数 ``(μ, σ)``
+模拟感度试验并给出统计估计，供 DSL 模板以固定种子做示例验证。
 """
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
+from typing import Sequence
 
 import numpy as np
 from scipy.optimize import minimize
@@ -33,20 +36,29 @@ from .methods import (
     updown_adaptive_next,
     updown_next,
 )
-from .model import MODEL_NAMES, _info_matrix, neg_log_likelihood, response_prob
+from .model import MODEL_NAMES, inverse_prob, neg_log_likelihood, response_prob
+from .updown import DixonMoodDetail, dixon_mood_core, simulate_updown
 
 __all__ = [
+    "ResponsePoints",
     "SensitivityEstimate",
     "SensitivityTestResult",
     "dixon_mood",
     "karber",
     "mle_estimate",
     "profile_ci",
+    "response_points",
     "run_sensitivity_test",
 ]
 
 #: 拟合响应曲线取样点数
 _CURVE_POINTS = 200
+
+#: 响应点估计的默认响应概率表（低尾安全点 + 高尾可靠点）
+_RESPONSE_PROBS = (0.0001, 0.001, 0.999, 0.9999, 0.99999)
+
+#: 响应点 95% 置信区间的标准正态分位数
+_Z95 = 1.959963984540054
 
 
 @dataclass(frozen=True)
@@ -55,10 +67,12 @@ class SensitivityEstimate:
 
     :param mu: 50% 响应点估计。
     :param sigma: 感度标准差估计。
-    :param se_mu: μ 的近似标准误（数值 Hessian 逆对角元）。
+    :param se_mu: μ 的近似标准误（MLE 为数值 Hessian 逆对角元，
+        Dixon-Mood 为 G/H 系数式）。
     :param se_sigma: σ 的近似标准误。
     :param estimator: 估计方法名（MLE/Dixon-Mood/Kärber）。
     :param converged: 估计是否收敛（数据完全分离时 MLE 不存在）。
+    :param detail: Dixon-Mood 中间参数（仅方法103 升降法估计携带）。
     """
 
     mu: float
@@ -67,6 +81,25 @@ class SensitivityEstimate:
     se_sigma: float = float("nan")
     estimator: str = "MLE"
     converged: bool = True
+    detail: DixonMoodDetail | None = None
+
+
+@dataclass(frozen=True)
+class ResponsePoints:
+    """响应点估计表（不同响应概率 p 下的刺激量估计与区间）.
+
+    :param probs: 响应概率序列 p（如 0.999/0.9999）。
+    :param x: 刺激量估计 ``x̂_p = F⁻¹(p; μ̂, σ̂)``（与 probs 等长）。
+    :param se: delta 法标准误（weibull 参数化不适用时为 NaN）。
+    :param x_low: 95% 置信下界（``x̂_p − z·se``，se 为 NaN 时同 NaN）。
+    :param x_high: 95% 置信上界。
+    """
+
+    probs: np.ndarray
+    x: np.ndarray
+    se: np.ndarray
+    x_low: np.ndarray
+    x_high: np.ndarray
 
 
 @dataclass(frozen=True)
@@ -83,6 +116,7 @@ class SensitivityTestResult:
     :param curve_p: 拟合响应概率（与 curve_x 等长）。
     :param ci_mu: μ 的轮廓似然置信区间（数据分离致 MLE 不存在时 None）。
     :param ci_sigma: σ 的轮廓似然置信区间（同上）。
+    :param points: 响应点估计表（0.999/0.9999 等，见 :func:`response_points`）。
     """
 
     method: str
@@ -95,6 +129,12 @@ class SensitivityTestResult:
     curve_p: np.ndarray
     ci_mu: tuple[float, float] | None = None
     ci_sigma: tuple[float, float] | None = None
+    points: ResponsePoints | None = field(default=None)
+
+    @property
+    def detail(self) -> DixonMoodDetail | None:
+        """Dixon-Mood 中间参数便捷属性（非升降法为 None）."""
+        return self.estimate.detail
 
     @property
     def mu_hat(self) -> float:
@@ -220,45 +260,6 @@ def _numerical_hessian(
     return hessian
 
 
-def _dixon_mood_core(x: np.ndarray, y: np.ndarray, step: float) -> tuple[float, float]:
-    """Dixon-Mood 点估计核心（无标准误，供 bootstrap 批量复用）.
-
-    返回 ``(μ̂, σ̂)``，σ̂ 以 ``step·0.1`` 为下限防止退化。
-    """
-    n_response = int(np.sum(y > 0))
-    use_response = n_response <= (y.size - n_response)
-    counts = y > 0 if use_response else y == 0
-    if not counts.any():
-        raise ReliabilityError("升降法数据无混合响应，Dixon-Mood 分析不可用")
-    indices = np.round((x - x.min()) / step).astype(int)
-    order = np.argsort(indices)
-    group_indices = indices[order][counts[order]]
-    n_used = int(counts.sum())
-    a_value = float(group_indices.sum())
-    b_value = float((group_indices**2).sum())
-    mean_shift = a_value / n_used - (0.5 if use_response else -0.5)
-    mu_hat = float(x.min() + step * mean_shift)
-    variance = max((n_used * b_value - a_value**2) / n_used**2 + 0.029, 0.0)
-    sigma_hat = float(1.620 * step * np.sqrt(variance))
-    return mu_hat, max(sigma_hat, step * 0.1)
-
-
-def _simulate_updown(  # noqa: PLR0913, PLR0917  bootstrap 模拟参数即试验配置项
-    mu: float, sigma: float, n_total: int, step: float, x_start: float, rng: np.random.Generator
-) -> tuple[np.ndarray, np.ndarray]:
-    """按正态模型模拟一组升降试验（固定步长，供参数 bootstrap）."""
-    levels: list[float] = []
-    responses: list[int] = []
-    x_current = float(x_start)
-    for _ in range(n_total):
-        probability = float(response_prob("normal", x_current, mu, sigma))
-        hit = 1 if rng.random() < probability else 0
-        levels.append(x_current)
-        responses.append(hit)
-        x_current = x_current - step if hit else x_current + step
-    return np.asarray(levels), np.asarray(responses, dtype=int)
-
-
 def dixon_mood(  # noqa: PLR0913
     x: np.ndarray,
     y: np.ndarray,
@@ -270,19 +271,15 @@ def dixon_mood(  # noqa: PLR0913
 ) -> SensitivityEstimate:
     """升降法 Dixon-Mood 分析（以频数较少的响应类别计数）.
 
-    设 ``n_i`` 为较少类别在第 ``i`` 级（自最低试验水平起算）的计数，
-    ``A = Σ i·n_i``、``B = Σ i²·n_i``，则::
-
-        μ̂ = x_min + d·(A/n ± 0.5)    （不响应计数取 +0.5，响应计数取 -0.5）
-        σ̂ = 1.620·d·sqrt((n·B − A²)/n² + 0.029)
-
-    协方差修正：标准误按 Dixon-Mood 隐含的正态假设，取试验点上期望
-    Fisher 信息矩阵（正态模型）逆的对角元（大样本近似）。
+    点估计与中间参数 ``(n, A, B, M, ρ)`` 见 :func:`.updown.dixon_mood_core`；
+    标准误按 GJB/Z 377A 查表系数 ``se(μ̂) = G·σ̂/√n``、``se(σ̂) = H·σ̂/√n``
+    （G/H 由 ρ 插值 :func:`.updown.gh_factors` 数值标定，免去人工查表），
+    中间参数随估计结果 ``detail`` 字段携带。
 
     小样本偏差修正（``n_boot > 0``）：参数 bootstrap——以 ``(μ̂, σ̂)``
     为真值模拟 ``n_boot`` 组同规模固定步长升降试验（初始水平取
     ``x_start``，缺省以 μ̂ 近似），重估 Dixon-Mood 得偏差均值，
-    按 ``2·估计 − 偏差均值`` 校正小样本下 σ̂ 的系统性低估。
+    按 ``2·估计 − 偏差均值`` 校正小样本下 σ̂ 的系统性偏差。
 
     :param n_boot: bootstrap 模拟组数（0 关闭修正）。
     :param x_start: 模拟试验初始水平（真实试验的起点；缺省用 μ̂ 近似）。
@@ -294,7 +291,7 @@ def dixon_mood(  # noqa: PLR0913
         raise ReliabilityError(f"升降法步长须为正，得到 {step!r}")
     if n_boot < 0:
         raise ReliabilityError(f"bootstrap 组数须 ≥ 0，得到 {n_boot}")
-    mu_hat, sigma_final = _dixon_mood_core(x, y, step)
+    mu_hat, sigma_final, detail = dixon_mood_core(x, y, step)
     estimator = "Dixon-Mood"
     if n_boot > 0:
         rng = np.random.default_rng(seed)
@@ -302,33 +299,61 @@ def dixon_mood(  # noqa: PLR0913
         mu_boot = np.empty(n_boot)
         sigma_boot = np.empty(n_boot)
         for i in range(n_boot):
-            levels, responses = _simulate_updown(mu_hat, sigma_final, int(y.size), step, start, rng)
-            mu_boot[i], sigma_boot[i] = _dixon_mood_core(levels, responses, step)
+            levels, responses = simulate_updown(mu_hat, sigma_final, int(y.size), step, x_start=start, rng=rng)
+            mu_boot[i], sigma_boot[i], _ = dixon_mood_core(levels, responses, step)
         mu_hat = 2.0 * mu_hat - float(mu_boot.mean())
         sigma_final = max(2.0 * sigma_final - float(sigma_boot.mean()), step * 0.1)
         estimator = "Dixon-Mood（bootstrap修正）"
-    se_mu, se_sigma = _fisher_standard_errors(x, "normal", mu_hat, sigma_final)
+    se_mu, se_sigma = detail.standard_errors(sigma_final)
     return SensitivityEstimate(
         mu=mu_hat,
         sigma=sigma_final,
         se_mu=se_mu,
         se_sigma=se_sigma,
         estimator=estimator,
+        detail=detail,
     )
 
 
-def _fisher_standard_errors(x: np.ndarray, model: str, mu: float, sigma: float) -> tuple[float, float]:
-    """期望 Fisher 信息矩阵逆的对角元平方根（协方差修正，大样本近似）.
+def response_points(
+    model: str,
+    estimate: SensitivityEstimate,
+    probs: Sequence[float] = _RESPONSE_PROBS,
+) -> ResponsePoints:
+    """响应点估计：``x̂_p = F⁻¹(p; μ̂, σ̂)`` 及 delta 法区间.
 
-    信息矩阵奇异（试验点信息不足）时返回 NaN。
+    位置-尺度模型 ``x_p = μ + σ·F⁻¹(p)`` 对 ``(μ, σ)`` 的敏感系数为
+    ``(1, z_p)``，故 ``se(x̂_p) = √(se_μ² + z_p²·se_σ²)``（μ、σ 近似
+    独立）；weibull ``(η, k)`` 参数化不适用该式，标准误与区间置 NaN。
+    估计未收敛（标准误缺失）时同样置 NaN。
+
+    :param model: 响应模型名（:data:`~zylab.reliability.model.MODEL_NAMES`）。
+    :param estimate: 参数估计结果。
+    :param probs: 响应概率序列（默认含 0.999/0.9999 等可靠性与安全点）。
     """
-    try:
-        covariance = np.linalg.inv(_info_matrix(x, model, mu, sigma))
-    except np.linalg.LinAlgError:
-        return float("nan"), float("nan")
-    se_mu = float(np.sqrt(covariance[0, 0])) if covariance[0, 0] > 0.0 else float("nan")
-    se_sigma = float(np.sqrt(covariance[1, 1])) if covariance[1, 1] > 0.0 else float("nan")
-    return se_mu, se_sigma
+    p = np.asarray(probs, dtype=float)
+    if np.any((p <= 0.0) | (p >= 1.0)):
+        raise ReliabilityError(f"响应概率须在 (0, 1) 内，得到 {probs!r}")
+    x = np.asarray([inverse_prob(model, float(prob), estimate.mu, estimate.sigma) for prob in p])
+    usable = (
+        model != "weibull"
+        and np.isfinite(estimate.se_mu)
+        and np.isfinite(estimate.se_sigma)
+        and estimate.se_mu > 0.0
+        and estimate.se_sigma > 0.0
+    )
+    if usable:
+        z_p = (x - estimate.mu) / estimate.sigma
+        se = np.sqrt(estimate.se_mu**2 + (z_p * estimate.se_sigma) ** 2)
+    else:
+        se = np.full(p.size, np.nan)
+    return ResponsePoints(
+        probs=p,
+        x=x,
+        se=se,
+        x_low=x - _Z95 * se,
+        x_high=x + _Z95 * se,
+    )
 
 
 def profile_ci(
@@ -522,6 +547,7 @@ def run_sensitivity_test(  # noqa: PLR0913  六方法统一入口，参数即标
         curve_p=curve_p,
         ci_mu=ci_mu,
         ci_sigma=ci_sigma,
+        points=response_points(model, estimate),
     )
 
 

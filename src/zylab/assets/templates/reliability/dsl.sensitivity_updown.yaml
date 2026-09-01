@@ -2,7 +2,7 @@ meta:
   id: dsl.sensitivity_updown
   name: 方法103 升降法
   discipline: reliability
-  description: 升降法（Bruceton）感度试验模拟与 Dixon-Mood 统计分析（GJB/Z 377A 方法103，固定步长升降）。
+  description: 升降法（Bruceton）感度试验模拟与 Dixon-Mood 统计分析（GJB/Z 377A 方法103，固定步长升降），输出中间参数（n/A/B/M/ρ/G/H）与 0.999、0.9999 等响应点估计。
   tags: [可靠性, 感度试验]
 params:
   试验设置:
@@ -38,11 +38,36 @@ results:
   - id: summary
     kind: text
     title: 估计摘要
-    text: "μ̂ = {mu:.4f}，σ̂ = {sigma:.4f}（{estimator}）"
+    text: "μ̂ = {mu:.4f}（95% CI [{mu_lo:.4f}, {mu_hi:.4f}]），σ̂ = {sigma:.4f}（95% CI [{sigma_lo:.4f}, {sigma_hi:.4f}]，{estimator}）"
     values:
       mu: "test.mu_hat"
+      mu_lo: "test.ci_mu_low"
+      mu_hi: "test.ci_mu_high"
       sigma: "test.sigma_hat"
+      sigma_lo: "test.ci_sigma_low"
+      sigma_hi: "test.ci_sigma_high"
       estimator: "test.estimate.estimator"
+  - id: dixon_mood_params
+    kind: text
+    title: Dixon-Mood 中间参数
+    text: "n = {n}，A = {a:.0f}，B = {b:.0f}，M = {m:.4f}，ρ = {rho:.5f}，G = {g:.3f}，H = {h:.3f}（se(μ̂) = G·σ̂/√n，se(σ̂) = H·σ̂/√n）"
+    values:
+      n: "test.detail.n_used"
+      a: "test.detail.a_value"
+      b: "test.detail.b_value"
+      m: "test.detail.m_value"
+      rho: "test.detail.rho"
+      g: "test.detail.g_factor"
+      h: "test.detail.h_factor"
+  - id: response_table
+    kind: table
+    title: 响应点估计（95% CI）
+    columns:
+      - {title: 响应概率, ref: test.points.probs}
+      - {title: 刺激量估计, ref: test.points.x}
+      - {title: 标准误, ref: test.points.se}
+      - {title: 置信下限, ref: test.points.x_low}
+      - {title: 置信上限, ref: test.points.x_high}
   - id: records
     kind: table
     title: 试验记录
@@ -56,7 +81,11 @@ report:
       figure: curve
     - title: 估计摘要
       figure: summary
+    - title: Dixon-Mood 中间参数
+      figure: dixon_mood_params
+    - title: 响应点估计
+      figure: response_table
     - title: 试验记录
       figure: records
 docs:
-  intro: {text: 升降法以上一发结果决定升降：响应则降一个步长、不响应则升一个步长，试验水平在 50% 响应点附近振荡；Dixon-Mood 公式按较少响应类别的计数给出 μ 与 σ 的闭式估计。}
+  intro: {text: 升降法以上一发结果决定升降：响应则降一个步长、不响应则升一个步长，试验水平在 50% 响应点附近振荡；Dixon-Mood 公式按较少响应类别的计数给出 μ 与 σ 的闭式估计（σ̂ = 1.620·d·(M + 0.029)，M < 0.3 时 σ̂ = 0.53·d），标准误系数 G/H 按 ρ 数值标定免查表，并给出 0.999、0.9999 等响应点的估计与区间。}
