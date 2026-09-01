@@ -29,6 +29,7 @@ from zylab.fea import (
 from .bundle import ConductionBundle, ModelBundle
 from .errors import StudioError
 from .graph import WorkflowGraph
+from .results import resolve_input
 from .template import Template
 
 __all__ = ["NodeOutcome", "ReportFn", "RunOutcome", "resolve_target", "run_scan", "run_workflow", "summarize"]
@@ -118,7 +119,7 @@ def run_workflow(
         if failed:
             outcomes.append(NodeOutcome(node_id=node.id, name=node.name))
             continue
-        inputs = {port: results.get(ref.partition(".")[0]) for port, ref in node.inputs.items()}
+        inputs = {port: resolve_input(ref, results) for port, ref in node.inputs.items()}
         fn = resolve_target(node.spec.target)
         started = time.perf_counter()
         try:

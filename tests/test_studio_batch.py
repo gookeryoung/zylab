@@ -56,6 +56,21 @@ class TestRunWorkflow:
         assert n_base != n_coarse
         assert coarse.succeeded
 
+    def test_input_attribute_path_binding(self) -> None:
+        """连接引用支持 '节点id.端口名.属性路径'（compute.expr 取解对象位移阵）."""
+        template = _template("dsl.cantilever_harmonic")
+        outcome = run_workflow(template)
+        assert outcome.succeeded
+        import numpy as np
+
+        amp = outcome.outcome("amp").result
+        solve = outcome.outcome("solve").result
+        assert isinstance(amp, np.ndarray)
+        assert amp.shape == (solve.n_frequencies,)
+        assert np.all(amp >= 0.0)  # 复位移取模为非负幅值
+        peak = outcome.outcome("peak").result
+        assert float(peak) == pytest.approx(float(amp.max()))
+
     def test_failure_aborts_downstream(self) -> None:
         """节点失败即中止：下游保持未执行，first_error 定位失败节点."""
         # 无压缩轴力时屈曲特征值无正因子，屈曲节点确定性失败

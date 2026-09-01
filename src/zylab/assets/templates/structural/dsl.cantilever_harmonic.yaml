@@ -1,0 +1,76 @@
+meta:
+  id: dsl.cantilever_harmonic
+  name: 悬臂梁谐响应分析
+  discipline: structural
+  description: Q4 悬臂梁简谐载荷频率扫描，输出自由端幅值频响曲线、峰值摘要与报告。
+  tags: [CAE, 动力学]
+params:
+  几何:
+    items:
+      length: {value: 40.0, unit: mm, min: 1.0, max: 500.0}
+      height: {value: 8.0, unit: mm, min: 0.5, max: 100.0}
+      nx: {value: 20, min: 2, max: 200}
+      ny: {value: 4, min: 1, max: 50}
+  材料:
+    items:
+      e_modulus: {value: 2.1e5, unit: MPa, min: 1.0e3, max: 1.0e12}
+      density: {value: 7.85e-9, unit: t/mm³, min: 1.0e-12, max: 1.0e-3}
+      poisson: {value: 0.3, min: 0.0, max: 0.49}
+  载荷:
+    items:
+      tip_load: {value: -1.0, unit: N, min: -1000.0, max: 0.0}
+  扫频:
+    items:
+      f_max: {value: 4.0e4, unit: rad/s, min: 1.0, max: 1.0e6}
+      n_freq: {value: 80, min: 10, max: 2000}
+      alpha: {value: 10.0, unit: 1/s, min: 0.0, max: 1000.0}
+      beta: {value: 0.0, min: 0.0, max: 100.0}
+pipeline:
+  - id: model
+    type: example.cantilever_q4
+    params:
+      length: "$length"
+      height: "$height"
+      nx: "$nx"
+      ny: "$ny"
+      e_modulus: "$e_modulus"
+      density: "$density"
+      poisson: "$poisson"
+      tip_load: "$tip_load"
+  - id: solve
+    type: analysis.harmonic
+    params:
+      f_max: "$f_max"
+      n_freq: "$n_freq"
+      alpha: "$alpha"
+      beta: "$beta"
+    inputs: {model: model.model}
+  - id: amp
+    type: compute.expr
+    inputs: {data: solve.solution.displacements}
+    params: {expr: "abs(data[-1])"}
+  - id: peak
+    type: compute.expr
+    inputs: {data: solve.solution.displacements}
+    params: {expr: "amax(abs(data[-1]))"}
+results:
+  - id: freq_curve
+    kind: curve
+    title: 自由端幅值频响
+    x: solve.frequencies
+    y: amp
+    x_label: 圆频率 ω (rad/s)
+    y_label: 末端幅值 (mm)
+  - id: summary
+    kind: text
+    title: 摘要
+    text: "扫频范围内自由端峰值幅值 {p:.4g} mm"
+    values: {p: peak}
+report:
+  exports: [md, html]
+  sections:
+    - title: 幅值频响曲线
+      figure: freq_curve
+      text: "扫频上限 {f_max} rad/s、{n_freq} 个频率点，Rayleigh 阻尼 α={alpha}。"
+docs:
+  intro: {text: 频响曲线在固有频率附近出现共振峰，阻尼增大时峰高降低、带宽展宽。}

@@ -65,6 +65,16 @@ def test_safe_eval_subscript() -> None:
     assert safe_eval("m[-1, 1] * 2", {"m": matrix}) == 8.0
 
 
+def test_safe_eval_array_aggregates() -> None:
+    """数组聚合 amax/amin 可用（ARRAY_MATH 命名空间叠加后）."""
+    from zylab.studio.expressions import ARRAY_MATH_NAMESPACE
+
+    ns = {**ARRAY_MATH_NAMESPACE, "a": np.array([3.0, -1.0, 2.0])}
+    assert safe_eval("amax(a)", ns) == 3.0
+    assert safe_eval("amin(a)", ns) == -1.0
+    assert safe_eval("amax(abs(a))", ns) == 3.0
+
+
 def test_safe_eval_unknown_name_rejected() -> None:
     """未绑定名称求值报 ParamError（eval 阶段 NameError 转换）."""
     with pytest.raises(ParamError, match="未定义名称"):

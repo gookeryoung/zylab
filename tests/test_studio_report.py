@@ -311,3 +311,47 @@ def test_cloud_svg_not_run_falls_back() -> None:
     (result, _) = template.dsl_results
     with pytest.raises(TemplateError, match="无输出"):
         build_result(result, {})
+
+
+def _modal_outputs() -> dict:
+    """悬臂梁小模型模态求解输出（振型云图数据源）."""
+    from zylab.studio import nodes
+
+    model = nodes.build_cantilever({}, {"length": 8.0, "height": 2.0, "nx": 4, "ny": 1, "density": 7.85e-9})
+    return {"solve": nodes.run_modal({"model": model}, {"n_modes": 3})}
+
+
+_MODE_YAML = """
+meta: {id: t.mode, name: 振型模板}
+pipeline:
+  - id: model
+    type: example.cantilever_q4
+    params: {length: 8.0, height: 2.0, nx: 4, ny: 1}
+  - id: solve
+    type: analysis.modal
+    inputs: {model: model.model}
+    params: {n_modes: 3}
+results:
+  - id: mode_cloud
+    kind: cloud
+    title: 一阶振型
+    ref: solve
+    field: mode
+    deform: 50.0
+report:
+  sections:
+    - title: 振型章节
+      figure: mode_cloud
+"""
+
+
+def test_cloud_svg_mode_shape_embedded() -> None:
+    """模态解振型云图：field=mode 渲染首阶振型模 + 变形叠加 + 场量标注."""
+    template = dsl_from_yaml(_MODE_YAML)
+    outputs = _modal_outputs()
+    md = build_markdown(template, outputs)
+    uri = next(line for line in md.splitlines() if line.startswith("![一阶振型]"))
+    svg = base64.b64decode(uri.split("(", 1)[1].rstrip(")").split(",", 1)[1]).decode("utf-8")
+    assert svg.startswith("<svg")
+    assert svg.count("<polygon") == 4
+    assert "一阶振型模" in svg

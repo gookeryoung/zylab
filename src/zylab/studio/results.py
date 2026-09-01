@@ -33,6 +33,7 @@ __all__ = [
     "TextData",
     "ViewData",
     "build_result",
+    "resolve_input",
 ]
 
 
@@ -224,6 +225,23 @@ def _resolve_path(ref: str, outputs: Mapping[str, Any]) -> Any:
     for segment in rest.split(".") if rest else ():
         value = _descend(value, segment, ref)
     return _plain(value)
+
+
+def resolve_input(ref: str, outputs: Mapping[str, Any]) -> Any:
+    """按 ``"节点id.端口名[.属性路径]"`` 引用解析节点输入载荷.
+
+    端口名段跳过（单输出节点直接绑定输出对象），其余段按映射键/
+    序列索引/对象公开属性下行（复用 :func:`_descend` 规则，如
+    ``solve.solution.displacements`` 取解对象位移阵）。上游节点尚
+    未运行（可选输入缺省）时返回 ``None``。
+    """
+    node_id, _, rest = ref.partition(".")
+    if node_id not in outputs:
+        return None
+    value: Any = outputs[node_id]
+    for segment in rest.split(".")[1:] if rest else ():
+        value = _descend(value, segment, ref)
+    return value
 
 
 def _descend(value: Any, segment: str, ref: str) -> Any:

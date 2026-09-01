@@ -381,11 +381,13 @@ class TestBuiltinTemplatesExecutable:
     @pytest.mark.parametrize("template", BUILTIN_TEMPLATES, ids=lambda t: t.id)
     def test_template_runs(self, template) -> None:
         """每个内置模板按节点定义序执行，分析节点输出类型与端口声明一致."""
+        from zylab.studio.results import resolve_input
+
         outputs: dict[str, object] = {}
         for node in template.nodes:
             spec: ModuleSpec = module_spec(node.type_id)
             target = getattr(nodes, spec.target.partition(":")[2])
-            inputs = {port: outputs[ref.partition(".")[0]] for port, ref in node.inputs.items()}
+            inputs = {port: resolve_input(ref, outputs) for port, ref in node.inputs.items()}
             outputs[node.id] = target(inputs, node.params)
             assert outputs[node.id] is not None
         for result_id in template.results:

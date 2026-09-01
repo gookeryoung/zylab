@@ -44,6 +44,7 @@ class PortType(Enum):
     ELECTROTHERMAL = "electrothermal"  # fea.ElectroThermalSolution
     ET_TRANSIENT = "et_transient"  # fea.ElectroThermalTransientSolution（瞬态电-热耦合解）
     DATA = "data"  # compute.* 节点通用数据载荷（曲线/表格等可 pickle 结构）
+    ANY = "any"  # 通用载荷（连接校验放行任意类型，如 compute.expr 的 data 输入）
 
 
 @unique
@@ -587,7 +588,7 @@ BUILTIN_MODULES: tuple[ModuleSpec, ...] = (
         name="公式计算",
         category=ModuleCategory.POST,
         target="zylab.studio.nodes:compute_expr",
-        inputs=(PortSpec("data", PortType.DATA, "数据", required=False),),
+        inputs=(PortSpec("data", PortType.ANY, "数据", required=False),),
         outputs=(PortSpec("data", PortType.DATA, "数据"),),
         params=(
             ParamSpec(

@@ -93,6 +93,8 @@ ARRAY_MATH_NAMESPACE: dict[str, Any] = {
     "floor": np.floor,
     "ceil": np.ceil,
     "hypot": np.hypot,
+    "amax": np.amax,
+    "amin": np.amin,
     "linspace": np.linspace,
     "arange": np.arange,
     "zeros": np.zeros,

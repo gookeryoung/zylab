@@ -13,7 +13,7 @@ from pathlib import Path
 from typing import Any, Mapping
 
 from .errors import LinkError, ParamError, StudioError, TemplateError
-from .module import ModuleSpec, module_spec
+from .module import ModuleSpec, PortType, module_spec
 
 __all__ = ["ParamGroup", "Template", "TemplateNode", "load_template", "save_template", "template_from_json"]
 
@@ -146,7 +146,9 @@ class Template:
                 in_port = spec.input_port(port_name)
             except StudioError as exc:
                 raise TemplateError(f"模板 {self.id!r} 节点 {node.id!r}: {exc}") from exc
-            src_id, sep, src_port = ref.partition(".")
+            src_id, sep, src_path = ref.partition(".")
+            # 引用格式 "节点id.端口名[.属性路径]"：端口名取路径首段，其余为属性路径
+            src_port = src_path.partition(".")[0] if src_path else ""
             if not sep or not src_id or not src_port:
                 raise LinkError(f"模板 {self.id!r} 节点 {node.id!r} 连接 {ref!r} 应为 '节点id.端口名' 格式")
             if src_id == node.id:
@@ -156,7 +158,10 @@ class Template:
                 out_port = src_spec.output_port(src_port)
             except StudioError as exc:
                 raise LinkError(f"模板 {self.id!r} 节点 {node.id!r} 连接 {ref!r} 无效: {exc}") from exc
-            if out_port.port_type is not in_port.port_type:
+            if out_port.port_type is not in_port.port_type and PortType.ANY not in (
+                out_port.port_type,
+                in_port.port_type,
+            ):
                 raise LinkError(
                     f"模板 {self.id!r} 连接 {ref!r} -> {node.id}.{port_name} 端口类型不匹配: "
                     f"{out_port.port_type.value} != {in_port.port_type.value}"

@@ -20,6 +20,7 @@ from zylab.core.executor import EventKind, ProcessExecutor, TaskEvent, TaskHandl
 
 from .errors import StudioError
 from .graph import WorkflowGraph
+from .results import resolve_input
 
 __all__ = ["NodeRunEvent", "WorkflowRunner"]
 
@@ -119,7 +120,8 @@ class WorkflowRunner:
                 return
             node_id = self._queue.pop(0)
             node = self._graph.node(node_id)
-            inputs = {port: self._graph.node(ref.partition(".")[0]).result for port, ref in node.inputs.items()}
+            outputs = {n.id: n.result for n in self._graph.nodes()}
+            inputs = {port: resolve_input(ref, outputs) for port, ref in node.inputs.items()}
             self._graph.mark_running(node_id)
             self._current = node_id
             started_at = time.perf_counter()

@@ -212,6 +212,34 @@ class TestLinkValidation:
         with pytest.raises(LinkError, match="端口类型不匹配"):
             Template.from_dict(raw)
 
+    def test_input_attribute_path_link(self) -> None:
+        """连接引用支持 '节点id.端口名.属性路径'（端口名合法即放行，属性运行期解析）."""
+        raw = {
+            "id": "t",
+            "name": "t",
+            "nodes": [
+                {"id": "model", "type": "example.truss2_two_bar"},
+                {"id": "a", "type": "analysis.static", "inputs": {"model": "model.model"}},
+                {"id": "b", "type": "compute.expr", "inputs": {"data": "a.solution.displacements"}},
+            ],
+        }
+        template = Template.from_dict(raw)
+        assert template.node("b").inputs["data"] == "a.solution.displacements"
+
+    def test_input_attribute_path_bad_port_rejected(self) -> None:
+        """属性路径首段须为合法输出端口名（ghost 起头拒绝）."""
+        raw = {
+            "id": "t",
+            "name": "t",
+            "nodes": [
+                {"id": "model", "type": "example.truss2_two_bar"},
+                {"id": "a", "type": "analysis.static", "inputs": {"model": "model.model"}},
+                {"id": "b", "type": "compute.expr", "inputs": {"data": "a.ghost.displacements"}},
+            ],
+        }
+        with pytest.raises(LinkError, match="无效"):
+            Template.from_dict(raw)
+
 
 class TestUiReferences:
     """UI 呈现配置引用校验."""

@@ -337,7 +337,13 @@ def _svg_legend(data: CurveData) -> list[str]:
 # ------------------------------------------------------------------ 云图 SVG
 
 #: 云图场量显示名（field 声明 -> 标注文本）
-_CLOUD_FIELD_LABELS = {"temperature": "温度", "voltage": "电压", "displacement": "位移模", "stress": "应力"}
+_CLOUD_FIELD_LABELS = {
+    "temperature": "温度",
+    "voltage": "电压",
+    "displacement": "位移模",
+    "stress": "应力",
+    "mode": "一阶振型模",
+}
 
 _CLOUD_W = 640  # 云图 SVG 画布宽（像素）
 _CLOUD_H = 420  # 云图 SVG 画布高（像素）
@@ -399,16 +405,23 @@ def _cloud_field(payload: Any, field: str, n_nodes: int) -> tuple[np.ndarray, st
         return np.linalg.norm(disp[:, :dim], axis=1), _CLOUD_FIELD_LABELS[declared]
     if declared == "stress":
         return nodal_stress_field(payload), _CLOUD_FIELD_LABELS[declared]
-    raise TemplateError(f"云图场量 {declared!r} 不受支持（可选 temperature/voltage/displacement/stress）")
+    if declared == "mode":
+        shape = np.asarray(payload.mode_shapes, dtype=float)[:, 0]  # (n_dofs,) 首阶振型
+        if shape.shape[0] != n_nodes:  # 自由度展开为节点分量（梁含转角，仅取平动）
+            shape = shape.reshape(n_nodes, -1)
+        dim = payload.mesh.dim
+        return np.linalg.norm(shape[:, :dim], axis=1), _CLOUD_FIELD_LABELS[declared]
+    raise TemplateError(f"云图场量 {declared!r} 不受支持（可选 temperature/voltage/displacement/stress/mode）")
 
 
 def _auto_field(payload: Any) -> str:
-    """按载荷属性自适应场量（温度优先，其次位移/电压/应力）."""
+    """按载荷属性自适应场量（温度优先，其次位移/电压/应力/振型）."""
     for name, attribute in (
         ("temperature", "temperatures"),
         ("displacement", "displacements"),
         ("voltage", "voltages"),
         ("stress", "element_results"),
+        ("mode", "mode_shapes"),
     ):
         if getattr(payload, attribute, None) is not None:
             return name
@@ -423,12 +436,17 @@ def _last_frame(values: np.ndarray, n_nodes: int) -> np.ndarray:
 
 
 def _cloud_coords(payload: Any, mesh: Any, values: np.ndarray, deform: float) -> np.ndarray:
-    """云图绘制坐标：位移场叠加变形（放大 ``deform`` 倍），其余原坐标."""
+    """云图绘制坐标：位移场叠加变形（放大 ``deform`` 倍）；模态解叠加首阶振型；其余原坐标."""
     if values.shape == (mesh.n_nodes,) and getattr(payload, "displacements", None) is not None:
         disp = np.asarray(payload.displacements, dtype=float)
         if disp.ndim == 2 and disp.shape[0] != mesh.n_nodes:
             disp = disp[:, -1].reshape(mesh.n_nodes, -1)
         return deformed_coords(mesh, disp, scale=deform)
+    if values.shape == (mesh.n_nodes,) and getattr(payload, "mode_shapes", None) is not None:
+        shape = np.asarray(payload.mode_shapes, dtype=float)[:, 0]
+        if shape.shape[0] != mesh.n_nodes:
+            shape = shape.reshape(mesh.n_nodes, -1)
+        return deformed_coords(mesh, shape[:, : mesh.dim], scale=deform)
     return np.asarray(mesh.coords, dtype=float)
 
 

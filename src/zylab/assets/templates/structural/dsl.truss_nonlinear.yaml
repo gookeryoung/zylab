@@ -1,0 +1,72 @@
+meta:
+  id: dsl.truss_nonlinear
+  name: 两杆桁架几何非线性
+  discipline: structural
+  description: 两杆浅桁架大位移静力（Newton 增量迭代），输出顶点载荷-位移曲线、末态位移云图与报告。
+  tags: [CAE, 非线性]
+params:
+  几何:
+    items:
+      half_span: {value: 5.0, unit: mm, min: 0.1, max: 1000.0}
+      rise: {value: 0.5, unit: mm, min: 0.01, max: 100.0}
+      area: {value: 1.0, unit: mm², min: 1.0e-6, max: 100.0}
+  材料:
+    items:
+      e_modulus: {value: 2.1e5, unit: MPa, min: 1.0e3, max: 1.0e12}
+  载荷:
+    items:
+      apex_load: {value: -60.0, unit: N, min: -1000.0, max: 0.0}
+  求解:
+    items:
+      n_increments: {value: 10, min: 1, max: 100}
+      tolerance: {value: 1.0e-8, min: 1.0e-14, max: 1.0e-2}
+      max_iterations: {value: 30, min: 5, max: 500}
+pipeline:
+  - id: model
+    type: example.truss2_two_bar
+    params:
+      half_span: "$half_span"
+      rise: "$rise"
+      area: "$area"
+      e_modulus: "$e_modulus"
+      apex_load: "$apex_load"
+  - id: solve
+    type: analysis.nonlinear
+    params:
+      n_increments: "$n_increments"
+      tolerance: "$tolerance"
+      max_iterations: "$max_iterations"
+    inputs: {model: model.model}
+  - id: apex
+    type: compute.expr
+    inputs: {data: solve.solution.history_displacements}
+    params: {expr: "data[:, 1, 1]"}
+results:
+  - id: load_curve
+    kind: curve
+    title: 顶点载荷-位移曲线
+    x: solve.history_factors
+    y: apex
+    x_label: 载荷因子 λ
+    y_label: 顶点竖向位移 (mm)
+  - id: disp_cloud
+    kind: cloud
+    title: 末态位移模
+    ref: solve
+    field: displacement
+    deform: 3.0
+  - id: summary
+    kind: text
+    title: 摘要
+    text: "全量载荷下顶点竖向位移 {d:.4g} mm"
+    values: {d: apex.-1}
+report:
+  exports: [md, html]
+  sections:
+    - title: 载荷-位移曲线
+      figure: load_curve
+      text: "浅桁架（矢跨比 {rise}/{half_span}）大位移效应显著，载荷-位移曲线呈软化非线性。"
+    - title: 末态位移云图
+      figure: disp_cloud
+docs:
+  intro: {text: 两杆浅桁架是几何非线性经典算例，位移较大时结构刚度随变形变化，需 Newton 迭代求解。}
