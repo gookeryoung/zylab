@@ -1,0 +1,60 @@
+meta:
+  id: dsl.cantilever_sweep
+  name: 悬臂梁长度扫参
+  discipline: structural
+  description: Q4 平面应力悬臂梁长度参数扫描，输出末端挠度-梁长曲线与报告。
+  tags: [CAE, 扫参]
+params:
+  扫描范围:
+    items:
+      lo: {value: 20.0, unit: mm, min: 1.0, max: 200.0}
+      hi: {value: 60.0, unit: mm, min: 2.0, max: 400.0}
+      count: {value: 5, min: 2, max: 50}
+  模型:
+    items:
+      height: {value: 8.0, unit: mm, min: 0.5, max: 100.0}
+      tip_load: {value: -100.0, unit: N, min: -10000.0, max: 0.0}
+      nx: {value: 16, min: 2, max: 200}
+      span: {expr: "hi - lo", unit: mm}
+pipeline:
+  - id: sweep
+    type: compute.sweep
+    params:
+      var: L
+      from: "$lo"
+      to: "$hi"
+      count: "$count"
+      body:
+        nodes:
+          - id: model
+            type: example.cantilever_q4
+            params: {length: "$L", height: "$height", nx: "$nx", ny: 4, tip_load: "$tip_load"}
+          - id: solve
+            type: analysis.static
+            inputs: {model: model.model}
+          - id: tip
+            type: post.static
+            params: {expr: "displacements[-1, 1]"}
+            inputs: {solution: solve.solution}
+        collect: ["tip"]
+results:
+  - id: tip_curve
+    kind: curve
+    title: 末端挠度-梁长曲线
+    x: sweep.values
+    y: sweep.series.tip
+    x_label: 梁长 L (mm)
+    y_label: 末端挠度 (mm)
+  - id: summary
+    kind: text
+    title: 摘要
+    text: "最长梁末端挠度 {tip:.4g} mm"
+    values: {tip: "sweep.series.tip.-1"}
+report:
+  exports: [md, html]
+  sections:
+    - title: 末端挠度曲线
+      figure: tip_curve
+      text: "梁长扫描 {lo} ~ {hi} mm（共 {count} 点）"
+docs:
+  intro: {text: 扫描悬臂梁长度，末端挠度近似按梁长的三次方增长。}

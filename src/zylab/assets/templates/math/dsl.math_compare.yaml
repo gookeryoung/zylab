@@ -1,0 +1,50 @@
+meta:
+  id: dsl.math_compare
+  name: 函数逼近对比
+  discipline: math
+  description: 正弦函数与其三阶泰勒逼近的扫参对比曲线（纯数学，无网格）。
+  tags: [数学, 入门]
+params:
+  扫描:
+    items:
+      lo: {value: 0.0, min: -10.0, max: 10.0}
+      hi: {value: 3.14159, min: -10.0, max: 20.0}
+      count: {value: 20, min: 2, max: 200}
+      span: {expr: "hi - lo"}
+pipeline:
+  - id: sweep
+    type: compute.sweep
+    params:
+      var: x
+      from: "$lo"
+      to: "$hi"
+      count: "$count"
+      body:
+        nodes:
+          - id: exact
+            type: compute.expr
+            params: {expr: "sin(x)", vars: {x: "$x"}}
+          - id: taylor
+            type: compute.expr
+            params: {expr: "x - x ** 3 / 6", vars: {x: "$x"}}
+        collect: ["exact", "taylor"]
+results:
+  - id: compare
+    kind: curve
+    title: sin 与三阶泰勒逼近
+    x: sweep.values
+    y: [sweep.series.exact, sweep.series.taylor]
+    x_label: x
+    y_label: f(x)
+  - id: summary
+    kind: text
+    title: 摘要
+    text: "区间末端 sin 值 {end:.4f}"
+    values: {end: "sweep.series.exact.-1"}
+report:
+  exports: [md, html]
+  sections:
+    - title: 对比曲线
+      figure: compare
+docs:
+  intro: {text: 三阶泰勒展开在原点附近逼近正弦函数，区间增大时偏差显著。}

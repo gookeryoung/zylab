@@ -324,6 +324,11 @@ class TestBuiltinTemplates:
         assert len(ids) == len(set(ids))
 
     def test_all_have_results(self) -> None:
-        """内置模板均声明结果节点."""
+        """内置模板均声明结果（经典模板 results 节点，DSL 模板 dsl_results 声明）."""
+        from zylab.studio.dsl import DslTemplate
+
         for template in BUILTIN_TEMPLATES:
-            assert template.results, template.id
+            if isinstance(template, DslTemplate):
+                assert template.dsl_results, template.id
+            else:
+                assert template.results, template.id

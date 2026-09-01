@@ -7,6 +7,10 @@ import pytest
 from zylab.gui.qt_compat import Qt
 from zylab.gui.widgets.template_dialog import TemplateDialog, discipline_label
 from zylab.studio import BUILTIN_TEMPLATES
+from zylab.studio.dsl import DslTemplate
+
+# 对话框承载经典节点图模板；DSL 模板由模板应用页下拉加载，须排除
+_CLASSIC_TEMPLATES = [t for t in BUILTIN_TEMPLATES if not isinstance(t, DslTemplate)]
 
 
 @pytest.mark.gui
@@ -20,7 +24,7 @@ def test_discipline_label_mapping() -> None:
 @pytest.mark.gui
 def test_dialog_groups_by_discipline(qtbot) -> None:
     """分组树：顶级项为学科组头（带计数），模板为子项（携带模板 id）."""
-    dialog = TemplateDialog(list(BUILTIN_TEMPLATES))
+    dialog = TemplateDialog(list(_CLASSIC_TEMPLATES))
     qtbot.addWidget(dialog)
     roots = [dialog._tree.topLevelItem(i) for i in range(dialog._tree.topLevelItemCount())]
     assert len(roots) == 2  # structural + thermal
@@ -39,7 +43,7 @@ def test_dialog_groups_by_discipline(qtbot) -> None:
 @pytest.mark.gui
 def test_dialog_search_filters(qtbot) -> None:
     """搜索过滤：按名称跨组匹配，命中组保留，首个匹配自动选中."""
-    dialog = TemplateDialog(list(BUILTIN_TEMPLATES))
+    dialog = TemplateDialog(list(_CLASSIC_TEMPLATES))
     qtbot.addWidget(dialog)
     dialog._search.setText("悬臂梁")  # 名称匹配（全部为结构学科）
     assert dialog._tree.topLevelItemCount() == 1
@@ -55,7 +59,7 @@ def test_dialog_search_filters(qtbot) -> None:
 @pytest.mark.gui
 def test_dialog_selection_and_accept(qtbot) -> None:
     """选择与确认：详情面板随选择刷新，_on_accept 记录模板 id；未选中忽略."""
-    dialog = TemplateDialog(list(BUILTIN_TEMPLATES))
+    dialog = TemplateDialog(list(_CLASSIC_TEMPLATES))
     qtbot.addWidget(dialog)
     dialog._on_accept()  # 未选中任何模板
     assert dialog.selected_id is None
@@ -66,7 +70,7 @@ def test_dialog_selection_and_accept(qtbot) -> None:
     item.setSelected(True)
     dialog._show_detail()  # 选择信号在部分平台不触发，显式刷新详情
     template_id = item.data(0, Qt.UserRole)
-    template = next(t for t in BUILTIN_TEMPLATES if t.id == template_id)
+    template = next(t for t in _CLASSIC_TEMPLATES if t.id == template_id)
     assert dialog._detail_title.text() == template.name
     assert discipline_label(template.discipline) in dialog._detail_meta.text()
     dialog._on_accept()
@@ -76,7 +80,7 @@ def test_dialog_selection_and_accept(qtbot) -> None:
 @pytest.mark.gui
 def test_dialog_double_click_accepts(qtbot) -> None:
     """双击模板项：直接确认选择（双击组头无效）."""
-    dialog = TemplateDialog(list(BUILTIN_TEMPLATES))
+    dialog = TemplateDialog(list(_CLASSIC_TEMPLATES))
     qtbot.addWidget(dialog)
     root = dialog._tree.topLevelItem(0)
     dialog._on_tree_double_clicked(root, 0)  # 组头双击：不确认

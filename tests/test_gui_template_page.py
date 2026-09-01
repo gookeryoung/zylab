@@ -291,6 +291,21 @@ def test_page_run_worker_exception(qtbot, monkeypatch) -> None:
 
 
 @pytest.mark.gui
+def test_page_builtin_combo(qtbot, monkeypatch, tmp_path: Path) -> None:
+    """内置模板下拉列出 DSL 模板，选择即加载定制化界面."""
+    monkeypatch.setattr("zylab.core.config.default_data_dir", lambda: tmp_path)
+    page = TemplatePage()
+    qtbot.addWidget(page)
+    names = [page._builtin_combo.itemText(i) for i in range(page._builtin_combo.count())]
+    assert names[0] == "内置模板…"
+    assert "函数逼近对比" in names and "悬臂梁长度扫参" in names
+    page._builtin_combo.setCurrentIndex(names.index("函数逼近对比"))
+    assert page._template is not None and page._template.id == "dsl.math_compare"
+    assert page._run_btn.isEnabled()
+    assert page._tabs.count() == 2  # 对比曲线 + 摘要两结果页
+
+
+@pytest.mark.gui
 def test_page_result_error_and_cloud_fallback(qtbot) -> None:
     """结果引用失败显示错误页；cloud 非解对象载荷回落解算视图错误提示."""
     from zylab.gui.widgets.result_view import ResultView

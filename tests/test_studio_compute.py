@@ -6,7 +6,7 @@ import numpy as np
 import pytest
 
 from zylab.studio.dsl import dsl_from_yaml
-from zylab.studio.errors import ParamError, StudioError
+from zylab.studio.errors import ParamError, StudioError, TemplateError
 from zylab.studio.module import ParamSpec, ParamType, module_spec
 from zylab.studio.nodes import build_cantilever, compute_expr, compute_sweep, post_static, run_static
 
@@ -219,6 +219,73 @@ def test_dsl_sweep_bind_and_run() -> None:
     assert result["series"]["y"] == [0.0, 0.25, 1.0, 2.25, 4.0]
     # 重绑定不破坏 body 原始引用
     assert bound.node("sweep").params["body"]["nodes"][0]["params"]["vars"]["x"] == "$x"
+
+
+def test_dsl_sweep_body_shares_dsl_params() -> None:
+    """body 内非扫描变量的 DSL 参数引用代入，$var 保留给运行期."""
+    yaml_text = """
+meta: {id: t.body, name: body 参数}
+params:
+  g:
+    items:
+      k: {value: 2.0}
+      lo: {value: 0.0}
+      hi: {value: 4.0}
+pipeline:
+  - id: sweep
+    type: compute.sweep
+    params:
+      var: x
+      from: "$lo"
+      to: "$hi"
+      count: 3
+      body:
+        nodes:
+          - id: y
+            type: compute.expr
+            params: {expr: "k * x", vars: {x: "$x", k: "$k"}}
+        collect: ["y"]
+"""
+    template = dsl_from_yaml(yaml_text)
+    body_node = template.node("sweep").params["body"]["nodes"][0]
+    assert body_node["params"]["vars"]["x"] == "$x"  # 扫描变量保留原样
+    assert body_node["params"]["vars"]["k"] == 2.0  # DSL 参数代入默认值
+    assert compute_sweep({}, template.node("sweep").params)["series"]["y"] == [0.0, 4.0, 8.0]
+    bound = template.bind_params({"k": 3.0, "hi": 6.0})
+    bound_node = bound.node("sweep").params["body"]["nodes"][0]
+    assert bound_node["params"]["vars"]["k"] == 3.0  # 绑定期随用户输入更新
+    assert bound_node["params"]["vars"]["x"] == "$x"
+    result = compute_sweep({}, bound.node("sweep").params)
+    assert result["values"] == [0.0, 3.0, 6.0]
+    assert result["series"]["y"] == [0.0, 9.0, 18.0]
+
+
+def test_dsl_sweep_body_unknown_ref_rejected() -> None:
+    """body 内引用未声明的 DSL 参数报 TemplateError."""
+    yaml_text = """
+meta: {id: t.bad, name: 非法引用}
+params:
+  g:
+    items:
+      lo: {value: 0.0}
+      hi: {value: 1.0}
+pipeline:
+  - id: sweep
+    type: compute.sweep
+    params:
+      var: x
+      from: "$lo"
+      to: "$hi"
+      count: 2
+      body:
+        nodes:
+          - id: y
+            type: compute.expr
+            params: {expr: "x", vars: {x: "$ghost"}}
+        collect: ["y"]
+"""
+    with pytest.raises(TemplateError, match="ghost"):
+        dsl_from_yaml(yaml_text)
 
 
 def test_dsl_deep_substitution_in_vars() -> None:

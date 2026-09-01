@@ -34,6 +34,7 @@ from zylab.studio.results import CloudData, build_result
 from .. import theme
 from ..icons import nav_icon
 from ..qt_compat import (
+    QComboBox,
     QFileDialog,
     QHBoxLayout,
     QLabel,
@@ -54,6 +55,16 @@ __all__ = ["TemplatePage"]
 
 #: 模板文件过滤器（YAML/JSON 双载体）
 _TEMPLATE_FILTER = "DSL 模板 (*.yaml *.yml *.json);;所有文件 (*)"
+
+
+def _builtin_dsl_templates() -> list[DslTemplate]:
+    """注册表中的 DSL 模板（内置资产 + 用户目录，供下拉快捷加载）."""
+    from zylab.core.config import default_data_dir
+    from zylab.studio.registry import TemplateRegistry
+
+    registry = TemplateRegistry.with_builtin()
+    registry.load_dir(default_data_dir() / "templates")
+    return [t for t in registry.list() if isinstance(t, DslTemplate)]
 
 
 class TemplatePage(QWidget):
@@ -115,10 +126,15 @@ class TemplatePage(QWidget):
         return splitter
 
     def _build_run_bar(self) -> QWidget:
-        """底部运行条：加载/运行/导报告 + 状态提示."""
+        """底部运行条：内置模板下拉/加载/运行/导报告 + 状态提示."""
         bar = QWidget(objectName="runBar")
         layout = QHBoxLayout(bar)
         layout.setContentsMargins(theme.SPACING_MD, theme.SPACING_SM, theme.SPACING_MD, theme.SPACING_SM)
+        self._builtin_combo = QComboBox()
+        self._builtin_combo.addItem("内置模板…")
+        for template in _builtin_dsl_templates():
+            self._builtin_combo.addItem(template.name, template)
+        self._builtin_combo.currentIndexChanged.connect(self._on_builtin_selected)
         self._load_btn = QPushButton("加载模板")
         self._load_btn.clicked.connect(self.load_template_file)
         self._run_btn = QPushButton("运行")
@@ -129,12 +145,20 @@ class TemplatePage(QWidget):
         self._export_btn.clicked.connect(self.export_report)
         self._export_btn.setEnabled(False)
         self._status_label = QLabel("未加载模板", objectName="secondaryText")
+        layout.addWidget(self._builtin_combo)
         layout.addWidget(self._load_btn)
         layout.addWidget(self._run_btn)
         layout.addWidget(self._export_btn)
         layout.addStretch()
         layout.addWidget(self._status_label)
         return bar
+
+    def _on_builtin_selected(self, index: int) -> None:
+        """内置模板下拉选择：加载选中 DSL 模板（占位项不动）."""
+        template = self._builtin_combo.itemData(index)
+        if not isinstance(template, DslTemplate):
+            return
+        self.load_template(template)
 
     # ------------------------------------------------------------------ 模板加载
 

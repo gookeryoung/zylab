@@ -23,9 +23,9 @@ class TestRegisterQuery:
         assert registry.get("structural.cantilever_static").name == "悬臂梁静力分析"
 
     def test_disciplines(self) -> None:
-        """学科分组标识（structural 在前，thermal 为新增电-热学科）."""
+        """学科分组标识（math 为 DSL 数学模板学科，structural/thermal 为既有学科）."""
         registry = TemplateRegistry.with_builtin()
-        assert registry.disciplines() == ("structural", "thermal")
+        assert registry.disciplines() == ("math", "structural", "thermal")
 
     def test_list_filter_by_discipline(self) -> None:
         """按学科过滤."""
@@ -101,17 +101,21 @@ class TestLoadDir:
         assert registry.get("user.nested").discipline == "thermal"
 
     def test_builtin_templates_loaded_from_assets(self) -> None:
-        """内置模板从 assets/templates/<学科>/*.json 加载且与包内资产一致."""
+        """内置模板从 assets/templates/<学科>/*.json|*.yaml 加载且与包内资产一致."""
         from zylab.studio.builtin import builtin_templates_dir
+        from zylab.studio.dsl import DslTemplate
 
         assets = builtin_templates_dir()
-        json_files = sorted(assets.glob("*/*.json"))
-        assert len(json_files) == len(BUILTIN_TEMPLATES)
+        files = sorted(assets.glob("*/*.json")) + sorted(assets.glob("*/*.yaml"))
+        assert len(files) == len(BUILTIN_TEMPLATES)
         by_id = {t.id: t for t in BUILTIN_TEMPLATES}
-        for path in json_files:
+        for path in files:
             template = by_id[path.stem]  # 文件名即模板 id
             assert template.discipline == path.parent.name
             assert path.parent == assets / template.discipline
+        # DSL 模板与经典模板同池注册
+        assert isinstance(by_id["dsl.cantilever_sweep"], DslTemplate)
+        assert isinstance(by_id["dsl.math_compare"], DslTemplate)
 
     def test_load_dir_missing_directory(self, tmp_path: Path) -> None:
         """目录不存在返回 0 且不抛异常."""

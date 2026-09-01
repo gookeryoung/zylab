@@ -7,7 +7,7 @@ from pathlib import Path
 
 import pytest
 
-from zylab.cli import _parse_params, _parse_scan, _parse_value, main
+from zylab.cli import _parse_dsl_params, _parse_params, _parse_scan, _parse_value, main
 from zylab.core.project import Project
 from zylab.studio import TemplateRegistry, save_template
 
@@ -112,6 +112,50 @@ class TestRunCommand:
         assert code == 0
         assert "静力" in capsys.readouterr().out
 
+    def test_run_dsl_yaml_file_with_report(self, tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+        """DSL YAML 目标：-p 覆盖 DSL 参数运行并导出 Markdown 报告."""
+        from zylab.studio.builtin import builtin_templates_dir
+
+        yaml_path = builtin_templates_dir() / "math" / "dsl.math_compare.yaml"
+        report = tmp_path / "对比.md"
+        code = main(["run", str(yaml_path), "-p", "count=3", "--report", str(report)])
+        assert code == 0
+        out = capsys.readouterr().out
+        assert "[sweep]" in out
+        text = report.read_text(encoding="utf-8")
+        assert "# 函数逼近对比" in text
+        assert "![sin 与三阶泰勒逼近](data:image/svg+xml;base64," in text
+
+    def test_run_dsl_by_id_html_report(self, tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+        """按模板 id 运行内置 DSL 模板并导出 HTML 报告（参数表含覆盖值）."""
+        report = tmp_path / "对比.html"
+        code = main(["run", "dsl.math_compare", "-p", "count=4", "--report", str(report)])
+        assert code == 0
+        assert "报告已导出" in capsys.readouterr().out
+        html = report.read_text(encoding="utf-8")
+        assert "<h1>函数逼近对比</h1>" in html
+        assert "<td>4</td>" in html  # 参数表记录覆盖后的 count
+
+    def test_run_dsl_cae_sweep(self, capsys: pytest.CaptureFixture[str]) -> None:
+        """内置 CAE 扫参 DSL 模板端到端运行（body 共享 DSL 参数）."""
+        code = main(["run", "dsl.cantilever_sweep", "-p", "count=3", "-p", "nx=8"])
+        assert code == 0
+        out = capsys.readouterr().out
+        assert "[sweep]" in out
+        assert "参数扫描" in out
+
+    def test_run_dsl_bad_param_exits_2(self, capsys: pytest.CaptureFixture[str]) -> None:
+        """DSL 目标非法参数格式退出码 2."""
+        code = main(["run", "dsl.math_compare", "-p", "count"])
+        assert code == 2
+        assert "参数错误" in capsys.readouterr().err
+
+    def test_run_report_on_classic_template_ignored(self, capsys: pytest.CaptureFixture[str]) -> None:
+        """经典模板传 --report 提示不支持并忽略（不影响运行）."""
+        code = main(["run", "structural.cantilever_static", "--report", "x.md"])
+        assert code == 0
+        assert "仅支持 DSL" in capsys.readouterr().err
+
 
 class TestTemplatesCommand:
     """``zylab templates`` 子命令."""
@@ -161,6 +205,12 @@ class TestParsers:
         assert _parse_value("3") == 3
         assert isinstance(_parse_value("3"), int)
         assert _parse_value("3.5") == 3.5
+
+    def test_parse_dsl_params(self) -> None:
+        """DSL 参数覆盖解析：数值转 int/float，其余按文本."""
+        assert _parse_dsl_params(["count=4", "lo=-1.5", "who=abc"]) == {"count": 4, "lo": -1.5, "who": "abc"}
+        with pytest.raises(ValueError, match="格式"):
+            _parse_dsl_params(["count"])
 
     def test_parse_scan_list(self) -> None:
         """逗号列表解析."""

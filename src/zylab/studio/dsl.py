@@ -432,18 +432,48 @@ def _substitute_node_params(
     values: Mapping[str, Any],
     template_id: str,
 ) -> dict[str, Any]:
-    """代入节点参数 ``$`` 引用；compute.sweep 的 body 子图保留原始引用.
+    """代入节点参数 ``$`` 引用；compute.sweep 的 body 子图部分保留原始引用.
 
-    body 中的 ``$var`` 指向扫描变量（运行期由节点函数逐值代入），构造期
-    与绑定期均不做替换，否则会销毁扫描语义。
+    body 中的 ``$var``（var 为扫描变量名）指向扫描变量（运行期由节点
+    函数逐值代入），构造期与绑定期均保留原样，否则会销毁扫描语义；
+    body 中的其余 ``$name`` 引用按 DSL 参数命名空间正常代入（绑定期
+    随用户输入更新），扫参子图由此共享模板参数。
     """
     if type_id == "compute.sweep":
         head = {key: value for key, value in params.items() if key != "body"}
         result = substitute_refs(head, values, template_id)
         if "body" in params:
-            result["body"] = params["body"]
+            var = str(params.get("var", ""))
+            result["body"] = _substitute_body(params["body"], values, var, template_id)
         return result
     return substitute_refs(params, values, template_id)
+
+
+def _substitute_body(
+    body: Any,
+    values: Mapping[str, Any],
+    var: str,
+    template_id: str,
+) -> Any:
+    """深度代入 body 内 DSL 参数引用；扫描变量 ``$var`` 引用保留原样.
+
+    :param body: body 声明（映射/列表递归，字符串按 ``$`` 引用处理）。
+    :param values: DSL 参数命名空间（构造期为默认值，绑定期为用户输入）。
+    :param var: 扫描变量名（其 ``$var`` 引用保留给运行期逐值代入）。
+    :param template_id: 模板 id（错误消息用）。
+    """
+    if isinstance(body, str) and body.startswith("$"):
+        name = body[1:]
+        if name == var:
+            return body
+        if name in values:
+            return values[name]
+        raise TemplateError(f"模板 {template_id!r} 引用未声明的参数 {name!r}")
+    if isinstance(body, Mapping):
+        return {key: _substitute_body(value, values, var, template_id) for key, value in body.items()}
+    if isinstance(body, list):
+        return [_substitute_body(item, values, var, template_id) for item in body]
+    return body
 
 
 def substitute_refs(params: Mapping[str, Any], values: Mapping[str, Any], template_id: str) -> dict[str, Any]:

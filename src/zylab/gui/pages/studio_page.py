@@ -38,6 +38,7 @@ from zylab.studio import (
     save_template,
     save_workflow,
 )
+from zylab.studio.dsl import DslTemplate
 
 from .. import theme
 from ..icons import nav_icon
@@ -255,12 +256,16 @@ class StudioPage(QWidget):
         self._bridge.node_failed.connect(self._on_node_failed)
         self._preview_bridge.done.connect(self._on_preview_done)
 
+    def _classic_templates(self) -> list[Template]:
+        """经典节点图模板（DSL 模板由模板应用页承载，工作台不重复展示）."""
+        return [t for t in self._registry.list() if not isinstance(t, DslTemplate)]
+
     def _reload_template_list(self, select_id: str | None = None) -> None:
         """重建模板下拉（按学科分组，组头为不可选分隔项）；select_id 非空时选中并触发实例化."""
         self._template_combo.blockSignals(True)
         self._template_combo.clear()
         grouped: dict[str, list[Template]] = {}
-        for template in self._registry.list():
+        for template in self._classic_templates():
             grouped.setdefault(template.discipline, []).append(template)
         for discipline in sorted(grouped):
             self._template_combo.insertSeparator(self._template_combo.count())
@@ -314,7 +319,7 @@ class StudioPage(QWidget):
         if self._runner is not None and self._runner.running:
             self._status_label.setText("运行中，无法切换模板")
             return
-        dialog = TemplateDialog(list(self._registry.list()), self)
+        dialog = TemplateDialog(self._classic_templates(), self)
         if exec_dialog(dialog) and dialog.selected_id is not None:
             index = self._template_combo.findData(dialog.selected_id)
             if index >= 0:
