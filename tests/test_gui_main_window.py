@@ -23,7 +23,7 @@ def test_main_window_builds(qtbot, isolated_data_dir: Path) -> None:
     win = MainWindow()
     qtbot.addWidget(win)
     assert "zylab" in win.windowTitle()
-    assert win._stack.count() == 3
+    assert win._stack.count() == 4  # 笔记本/工作台/模板应用/关于
     assert win._sidebar.currentRow() == 0
 
 

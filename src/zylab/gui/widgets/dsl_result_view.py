@@ -57,6 +57,13 @@ class DslResultView(QWidget):
         if self._body is not None:
             self._layout.addWidget(self._body, stretch=1)
 
+    def set_error(self, message: str) -> None:
+        """显示结果解析错误（引用未运行/路径不存在等，标题保持页签名）."""
+        self._clear_body()
+        self._body = QLabel(message, objectName="errorText")
+        self._body.setWordWrap(True)
+        self._layout.addWidget(self._body, stretch=1)
+
     # ------------------------------------------------------------------ 渲染
 
     def _build_curve(self, data: CurveData) -> QWidget:

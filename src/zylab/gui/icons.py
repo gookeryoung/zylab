@@ -25,7 +25,7 @@ _FILL_ATTR_RE = re.compile(r'\sfill="[^"]*"')
 _PIXMAP_CACHE: dict[tuple[str, str, int], QPixmap] = {}
 
 #: 侧边栏页序对应的图标文件基名（与 MainWindow 页序一致）
-NAV_ICON_NAMES = ("notebook", "analysis", "about")
+NAV_ICON_NAMES = ("notebook", "analysis", "template", "about")
 
 
 def load_icon(name: str, size: int = 16) -> QIcon:

@@ -13,6 +13,7 @@ from .app import apply_theme, save_theme_name
 from .icons import NAV_ICON_NAMES, nav_icon
 from .pages.notebook_page import NotebookPage
 from .pages.studio_page import StudioPage
+from .pages.template_page import TemplatePage
 from .qt_compat import (
     QEvent,
     QFrame,
@@ -37,7 +38,8 @@ __all__ = ["MainWindow"]
 
 _PAGE_CONSOLE = 0
 _PAGE_FEA = 1
-_PAGE_ABOUT = 2
+_PAGE_TEMPLATE = 2
+_PAGE_ABOUT = 3
 
 #: 侧边栏图标显示尺寸（像素）
 _NAV_ICON_SIZE = QSize(18, 18)
@@ -76,7 +78,7 @@ class MainWindow(QMainWindow):
 
         splitter = QSplitter(Qt.Horizontal)
         self._sidebar = QListWidget(objectName="sidebar")
-        for label in ("笔记本", "分析", "关于"):
+        for label in ("笔记本", "分析", "模板", "关于"):
             QListWidgetItem(label, self._sidebar)
         self._sidebar.setIconSize(_NAV_ICON_SIZE)
         self._sidebar.setFixedWidth(theme.SIDEBAR_WIDTH)
@@ -86,9 +88,11 @@ class MainWindow(QMainWindow):
         self._stack = QStackedWidget()
         self._notebook_page = NotebookPage(self._kernel, self._bus)
         self._studio_page = StudioPage()
+        self._template_page = TemplatePage()
         self._about_page = self._build_about_page()
         self._stack.addWidget(self._notebook_page)
         self._stack.addWidget(self._studio_page)
+        self._stack.addWidget(self._template_page)
         self._stack.addWidget(self._about_page)
 
         splitter.addWidget(self._sidebar)
@@ -130,6 +134,7 @@ class MainWindow(QMainWindow):
         self._refresh_sidebar_icons()
         self._notebook_page.refresh_theme()
         self._studio_page.refresh_theme()
+        self._template_page.refresh_theme()
         if persist:
             save_theme_name(default_data_dir(), name)
             self.statusBar().showMessage(f"主题已切换: {theme.current_palette().display_name}")
@@ -158,8 +163,10 @@ class MainWindow(QMainWindow):
         """连接导航与跨页信号."""
         self._sidebar.currentRowChanged.connect(self._stack.setCurrentIndex)
         self._sidebar.currentRowChanged.connect(lambda _row: self._refresh_sidebar_icons())
-        # 笔记本页状态提示（已打开/已保存/保存失败等）统一进主窗口状态栏
+        # 笔记本/模板页状态提示统一进主窗口状态栏；模板声明的主题按预览语义应用
         self._notebook_page.status_message.connect(self.statusBar().showMessage)
+        self._template_page.status_message.connect(self.statusBar().showMessage)
+        self._template_page.theme_requested.connect(lambda name: self._set_theme(name, persist=False))
 
     def _setup_command_palette(self) -> None:
         """装配命令面板：注册全局命令 + Ctrl+Shift+P 快捷键."""
@@ -190,6 +197,15 @@ class MainWindow(QMainWindow):
             )
         )
         register(
+            Command(
+                "go.template",
+                "转到：模板",
+                lambda: self._sidebar.setCurrentRow(_PAGE_TEMPLATE),
+                keywords="goto template dsl",
+            )
+        )
+        register(Command("template.load", "加载 DSL 模板", self._open_template_page, keywords="load template dsl yaml"))
+        register(
             Command("go.about", "转到：关于", lambda: self._sidebar.setCurrentRow(_PAGE_ABOUT), keywords="goto about")
         )
         register(Command("notebook.new", "新建笔记本", page.new_notebook, keywords="new notebook", shortcut="Ctrl+N"))
@@ -206,6 +222,11 @@ class MainWindow(QMainWindow):
         register(
             Command("theme.select", "选择主题（上下键实时预览）", self._palette.open_theme_picker, keywords="theme")
         )
+
+    def _open_template_page(self) -> None:
+        """跳转模板页并直接弹出模板文件选择（命令面板一键加载）."""
+        self._sidebar.setCurrentRow(_PAGE_TEMPLATE)
+        self._template_page.load_template_file()
 
     def eventFilter(self, obj, event) -> bool:  # Qt 命名约定
         """点击头部命令搜索框弹出命令面板（只读框仅作入口）."""
