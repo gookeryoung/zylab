@@ -18,6 +18,7 @@ from dataclasses import dataclass
 
 import numpy as np
 from scipy.optimize import minimize
+from scipy.stats import chi2
 
 from .errors import ReliabilityError
 from .methods import (
@@ -40,6 +41,7 @@ __all__ = [
     "dixon_mood",
     "karber",
     "mle_estimate",
+    "profile_ci",
     "run_sensitivity_test",
 ]
 
@@ -79,6 +81,8 @@ class SensitivityTestResult:
     :param estimate: 统计估计结果。
     :param curve_x: 拟合响应曲线取样刺激量。
     :param curve_p: 拟合响应概率（与 curve_x 等长）。
+    :param ci_mu: μ 的轮廓似然置信区间（数据分离致 MLE 不存在时 None）。
+    :param ci_sigma: σ 的轮廓似然置信区间（同上）。
     """
 
     method: str
@@ -89,6 +93,8 @@ class SensitivityTestResult:
     estimate: SensitivityEstimate
     curve_x: np.ndarray
     curve_p: np.ndarray
+    ci_mu: tuple[float, float] | None = None
+    ci_sigma: tuple[float, float] | None = None
 
     @property
     def mu_hat(self) -> float:
@@ -99,6 +105,26 @@ class SensitivityTestResult:
     def sigma_hat(self) -> float:
         """σ 估计值（DSL text 引用便捷属性）."""
         return self.estimate.sigma
+
+    @property
+    def ci_mu_low(self) -> float:
+        """μ 置信区间下界（无区间时 NaN，DSL text 引用便捷属性）."""
+        return self.ci_mu[0] if self.ci_mu is not None else float("nan")
+
+    @property
+    def ci_mu_high(self) -> float:
+        """μ 置信区间上界（无区间时 NaN）."""
+        return self.ci_mu[1] if self.ci_mu is not None else float("nan")
+
+    @property
+    def ci_sigma_low(self) -> float:
+        """σ 置信区间下界（无区间时 NaN）."""
+        return self.ci_sigma[0] if self.ci_sigma is not None else float("nan")
+
+    @property
+    def ci_sigma_high(self) -> float:
+        """σ 置信区间上界（无区间时 NaN）."""
+        return self.ci_sigma[1] if self.ci_sigma is not None else float("nan")
 
 
 def _is_separated(x: np.ndarray, y: np.ndarray) -> bool:
@@ -157,7 +183,11 @@ def mle_estimate(model: str, x: np.ndarray, y: np.ndarray) -> SensitivityEstimat
         else (float(result.x[0]), float(np.exp(result.x[1])))
     )
     hessian = _numerical_hessian(result.x, x, y, model)
-    covariance = np.linalg.inv(hessian) if np.all(np.isfinite(hessian)) else np.full((2, 2), np.nan)
+    try:
+        covariance = np.linalg.inv(hessian) if np.all(np.isfinite(hessian)) else np.full((2, 2), np.nan)
+    except np.linalg.LinAlgError:
+        # 近似分离数据下 Hessian 可能有限但奇异（截断后 NLL 平坦），协方差不可得
+        covariance = np.full((2, 2), np.nan)
     # 参数化 (μ, ln σ) 或 (ln η, ln k)：δ法传导至原参数尺度
     se_mu = float(np.sqrt(covariance[0, 0])) if covariance[0, 0] > 0.0 else float("nan")
     se_log_sigma = float(np.sqrt(covariance[1, 1])) if covariance[1, 1] > 0.0 else float("nan")
@@ -301,6 +331,100 @@ def _fisher_standard_errors(x: np.ndarray, model: str, mu: float, sigma: float) 
     return se_mu, se_sigma
 
 
+def profile_ci(
+    model: str,
+    x: np.ndarray,
+    y: np.ndarray,
+    which: str = "mu",
+    level: float = 0.95,
+) -> tuple[float, float] | None:
+    """轮廓似然置信区间（Wilks 似然比）.
+
+    固定目标参数（μ 或 σ）、优化另一参数得轮廓 NLL，区间端点满足
+    ``2(NLL_profile − NLL_min) = χ²_{1,level}``（95% 时截止 3.841）。
+    相比 Wald 区间（估计 ± z·SE 的对称正态近似），小样本下更可靠
+    且天然非对称。端点搜索：自 MLE 逐次倍增步长扩张至超越截止值，
+    再二分收紧。数据完全分离（MLE 不存在）时返回 None。
+
+    :param which: 目标参数（``"mu"`` 或 ``"sigma"``）。
+    :param level: 置信水平（0-1 开区间）。
+    """
+    if which not in ("mu", "sigma"):
+        raise ReliabilityError(f"置信区间目标参数须为 mu/sigma，得到 {which!r}")
+    if not 0.0 < level < 1.0:
+        raise ReliabilityError(f"置信水平须在 (0, 1) 内，得到 {level!r}")
+    x = np.asarray(x, dtype=float)
+    y = np.asarray(y, dtype=int)
+    mle = mle_estimate(model, x, y)
+    if not mle.converged:
+        return None
+    # θ 空间：位置-尺度为 (μ, ln σ)，Weibull 为 (ln η, ln k)
+    theta_hat = (
+        np.array([np.log(mle.mu), np.log(mle.sigma)]) if model == "weibull" else np.array([mle.mu, np.log(mle.sigma)])
+    )
+    idx = 0 if which == "mu" else 1
+    log_scale = model == "weibull" or idx == 1
+    nll_min = float(neg_log_likelihood(theta_hat, x, y, model))
+    cutoff = float(chi2.ppf(level, 1))
+
+    def profile_nll(fixed: float) -> float:
+        """固定目标分量、优化另一分量后的最小 NLL."""
+
+        def objective(free: np.ndarray) -> float:
+            theta = np.empty(2)
+            theta[idx] = fixed
+            theta[1 - idx] = float(free[0])
+            return neg_log_likelihood(theta, x, y, model)
+
+        result = minimize(
+            objective,
+            np.array([theta_hat[1 - idx]]),
+            method="Nelder-Mead",
+            options={"xatol": 1.0e-8, "fatol": 1.0e-10, "maxiter": 500},
+        )
+        return float(result.fun)
+
+    def excess(fixed: float) -> float:
+        return 2.0 * (profile_nll(fixed) - nll_min) - cutoff
+
+    # 起步尺度：SE 换算到 θ 空间优先，缺失时按分量幅值粗取
+    se = mle.se_mu if which == "mu" else mle.se_sigma
+    value_hat = float(np.exp(theta_hat[idx])) if log_scale else float(theta_hat[idx])
+    if np.isfinite(se) and se > 0.0 and value_hat != 0.0:
+        step = se / value_hat if log_scale else se
+    else:
+        step = max(abs(theta_hat[idx]) * 0.2, 0.3)
+    step = max(step, 1.0e-6)
+
+    def search(direction: int) -> float | None:
+        """向一侧倍增扩张至超越 χ² 截止，再二分收紧端点（失败返回 None）."""
+        near = float(theta_hat[idx])
+        span = step
+        far = near + direction * span
+        for _ in range(60):
+            if excess(far) > 0.0:
+                break
+            near = far
+            span *= 2.0
+            far = near + direction * span
+        else:
+            return None
+        for _ in range(40):
+            mid = 0.5 * (near + far)
+            if excess(mid) > 0.0:
+                far = mid
+            else:
+                near = mid
+        return far
+
+    low, high = search(-1), search(1)
+    if low is None or high is None:
+        return None
+    if log_scale:
+        return float(np.exp(low)), float(np.exp(high))
+    return float(low), float(high)
+
+
 def karber(x_levels: np.ndarray, hits: np.ndarray, n_per_level: int) -> SensitivityEstimate:
     """完全步进法 Spearman-Kärber 非参数估计.
 
@@ -384,6 +508,9 @@ def run_sensitivity_test(  # noqa: PLR0913  六方法统一入口，参数即标
         )
     curve_x = np.linspace(float(levels.min()), float(levels.max()), _CURVE_POINTS)
     curve_p = np.asarray(response_prob(model, curve_x, estimate.mu, estimate.sigma), dtype=float)
+    # 轮廓似然置信区间：仅在数据非分离（MLE 存在）时有定义
+    ci_mu = profile_ci(model, levels, responses, "mu") if estimate.converged else None
+    ci_sigma = profile_ci(model, levels, responses, "sigma") if estimate.converged else None
     return SensitivityTestResult(
         method=method,
         method_label=METHOD_LABELS[method],
@@ -393,6 +520,8 @@ def run_sensitivity_test(  # noqa: PLR0913  六方法统一入口，参数即标
         estimate=estimate,
         curve_x=curve_x,
         curve_p=curve_p,
+        ci_mu=ci_mu,
+        ci_sigma=ci_sigma,
     )
 
 
@@ -420,7 +549,17 @@ def _run_sequential(  # noqa: PLR0913, PLR0917  序贯法共享逐发循环，�
             x_next = updown_next(history_x, history_y, x_low, x_high, step)
         else:
             estimate = mle_estimate(model, history_x, history_y) if history_x.size >= 4 else None
-            usable = estimate if estimate is not None and estimate.converged else None
+            # 近分离数据的 MLE 会滑向病态平台（μ̂ 远离试验区间、σ̂ 达区间量级以上），
+            # 此类估计不可辨识；用于下一发设计前须通过可辨识性守卫，否则回退初始猜测
+            span = x_high - x_low
+            usable = (
+                estimate
+                if estimate is not None
+                and estimate.converged
+                and (x_low - span) <= estimate.mu <= (x_high + span)
+                and estimate.sigma <= span
+                else None
+            )
             mu_use = usable.mu if usable is not None else mu_guess
             sigma_use = usable.sigma if usable is not None else sigma_guess
             if method == "ostr":

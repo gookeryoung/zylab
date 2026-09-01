@@ -10,6 +10,7 @@ from zylab.reliability.analysis import (
     dixon_mood,
     karber,
     mle_estimate,
+    profile_ci,
     run_sensitivity_test,
 )
 from zylab.reliability.errors import ReliabilityError
@@ -101,6 +102,46 @@ def test_mle_weibull_rejects_nonpositive_levels() -> None:
     """Weibull 模型刺激量非全正报 ReliabilityError."""
     with pytest.raises(ReliabilityError, match="全为正"):
         mle_estimate("weibull", np.array([-1.0, 2.0, 3.0]), np.array([0, 0, 1]))
+
+
+def test_profile_ci_contains_truth() -> None:
+    """轮廓似然 95% CI 覆盖真值（固定种子大样本，μ/σ 双参数）."""
+    rng = np.random.default_rng(23)
+    x = rng.uniform(7.0, 13.0, 200)
+    p = 1.0 / (1.0 + np.exp(-(x - 10.0) / 1.2))
+    y = (rng.random(200) < p).astype(int)
+    ci_mu = profile_ci("logistic", x, y, "mu")
+    ci_sigma = profile_ci("logistic", x, y, "sigma")
+    assert ci_mu is not None and ci_sigma is not None
+    assert ci_mu[0] < 10.0 < ci_mu[1]
+    assert ci_sigma[0] < 1.2 < ci_sigma[1]
+
+
+def test_profile_ci_narrower_than_wald_at_large_sample() -> None:
+    """大样本下轮廓 CI 与 Wald 区间量级一致（宽度比 0.5-2 倍）."""
+    rng = np.random.default_rng(24)
+    x = rng.uniform(7.0, 13.0, 400)
+    p = 1.0 / (1.0 + np.exp(-(x - 10.0) / 1.2))
+    y = (rng.random(400) < p).astype(int)
+    estimate = mle_estimate("logistic", x, y)
+    ci = profile_ci("logistic", x, y, "mu")
+    assert ci is not None
+    wald_width = 2.0 * 1.96 * estimate.se_mu
+    assert 0.5 < (ci[1] - ci[0]) / wald_width < 2.0
+
+
+def test_profile_ci_separated_data_returns_none() -> None:
+    """完全分离数据（MLE 不存在）：轮廓 CI 返回 None."""
+    assert profile_ci("logistic", np.array([8.0, 9.0, 11.0, 12.0]), np.array([0, 0, 1, 1]), "mu") is None
+
+
+def test_profile_ci_rejects_bad_arguments() -> None:
+    """非法目标参数与置信水平报 ReliabilityError."""
+    x, y = np.array([9.0, 10.0, 11.0, 12.0]), np.array([0, 0, 1, 1])
+    with pytest.raises(ReliabilityError, match="mu/sigma"):
+        profile_ci("logistic", x, y, "tau")
+    with pytest.raises(ReliabilityError, match="置信水平"):
+        profile_ci("logistic", x, y, "mu", level=1.5)
 
 
 # ------------------------------------------------ 蒙特卡洛一致性验证（计算示例）
@@ -198,6 +239,23 @@ def test_run_neyer_uses_mle() -> None:
     result = run_sensitivity_test(method="neyer", mu=10.0, sigma=1.0, n_total=30, seed=7)
     assert result.method_label == "Neyer D-最优法"
     assert result.estimate.estimator == "MLE"
+
+
+def test_run_result_profile_ci_fields() -> None:
+    """总装结果携带轮廓 CI：区间包含点估计，便捷属性 None 安全（NaN）."""
+    neyer = run_sensitivity_test(method="neyer", mu=10.0, sigma=1.0, n_total=30, seed=7)
+    assert neyer.ci_mu is not None and neyer.ci_sigma is not None
+    assert neyer.ci_mu[0] < neyer.mu_hat < neyer.ci_mu[1]
+    assert neyer.ci_sigma[0] < neyer.sigma_hat < neyer.ci_sigma[1]
+    assert np.isfinite(neyer.ci_mu_low) and np.isfinite(neyer.ci_sigma_high)
+    # 步进法数据常完全分离（MLE 不存在）：区间 None 时便捷属性为 NaN
+    step = run_sensitivity_test(
+        method="stepstress", mu=10.0, sigma=1.0, x_low=6.0, x_high=14.0, step=0.8, n_per_level=10, seed=9
+    )
+    if step.ci_mu is None:
+        assert np.isnan(step.ci_mu_low) and np.isnan(step.ci_mu_high)
+    else:
+        assert step.ci_mu[0] < step.ci_mu[1]
 
 
 def test_run_updown_uses_dixon_mood() -> None:

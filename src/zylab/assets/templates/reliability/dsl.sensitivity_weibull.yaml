@@ -38,9 +38,11 @@ results:
   - id: summary
     kind: text
     title: 估计摘要
-    text: "η̂ = {mu:.4f}，k̂ = {sigma:.4f}（{estimator}，收敛={converged}）"
+    text: "η̂ = {mu:.4f}（95% CI [{mu_lo:.4f}, {mu_hi:.4f}]），k̂ = {sigma:.4f}（{estimator}，收敛={converged}）"
     values:
       mu: "test.mu_hat"
+      mu_lo: "test.ci_mu_low"
+      mu_hi: "test.ci_mu_high"
       sigma: "test.sigma_hat"
       estimator: "test.estimate.estimator"
       converged: "test.estimate.converged"

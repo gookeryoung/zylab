@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import re
+
 import numpy as np
 import pytest
 
@@ -302,14 +304,20 @@ def test_build_result_from_reliability_templates() -> None:
         if params["model"] == "weibull":
             # Weibull 参数化：μ 为尺度 η、σ 为形状 k
             assert "η̂" in text.text
-            eta_hat = float(text.text.partition("η̂ = ")[2].split("，")[0])
+            eta_hat = float(text.text.partition("η̂ = ")[2].split("（")[0])
             assert eta_hat == pytest.approx(10.0, abs=1.5)
             k_hat = float(text.text.partition("k̂ = ")[2].split("（")[0])
             assert 1.0 < k_hat < 2.0
         else:
             assert "μ̂" in text.text
-            mu_hat = float(text.text.partition("μ̂ = ")[2].split("，")[0])
+            mu_hat = float(re.split("[，（]", text.text.partition("μ̂ = ")[2])[0])
             assert mu_hat == pytest.approx(10.0, abs=1.5)
+        if template.id in ("dsl.sensitivity_neyer", "dsl.sensitivity_weibull"):
+            # 轮廓似然置信区间：端点有限且下界 < 上界
+            assert "95% CI" in text.text
+            bounds = text.text.partition("CI [")[2].split("]")[0].split(", ")
+            low, high = float(bounds[0]), float(bounds[1])
+            assert low < high
         table = views["table"]
         assert isinstance(table, TableData)
         assert table.columns == ("刺激量", "响应")

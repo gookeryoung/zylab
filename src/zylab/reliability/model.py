@@ -69,13 +69,17 @@ def neg_log_likelihood(theta: np.ndarray, x: np.ndarray, y: np.ndarray, model: s
     :param y: 响应指示序列（0/1）。
     :param model: 响应模型名。
     """
+    # 优化器（Nelder-Mead 扩张/轮廓搜索）可能探测极端 ln σ/ln η/ln k，
+    # 直接 exp 会溢出 float64；clip 到 ±500 后 exp 仍达 1e±217，
+    # 足以让 NLL 数值稳定地排斥该区域而不产生 RuntimeWarning。
+    t0, t1 = float(np.clip(theta[0], -500.0, 500.0)), float(np.clip(theta[1], -500.0, 500.0))
     if model == "weibull":
-        eta, shape = float(np.exp(theta[0])), float(np.exp(theta[1]))
+        eta, shape = float(np.exp(t0)), float(np.exp(t1))
         # 伯努利响应概率：P(y=1) = F(x)（CDF），P(y=0) = exp(−(x/η)^k)
         log_p = weibull_min.logcdf(x, shape, scale=eta)
         log_q = -((x / eta) ** shape)
     else:
-        mu, sigma = float(theta[0]), float(np.exp(theta[1]))
+        mu, sigma = t0, float(np.exp(t1))
         z = (x - mu) / sigma
         if model == "logistic":
             log_p = -np.logaddexp(0.0, -z)
@@ -86,7 +90,12 @@ def neg_log_likelihood(theta: np.ndarray, x: np.ndarray, y: np.ndarray, model: s
         else:
             log_p = gumbel_l.logcdf(z)
             log_q = gumbel_l.logsf(z)
-    return float(-np.sum(np.where(y > 0, log_p, log_q)))
+    # 极端参数下 log 似然项可达 -1e300 量级，直接求和会溢出 float64；
+    # 逐项封底到 -1e300 再求和（项数远小于 1e8 时和必有界），
+    # 封顶保持"排斥该区域"的语义且无 RuntimeWarning。
+    terms = np.clip(np.where(y > 0, log_p, log_q), -1.0e300, 0.0)
+    nll = float(-np.sum(terms))
+    return nll if np.isfinite(nll) else 1.0e300
 
 
 def inverse_prob(model: str, p: float, mu: float, sigma: float) -> float:
