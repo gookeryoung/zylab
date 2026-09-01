@@ -71,19 +71,31 @@ class TemplateRegistry:
         return tuple(seen)
 
     def load_dir(self, directory: Path) -> int:
-        """加载目录下全部模板 JSON（顶层 ``*.json`` 与 ``<学科>/*.json``），返回成功数量.
+        """加载目录下全部模板（JSON 经典格式 + YAML DSL 格式），返回成功数量.
 
         顶层为历史平铺布局，子目录为按学科归类的现行布局；二者并存时全部加载。
-        单个文件非法仅记录告警并跳过，不影响其余模板。
+        ``*.yaml``/``*.yml`` 走 DSL 解析（归一化为 :class:`DslTemplate`，
+        与经典模板同池注册）；单个文件非法仅记录告警并跳过。
         """
         directory = Path(directory)
         if not directory.is_dir():
             logger.warning("模板目录不存在，跳过加载: %s", directory)
             return 0
+        from .dsl import load_dsl
+
         count = 0
-        for path in sorted({*directory.glob("*.json"), *directory.glob("*/*.json")}):
+        paths = sorted({*directory.glob("*.json"), *directory.glob("*/*.json")})
+        paths += sorted(
+            {
+                *directory.glob("*.yaml"),
+                *directory.glob("*.yml"),
+                *directory.glob("*/*.yaml"),
+                *directory.glob("*/*.yml"),
+            }
+        )
+        for path in paths:
             try:
-                template = load_template(path)
+                template = load_dsl(path) if path.suffix.lower() in (".yaml", ".yml") else load_template(path)
                 self.register(template)
             except TemplateError as exc:
                 logger.warning("跳过非法模板文件 %s: %s", path.name, exc)

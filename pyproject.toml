@@ -24,6 +24,8 @@ dependencies    = [
     "psutil>=5.9",
     "pyqtgraph>=0.13",
     "tomli>=2.0; python_version < '3.11'",
+    # DSL 模板载体（YAML 是 JSON 超集，两类模板共用同一解析管线）
+    "PyYAML>=6.0",
 ]
 description     = "通用科学计算仿真分析平台。"
 license         = "MIT"
