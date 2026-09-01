@@ -1,0 +1,62 @@
+meta:
+  id: dsl.sensitivity_stepstress
+  name: 方法202 完全步进法
+  discipline: reliability
+  description: 完全步进法感度试验模拟与 Spearman-Kärber 非参数估计（GJB/Z 377A 方法202，逐级上升至全响应）。
+  tags: [可靠性, 感度试验]
+params:
+  试验设置:
+    items:
+      mu: {value: 10.0, min: -1000.0, max: 1000.0}
+      sigma: {value: 1.0, min: 0.001, max: 100.0}
+      step: {value: 0.8, min: 0.001, max: 100.0}
+      n_per_level: {value: 10, min: 1, max: 100}
+      x_low: {value: 6.0, min: -1000.0, max: 1000.0}
+      x_high: {value: 14.0, min: -1000.0, max: 1000.0}
+      seed: {value: 7, min: 0, max: 1000000}
+pipeline:
+  - id: test
+    type: reliability.sensitivity_test
+    params:
+      method: stepstress
+      model: logistic
+      mu: "$mu"
+      sigma: "$sigma"
+      step: "$step"
+      n_per_level: "$n_per_level"
+      x_low: "$x_low"
+      x_high: "$x_high"
+      seed: "$seed"
+results:
+  - id: curve
+    kind: curve
+    title: 响应概率拟合曲线
+    x: test.curve_x
+    y: test.curve_p
+    x_label: 刺激量
+    y_label: 响应概率
+  - id: summary
+    kind: text
+    title: 估计摘要
+    text: "μ̂ = {mu:.4f}，σ̂ = {sigma:.4f}（{estimator}）"
+    values:
+      mu: "test.mu_hat"
+      sigma: "test.sigma_hat"
+      estimator: "test.estimate.estimator"
+  - id: records
+    kind: table
+    title: 试验记录
+    columns:
+      - {title: 刺激量, ref: test.levels}
+      - {title: 响应, ref: test.responses}
+report:
+  exports: [md, html]
+  sections:
+    - title: 响应概率曲线
+      figure: curve
+    - title: 估计摘要
+      figure: summary
+    - title: 试验记录
+      figure: records
+docs:
+  intro: {text: 完全步进法自下界按固定步长逐级上升，每水平多发试样，升至全响应水平后补一级收尾；Kärber 非参数估计以各水平响应频率的梯形积分直接给出 μ 与 σ，不依赖分布假设。}

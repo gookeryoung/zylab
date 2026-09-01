@@ -37,6 +37,7 @@ DISCIPLINE_LABELS = {
     "acoustic": "声学分析",
     "fluid": "流体分析",
     "math": "数学计算",
+    "reliability": "可靠性分析",
 }
 
 

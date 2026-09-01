@@ -23,9 +23,9 @@ class TestRegisterQuery:
         assert registry.get("structural.cantilever_static").name == "悬臂梁静力分析"
 
     def test_disciplines(self) -> None:
-        """学科分组标识（math 为 DSL 数学模板学科，structural/thermal 为既有学科）."""
+        """学科分组标识（math/reliability 为 DSL 模板学科，structural/thermal 为既有学科）."""
         registry = TemplateRegistry.with_builtin()
-        assert registry.disciplines() == ("math", "structural", "thermal")
+        assert registry.disciplines() == ("math", "reliability", "structural", "thermal")
 
     def test_list_filter_by_discipline(self) -> None:
         """按学科过滤."""

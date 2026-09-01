@@ -47,6 +47,7 @@ from zylab.fea import (
     solve_static,
     solve_transient,
 )
+from zylab.reliability import run_sensitivity_test
 
 from .batch import run_workflow
 from .bundle import ConductionBundle, ModelBundle
@@ -78,6 +79,7 @@ __all__ = [
     "run_harmonic",
     "run_modal",
     "run_nonlinear",
+    "run_sensitivity_test_node",
     "run_static",
     "run_transient",
 ]
@@ -803,3 +805,17 @@ def post_static(inputs: NodeInputs, params: NodeParams, report: ReportFn | None 
     }
     _report(report, 1.0, "结果提取完成")
     return safe_eval(str(p["expr"]), namespace)
+
+
+def run_sensitivity_test_node(inputs: NodeInputs, params: NodeParams, report: ReportFn | None = None) -> Any:
+    """感度试验节点：GJB/Z 377A 六方法「设计-模拟-分析」总装，输出 DATA 载荷.
+
+    载荷为 :class:`~zylab.reliability.SensitivityTestResult`，结果视图经
+    属性路径引用（如 ``test.curve_x``/``test.mu_hat``/``test.estimate``）。
+    """
+    del inputs  # 源节点无输入
+    p = _params("reliability.sensitivity_test", params)
+    _report(report, 0.3, "感度试验模拟中")
+    result = run_sensitivity_test(**p)
+    _report(report, 1.0, f"{result.method_label}分析完成")
+    return result

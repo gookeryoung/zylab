@@ -640,6 +640,34 @@ BUILTIN_MODULES: tuple[ModuleSpec, ...] = (
             ),
         ),
     ),
+    ModuleSpec(
+        type_id="reliability.sensitivity_test",
+        name="感度试验统计",
+        category=ModuleCategory.SOURCE,
+        target="zylab.studio.nodes:run_sensitivity_test_node",
+        outputs=(PortSpec("data", PortType.DATA, "试验结果"),),
+        params=(
+            ParamSpec(
+                "method",
+                "试验方法",
+                ParamType.STR,
+                "langlie",
+                doc="GJB/Z 377A 方法名: langlie(101)/ostr(102)/updown(103)/doptimal(104)/probit(201)/stepstress(202)",
+            ),
+            ParamSpec(
+                "model", "响应模型", ParamType.STR, "logistic", doc="logistic（Logistic）/ normal（正态，Probit）"
+            ),
+            ParamSpec("mu", "真值 μ", ParamType.FLOAT, 10.0, -1.0e9, 1.0e9, 0.5, "", "50% 响应点（模拟真值）"),
+            ParamSpec("sigma", "真值 σ", ParamType.FLOAT, 1.0, 1.0e-9, 1.0e9, 0.1, "", "感度标准差（模拟真值）"),
+            ParamSpec("n_total", "序贯发数", ParamType.INT, 30, 4, 10000, 1, "", "序贯法（方法101-104）总发数"),
+            ParamSpec("x_low", "初始下界", ParamType.FLOAT, 6.0, -1.0e9, 1.0e9, 0.5, "", "估计全不响应刺激量下界"),
+            ParamSpec("x_high", "初始上界", ParamType.FLOAT, 14.0, -1.0e9, 1.0e9, 0.5, "", "估计全响应刺激量上界"),
+            ParamSpec("step", "固定步长", ParamType.FLOAT, 0.8, 1.0e-9, 1.0e9, 0.1, "", "升降法/步进法步长"),
+            ParamSpec("n_per_level", "每水平发数", ParamType.INT, 10, 1, 1000, 1, "", "概率单位法/步进法每水平发数"),
+            ParamSpec("n_levels", "水平数", ParamType.INT, 7, 2, 100, 1, "", "概率单位法等间隔水平数"),
+            ParamSpec("seed", "随机种子", ParamType.INT, 7, 0, 2147483647, 1, "", "固定种子保证试验可重复"),
+        ),
+    ),
 )
 
 _MODULES_BY_ID: dict[str, ModuleSpec] = {spec.type_id: spec for spec in BUILTIN_MODULES}

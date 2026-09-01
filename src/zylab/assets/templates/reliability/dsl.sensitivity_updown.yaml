@@ -1,0 +1,62 @@
+meta:
+  id: dsl.sensitivity_updown
+  name: 方法103 升降法
+  discipline: reliability
+  description: 升降法（Bruceton）感度试验模拟与 Dixon-Mood 统计分析（GJB/Z 377A 方法103，固定步长升降）。
+  tags: [可靠性, 感度试验]
+params:
+  试验设置:
+    items:
+      mu: {value: 10.0, min: -1000.0, max: 1000.0}
+      sigma: {value: 1.0, min: 0.001, max: 100.0}
+      n_total: {value: 30, min: 4, max: 200}
+      step: {value: 0.8, min: 0.001, max: 100.0}
+      x_low: {value: 9.0, min: -1000.0, max: 1000.0}
+      x_high: {value: 11.0, min: -1000.0, max: 1000.0}
+      seed: {value: 3, min: 0, max: 1000000}
+pipeline:
+  - id: test
+    type: reliability.sensitivity_test
+    params:
+      method: updown
+      model: logistic
+      mu: "$mu"
+      sigma: "$sigma"
+      n_total: "$n_total"
+      step: "$step"
+      x_low: "$x_low"
+      x_high: "$x_high"
+      seed: "$seed"
+results:
+  - id: curve
+    kind: curve
+    title: 响应概率拟合曲线
+    x: test.curve_x
+    y: test.curve_p
+    x_label: 刺激量
+    y_label: 响应概率
+  - id: summary
+    kind: text
+    title: 估计摘要
+    text: "μ̂ = {mu:.4f}，σ̂ = {sigma:.4f}（{estimator}）"
+    values:
+      mu: "test.mu_hat"
+      sigma: "test.sigma_hat"
+      estimator: "test.estimate.estimator"
+  - id: records
+    kind: table
+    title: 试验记录
+    columns:
+      - {title: 刺激量, ref: test.levels}
+      - {title: 响应, ref: test.responses}
+report:
+  exports: [md, html]
+  sections:
+    - title: 响应概率曲线
+      figure: curve
+    - title: 估计摘要
+      figure: summary
+    - title: 试验记录
+      figure: records
+docs:
+  intro: {text: 升降法以上一发结果决定升降：响应则降一个步长、不响应则升一个步长，试验水平在 50% 响应点附近振荡；Dixon-Mood 公式按较少响应类别的计数给出 μ 与 σ 的闭式估计。}

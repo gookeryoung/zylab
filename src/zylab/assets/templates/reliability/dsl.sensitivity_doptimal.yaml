@@ -1,0 +1,61 @@
+meta:
+  id: dsl.sensitivity_doptimal
+  name: 方法104 D优化法
+  discipline: reliability
+  description: D-最优设计感度试验模拟与极大似然估计（GJB/Z 377A 方法104，全区间 D-最优候选选点）。
+  tags: [可靠性, 感度试验]
+params:
+  试验设置:
+    items:
+      mu: {value: 10.0, min: -1000.0, max: 1000.0}
+      sigma: {value: 1.0, min: 0.001, max: 100.0}
+      n_total: {value: 30, min: 4, max: 200}
+      x_low: {value: 6.0, min: -1000.0, max: 1000.0}
+      x_high: {value: 14.0, min: -1000.0, max: 1000.0}
+      seed: {value: 7, min: 0, max: 1000000}
+pipeline:
+  - id: test
+    type: reliability.sensitivity_test
+    params:
+      method: doptimal
+      model: logistic
+      mu: "$mu"
+      sigma: "$sigma"
+      n_total: "$n_total"
+      x_low: "$x_low"
+      x_high: "$x_high"
+      seed: "$seed"
+results:
+  - id: curve
+    kind: curve
+    title: 响应概率拟合曲线
+    x: test.curve_x
+    y: test.curve_p
+    x_label: 刺激量
+    y_label: 响应概率
+  - id: summary
+    kind: text
+    title: 估计摘要
+    text: "μ̂ = {mu:.4f}，σ̂ = {sigma:.4f}（{estimator}，收敛={converged}）"
+    values:
+      mu: "test.mu_hat"
+      sigma: "test.sigma_hat"
+      estimator: "test.estimate.estimator"
+      converged: "test.estimate.converged"
+  - id: records
+    kind: table
+    title: 试验记录
+    columns:
+      - {title: 刺激量, ref: test.levels}
+      - {title: 响应, ref: test.responses}
+report:
+  exports: [md, html]
+  sections:
+    - title: 响应概率曲线
+      figure: curve
+    - title: 估计摘要
+      figure: summary
+    - title: 试验记录
+      figure: records
+docs:
+  intro: {text: D-优化法以当前参数估计构造 F⁻¹(p) 概率网格候选点，逐发选取使期望 Fisher 信息行列式最大的刺激量，对 μ 与 σ 的联合估计精度最优。}

@@ -107,13 +107,19 @@ class TestBuiltinModules:
         for spec in BUILTIN_MODULES:
             assert spec.target.startswith("zylab.studio.nodes:"), spec.type_id
 
-    def test_source_has_no_input_and_model_output(self) -> None:
-        """源模块无输入端口且输出 MODEL（结构）或 ET_MODEL（电-热传导）."""
-        model_ports = {PortType.MODEL, PortType.ET_MODEL}
+    def test_source_has_no_input_and_expected_output(self) -> None:
+        """源模块无输入端口，输出 MODEL/ET_MODEL（CAE）或 DATA（可靠性）."""
+        expected_outputs = {
+            "model": {PortType.MODEL, PortType.ET_MODEL},
+            "data": {PortType.DATA},
+        }
         for spec in BUILTIN_MODULES:
             if spec.category is ModuleCategory.SOURCE:
                 assert spec.inputs == ()
-                assert spec.output_port("model").port_type in model_ports
+                assert len(spec.outputs) == 1
+                (port,) = spec.outputs
+                assert port.name in expected_outputs, spec.type_id
+                assert port.port_type in expected_outputs[port.name], spec.type_id
 
     def test_analysis_takes_model_input(self) -> None:
         """分析模块输入 MODEL/ET_MODEL、输出对应解类型."""

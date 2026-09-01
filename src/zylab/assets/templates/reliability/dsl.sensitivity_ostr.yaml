@@ -1,0 +1,61 @@
+meta:
+  id: dsl.sensitivity_ostr
+  name: 方法102 OSTR法
+  discipline: reliability
+  description: OSTR 最优序贯规则感度试验模拟与极大似然估计（GJB/Z 377A 方法102，区间内 D-最优选点）。
+  tags: [可靠性, 感度试验]
+params:
+  试验设置:
+    items:
+      mu: {value: 10.0, min: -1000.0, max: 1000.0}
+      sigma: {value: 1.0, min: 0.001, max: 100.0}
+      n_total: {value: 30, min: 4, max: 200}
+      x_low: {value: 6.0, min: -1000.0, max: 1000.0}
+      x_high: {value: 14.0, min: -1000.0, max: 1000.0}
+      seed: {value: 7, min: 0, max: 1000000}
+pipeline:
+  - id: test
+    type: reliability.sensitivity_test
+    params:
+      method: ostr
+      model: logistic
+      mu: "$mu"
+      sigma: "$sigma"
+      n_total: "$n_total"
+      x_low: "$x_low"
+      x_high: "$x_high"
+      seed: "$seed"
+results:
+  - id: curve
+    kind: curve
+    title: 响应概率拟合曲线
+    x: test.curve_x
+    y: test.curve_p
+    x_label: 刺激量
+    y_label: 响应概率
+  - id: summary
+    kind: text
+    title: 估计摘要
+    text: "μ̂ = {mu:.4f}，σ̂ = {sigma:.4f}（{estimator}，收敛={converged}）"
+    values:
+      mu: "test.mu_hat"
+      sigma: "test.sigma_hat"
+      estimator: "test.estimate.estimator"
+      converged: "test.estimate.converged"
+  - id: records
+    kind: table
+    title: 试验记录
+    columns:
+      - {title: 刺激量, ref: test.levels}
+      - {title: 响应, ref: test.responses}
+report:
+  exports: [md, html]
+  sections:
+    - title: 响应概率曲线
+      figure: curve
+    - title: 估计摘要
+      figure: summary
+    - title: 试验记录
+      figure: records
+docs:
+  intro: {text: OSTR 法在兰利混合区间内按 D-最优准则（Fisher 信息行列式最大化）选点，兼顾 μ 与 σ 的估计精度，MLE 不可估时回退兰利中点规则。}
