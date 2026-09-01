@@ -43,6 +43,7 @@ class PortType(Enum):
     ET_MODEL = "et_model"  # bundle.ConductionBundle（电-热传导模型）
     ELECTROTHERMAL = "electrothermal"  # fea.ElectroThermalSolution
     ET_TRANSIENT = "et_transient"  # fea.ElectroThermalTransientSolution（瞬态电-热耦合解）
+    DATA = "data"  # compute.* 节点通用数据载荷（曲线/表格等可 pickle 结构）
 
 
 @unique
@@ -51,6 +52,8 @@ class ParamType(Enum):
 
     FLOAT = "float"
     INT = "int"
+    STR = "str"  # 文本参数（如计算节点的表达式）
+    MAP = "map"  # 映射参数（如计算节点的变量绑定/子图声明，值结构由节点自行约定）
 
 
 @unique
@@ -80,19 +83,28 @@ class ParamSpec:
     key: str
     label: str
     param_type: ParamType
-    default: float | int
+    default: float | int | str | Mapping[str, Any]
     minimum: float = -_INF
     maximum: float = _INF
     step: float = 0.1
     unit: str = ""
     doc: str = ""
 
-    def coerce(self, value: object) -> float | int:
-        """校验并收敛参数值；类型不符或越界抛 :class:`ParamError`."""
-        if self.param_type is ParamType.INT:
-            result: float | int = self._coerce_int(value)
-        else:
-            result = self._coerce_float(value)
+    def coerce(self, value: object) -> float | int | str | dict[str, Any]:
+        """校验并收敛参数值；类型不符或越界抛 :class:`ParamError`.
+
+        STR 收敛为字符串、MAP 校验为映射并拷贝为字典（值结构由节点自行
+        约定，不做范围校验）；INT/FLOAT 数值类型才做范围校验。
+        """
+        if self.param_type is ParamType.STR:
+            if not isinstance(value, str):
+                raise ParamError(f"参数 {self.key!r} 应为文本，得到 {value!r}")
+            return value
+        if self.param_type is ParamType.MAP:
+            if not isinstance(value, Mapping):
+                raise ParamError(f"参数 {self.key!r} 应为对象，得到 {value!r}")
+            return dict(value)
+        result: float | int = self._coerce_int(value) if self.param_type is ParamType.INT else self._coerce_float(value)
         if not self.minimum <= float(result) <= self.maximum:
             raise ParamError(f"参数 {self.key!r} 取值 {result} 越界（允许 [{self.minimum}, {self.maximum}]）")
         return result
@@ -160,11 +172,11 @@ class ModuleSpec:
                 return spec
         raise ParamError(f"模块 {self.type_id!r} 无参数 {key!r}")
 
-    def defaults(self) -> dict[str, float | int]:
+    def defaults(self) -> dict[str, Any]:
         """全部参数的默认值表."""
         return {spec.key: spec.default for spec in self.params}
 
-    def coerce_params(self, params: Mapping[str, Any]) -> dict[str, float | int]:
+    def coerce_params(self, params: Mapping[str, Any]) -> dict[str, Any]:
         """合并默认值并逐项校验收敛；未知键抛 :class:`ParamError`."""
         result = self.defaults()
         for key, value in params.items():
@@ -568,6 +580,63 @@ BUILTIN_MODULES: tuple[ModuleSpec, ...] = (
             ParamSpec("n_increments", "增量步数", ParamType.INT, 10, 1, 100, 5),
             ParamSpec("tolerance", "收敛容差", ParamType.FLOAT, 1.0e-8, 1.0e-14, 1.0e-2, 1.0e-8),
             ParamSpec("max_iterations", "单步迭代上限", ParamType.INT, 30, 5, 500, 5),
+        ),
+    ),
+    ModuleSpec(
+        type_id="compute.expr",
+        name="公式计算",
+        category=ModuleCategory.POST,
+        target="zylab.studio.nodes:compute_expr",
+        inputs=(PortSpec("data", PortType.DATA, "数据", required=False),),
+        outputs=(PortSpec("data", PortType.DATA, "数据"),),
+        params=(
+            ParamSpec(
+                "expr",
+                "表达式",
+                ParamType.STR,
+                "0",
+                doc="受限命名空间安全求值；变量来自输入数据合并与 vars 绑定（支持数组逐元素运算）",
+            ),
+            ParamSpec(
+                "vars", "变量绑定", ParamType.MAP, {}, doc="变量名 -> 字面值/数组（DSL 层可经 $名 引用模板参数）"
+            ),
+        ),
+    ),
+    ModuleSpec(
+        type_id="compute.sweep",
+        name="参数扫描",
+        category=ModuleCategory.POST,
+        target="zylab.studio.nodes:compute_sweep",
+        outputs=(PortSpec("data", PortType.DATA, "数据"),),
+        params=(
+            ParamSpec("var", "扫描变量名", ParamType.STR, "x", doc="body 子图节点参数中 $名 引用的扫描变量"),
+            ParamSpec("from", "起始值", ParamType.FLOAT, 0.0, -1.0e12, 1.0e12, 0.1),
+            ParamSpec("to", "终止值", ParamType.FLOAT, 1.0, -1.0e12, 1.0e12, 0.1),
+            ParamSpec("count", "采样点数", ParamType.INT, 10, 2, 1000, 1),
+            ParamSpec(
+                "body",
+                "子图声明",
+                ParamType.MAP,
+                {},
+                doc="nodes: 节点声明列表（参数可 $var 引用扫描变量）；collect: 结果收集引用列表（'节点id[.端口名]'）",
+            ),
+        ),
+    ),
+    ModuleSpec(
+        type_id="post.static",
+        name="静力结果提取",
+        category=ModuleCategory.POST,
+        target="zylab.studio.nodes:post_static",
+        inputs=(PortSpec("solution", PortType.STATIC, "静力解"),),
+        outputs=(PortSpec("data", PortType.DATA, "数据"),),
+        params=(
+            ParamSpec(
+                "expr",
+                "提取表达式",
+                ParamType.STR,
+                "strain_energy",
+                doc="可用变量: displacements（(n_nodes, dof) 位移阵）/ reactions / strain_energy / n_nodes",
+            ),
         ),
     ),
 )

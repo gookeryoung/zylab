@@ -39,6 +39,7 @@ __all__ = [
     "DslTemplate",
     "dsl_from_yaml",
     "load_dsl",
+    "substitute_refs",
 ]
 
 logger = logging.getLogger(__name__)
@@ -197,7 +198,7 @@ class DslTemplate(Template):
             TemplateNode(
                 id=n.id,
                 type_id=n.type_id,
-                params=_substitute_refs(raw_by_node.get(n.id, n.params), merged, self.id),
+                params=_substitute_node_params(n.type_id, raw_by_node.get(n.id, n.params), merged, self.id),
                 inputs=dict(n.inputs),
             )
             for n in self.nodes
@@ -254,7 +255,9 @@ class DslTemplate(Template):
             TemplateNode(
                 id=str(raw["id"]),
                 type_id=str(raw["type"]),
-                params=_substitute_refs(dict(raw.get("params", {})), defaults, str(meta.get("id", ""))),
+                params=_substitute_node_params(
+                    str(raw["type"]), dict(raw.get("params", {})), defaults, str(meta.get("id", ""))
+                ),
                 inputs=dict(raw.get("inputs", {})),
             )
             for raw in pipeline_list
@@ -423,18 +426,47 @@ def _parse_docs(raw: Any) -> DslDocs | None:
     return DslDocs(text=str(intro.get("text", "")), image=str(intro.get("image", "")))
 
 
-def _substitute_refs(params: Mapping[str, Any], values: Mapping[str, Any], template_id: str) -> dict[str, Any]:
-    """节点参数 ``$name`` 引用代入声明值（未声明或派生量引用报错）."""
-    resolved: dict[str, Any] = {}
-    for key, value in params.items():
-        if isinstance(value, str) and value.startswith("$"):
-            name = value[1:]
-            if name not in values:
-                raise TemplateError(f"模板 {template_id!r} 引用未声明的参数 {name!r}")
-            resolved[key] = values[name]
-        else:
-            resolved[key] = value
-    return resolved
+def _substitute_node_params(
+    type_id: str,
+    params: Mapping[str, Any],
+    values: Mapping[str, Any],
+    template_id: str,
+) -> dict[str, Any]:
+    """代入节点参数 ``$`` 引用；compute.sweep 的 body 子图保留原始引用.
+
+    body 中的 ``$var`` 指向扫描变量（运行期由节点函数逐值代入），构造期
+    与绑定期均不做替换，否则会销毁扫描语义。
+    """
+    if type_id == "compute.sweep":
+        head = {key: value for key, value in params.items() if key != "body"}
+        result = substitute_refs(head, values, template_id)
+        if "body" in params:
+            result["body"] = params["body"]
+        return result
+    return substitute_refs(params, values, template_id)
+
+
+def substitute_refs(params: Mapping[str, Any], values: Mapping[str, Any], template_id: str) -> dict[str, Any]:
+    """深度代入 ``$name`` 引用（映射/列表递归，标量字符串命中即替换）.
+
+    未声明或派生量引用报 :class:`TemplateError`；供 DSL 构造/绑定与
+    compute.sweep 运行期子图代入共用。
+    """
+    return {key: _substitute_value(value, values, template_id) for key, value in params.items()}
+
+
+def _substitute_value(value: Any, values: Mapping[str, Any], template_id: str) -> Any:
+    """替换单值：``$name`` 字符串取声明值，容器递归，其余原样."""
+    if isinstance(value, str) and value.startswith("$"):
+        name = value[1:]
+        if name not in values:
+            raise TemplateError(f"模板 {template_id!r} 引用未声明的参数 {name!r}")
+        return values[name]
+    if isinstance(value, Mapping):
+        return {key: _substitute_value(item, values, template_id) for key, item in value.items()}
+    if isinstance(value, list):
+        return [_substitute_value(item, values, template_id) for item in value]
+    return value
 
 
 def _resolve_derived(

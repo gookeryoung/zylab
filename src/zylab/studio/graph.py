@@ -50,7 +50,7 @@ class NodeInstance:
 
     id: str
     spec: ModuleSpec
-    params: dict[str, float | int]
+    params: dict[str, Any]
     inputs: dict[str, str]
     result: Any = None
     error: str = ""

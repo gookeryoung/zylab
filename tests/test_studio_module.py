@@ -154,9 +154,11 @@ class TestBuiltinModules:
         assert initial.port_type is PortType.STATIC
 
     def test_param_defaults_within_range(self) -> None:
-        """全部参数默认值落在自身范围内（schema 自洽）."""
+        """全部数值参数默认值落在自身范围内（STR/MAP 结构参数无范围语义）."""
         for spec in all_modules():
             for param in spec.params:
+                if param.param_type not in (ParamType.FLOAT, ParamType.INT):
+                    continue
                 assert param.minimum <= float(param.default) <= param.maximum, f"{spec.type_id}.{param.key}"
 
     def test_module_spec_unknown_raises(self) -> None:

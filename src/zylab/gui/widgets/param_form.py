@@ -21,6 +21,9 @@ from ..qt_compat import (
 
 __all__ = ["ParamForm"]
 
+#: 可生成数值输入行的参数类型（STR/MAP 为 compute 节点内部结构参数，不暴露）
+_NUMERIC_TYPES = (ParamType.FLOAT, ParamType.INT)
+
 
 class ParamForm(QWidget):
     """schema 驱动的参数表单（按工作流图 + 模板分组自动生成）."""
@@ -51,11 +54,14 @@ class ParamForm(QWidget):
             if widget is not None:
                 widget.deleteLater()
 
-        if not groups:  # 模板未声明分组时平铺全部参数
+        if not groups:  # 模板未声明分组时平铺全部数值参数
             groups = tuple(
-                ParamGroup(title=node.name, params=tuple(f"{node.id}.{p.key}" for p in node.spec.params))
+                ParamGroup(
+                    title=node.name,
+                    params=tuple(f"{node.id}.{p.key}" for p in node.spec.params if p.param_type in _NUMERIC_TYPES),
+                )
                 for node in graph.nodes()
-                if node.spec.params
+                if any(p.param_type in _NUMERIC_TYPES for p in node.spec.params)
             )
         for group in groups:
             box = QGroupBox(group.title)
@@ -65,6 +71,8 @@ class ParamForm(QWidget):
             rows: list[tuple[str, QDoubleSpinBox]] = []
             for ref in group.params:
                 node_id, _, key = ref.partition(".")
+                if graph.node(node_id).spec.param(key).param_type not in _NUMERIC_TYPES:
+                    continue  # STR/MAP 结构参数不生成输入行
                 spin = self._add_row(form, graph, node_id, key)
                 rows.append((ref, spin))
             self._group_rows.append((box, rows))

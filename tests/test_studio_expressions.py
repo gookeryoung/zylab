@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import numpy as np
 import pytest
 
 from zylab.studio.dsl import dsl_from_yaml
@@ -39,19 +40,29 @@ def test_safe_eval_comparison_and_logic() -> None:
 
 
 def test_safe_eval_rejects_dangerous_constructs() -> None:
-    """属性访问/导入/lambda/下标/推导式等危险构造一律拒绝."""
+    """属性访问/导入/lambda/推导式等危险构造一律拒绝（只读下标已解禁）."""
     for expr in (
         "__import__('os')",
         "().__class__",
         "[x for x in range(3)]",
         "lambda: 1",
-        "a[0]",
         "(1).bit_length()",
         "open('x')",
         "x = 1",
+        "x := 1",
     ):
         with pytest.raises(ParamError):
-            safe_eval(expr, {"a": [1], "x": 1})
+            safe_eval(expr, {"x": 1})
+
+
+def test_safe_eval_subscript() -> None:
+    """只读下标/切片/多维索引可用（列表/字典/numpy 数组）."""
+    assert safe_eval("a[0] + a[-1]", {"a": [1, 2, 3]}) == 4
+    assert safe_eval("m['k']", {"m": {"k": 5}}) == 5
+    assert safe_eval("a[1:3]", {"a": [1, 2, 3, 4]}) == [2, 3]
+    matrix = np.array([[1.0, 2.0], [3.0, 4.0]])
+    assert safe_eval("m[1, 0]", {"m": matrix}) == 3.0
+    assert safe_eval("m[-1, 1] * 2", {"m": matrix}) == 8.0
 
 
 def test_safe_eval_unknown_name_rejected() -> None:

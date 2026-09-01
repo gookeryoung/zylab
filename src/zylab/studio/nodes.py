@@ -48,9 +48,14 @@ from zylab.fea import (
     solve_transient,
 )
 
+from .batch import run_workflow
 from .bundle import ConductionBundle, ModelBundle
+from .dsl import substitute_refs
+from .errors import ParamError, StudioError
+from .expressions import ARRAY_MATH_NAMESPACE, safe_eval
 from .meshing3d import cylinder_resistor_mesh, vfilm_resistor_mesh
 from .module import module_spec
+from .template import Template
 
 if TYPE_CHECKING:
     import numpy.typing as npt
@@ -64,6 +69,9 @@ __all__ = [
     "build_joule_series",
     "build_truss",
     "build_vfilm_resistor",
+    "compute_expr",
+    "compute_sweep",
+    "post_static",
     "run_buckling",
     "run_electrothermal",
     "run_electrothermal_transient",
@@ -84,7 +92,7 @@ NodeInputs = Mapping[str, Any]
 NodeParams = Mapping[str, Any]
 
 
-def _params(type_id: str, params: NodeParams) -> dict[str, float | int]:
+def _params(type_id: str, params: NodeParams) -> dict[str, Any]:
     """按模块规格合并默认值并校验收敛参数."""
     return module_spec(type_id).coerce_params(params)
 
@@ -702,10 +710,96 @@ def run_electrothermal_transient(
     )
 
 
-#: 频响曲线观察点选择（x 最大列中 y 居中节点），供 GUI 结果渲染复用
 def tip_node(mesh: Mesh) -> int:
     """取末端中点节点（x 最大列中 y 居中者）."""
     coords: npt.NDArray[np.float64] = mesh.coords
     tip_mask = coords[:, 0] >= coords[:, 0].max() - 1e-9
     tip_rows = np.flatnonzero(tip_mask)
     return int(tip_rows[np.argmin(np.abs(coords[tip_rows, 1] - np.mean(coords[tip_rows, 1])))])
+
+
+# ------------------------------------------------------------------ 计算与后处理节点
+
+
+def compute_expr(inputs: NodeInputs, params: NodeParams, report: ReportFn | None = None) -> Any:
+    """公式计算节点：受限命名空间安全求值表达式，输出 DATA 载荷.
+
+    命名空间 = 数组数学函数 + 上游 ``data`` 输入（映射时逐项合并，否则
+    以 ``data`` 为名绑定）+ ``vars`` 绑定（列表/元组收敛为 numpy 数组）。
+    """
+    p = _params("compute.expr", params)
+    namespace: dict[str, Any] = dict(ARRAY_MATH_NAMESPACE)
+    data = inputs.get("data")
+    if data is not None:
+        if isinstance(data, Mapping):
+            namespace.update(data)
+        else:
+            namespace["data"] = data
+    for name, value in dict(p["vars"]).items():
+        namespace[name] = np.asarray(value) if isinstance(value, (list, tuple)) else value
+    _report(report, 1.0, "公式计算完成")
+    return safe_eval(str(p["expr"]), namespace)
+
+
+def compute_sweep(inputs: NodeInputs, params: NodeParams, report: ReportFn | None = None) -> dict[str, Any]:
+    """参数扫描节点：对 body 子图按扫描值逐次执行并汇总结果序列.
+
+    每步以 ``{var: 当前值}`` 深度代入 body 节点参数的 ``$var`` 引用后，
+    经 :func:`~zylab.studio.batch.run_workflow` 进程内执行整个子图
+    （省去子进程 pickle 往返）；``collect`` 引用（``"节点id[.端口名]"``）
+    收集各步输出组成序列，输出 ``{var, values, series}`` DATA 载荷。
+    """
+    p = _params("compute.sweep", params)
+    del inputs  # 扫参节点无输入端口（body 子图自包含）
+    var = str(p["var"])
+    count = int(p["count"])
+    values = np.linspace(float(p["from"]), float(p["to"]), count)
+    body = dict(p["body"])
+    nodes_raw = body.get("nodes")
+    if not isinstance(nodes_raw, list) or not nodes_raw:
+        raise ParamError("compute.sweep 的 body 须声明非空 nodes 节点列表")
+    for raw in nodes_raw:
+        if not isinstance(raw, Mapping):
+            raise ParamError("compute.sweep body.nodes 项应为节点对象")
+    collect = tuple(str(ref) for ref in body.get("collect", ()))
+    if not collect:
+        raise ParamError("compute.sweep 的 body 须声明非空 collect 结果引用列表")
+    series: dict[str, list[Any]] = {ref: [] for ref in collect}
+    for index, value in enumerate(values):
+        _report(report, (index + 1) / count, f"参数扫描 {var}={value:.6g}")
+        step_nodes = [
+            {
+                **dict(raw),
+                "params": substitute_refs(dict(raw.get("params", {})), {var: float(value)}, "compute.sweep"),
+            }
+            for raw in nodes_raw
+        ]
+        template = Template.from_dict({"id": "compute.sweep.body", "name": "扫参子图", "nodes": step_nodes})
+        outcome = run_workflow(template)
+        if not outcome.succeeded:
+            raise StudioError(f"参数扫描 {var}={value:.6g} 步失败: {outcome.first_error()}")
+        for ref in collect:
+            series[ref].append(outcome.outcome(ref.partition(".")[0]).result)
+    return {"var": var, "values": values.tolist(), "series": series}
+
+
+def post_static(inputs: NodeInputs, params: NodeParams, report: ReportFn | None = None) -> Any:
+    """静力结果提取节点：STATIC -> DATA（表达式从位移/反力/应变能取值）.
+
+    提取表达式支持只读下标（如 ``"displacements[-1, 1]"`` 取末端节点
+    竖向位移），数组运算与数学函数同 compute.expr 命名空间。
+    """
+    solution = inputs["solution"]
+    if not isinstance(solution, StaticSolution):
+        raise TypeError(f"输入端口 'solution' 应为 StaticSolution，得到 {type(solution).__name__}")
+    p = _params("post.static", params)
+    namespace: dict[str, Any] = {
+        **ARRAY_MATH_NAMESPACE,
+        "displacements": solution.displacements,
+        "reactions": dict(solution.reactions),
+        "strain_energy": solution.strain_energy,
+        "n_nodes": solution.mesh.n_nodes,
+        "n_elements": solution.mesh.n_elements,
+    }
+    _report(report, 1.0, "结果提取完成")
+    return safe_eval(str(p["expr"]), namespace)

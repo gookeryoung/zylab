@@ -3,10 +3,14 @@
 DSL 派生参数（``expr``）与计算节点公式共用本求值器：
 
 - 输入表达式经 :mod:`ast` 解析并按白名单校验节点类型（算术/比较/布尔
-  运算、常量、白名单函数调用），属性访问、下标、推导式、lambda、
-  赋值等任意可产生副作用的构造一律拒绝；
+  运算、常量、白名单函数调用、只读下标/切片），属性访问、推导式、
+  lambda、赋值等任意可产生副作用的构造一律拒绝；
 - 求值命名空间仅含安全数学函数与调用方注入的变量，内建置空
   （``__builtins__`` 为空字典），无 import/exec 通道。
+
+两套命名空间：:data:`SAFE_MATH_NAMESPACE`（标量 math 实现，DSL 派生
+参数用）与 :data:`ARRAY_MATH_NAMESPACE`（numpy 逐元素实现，compute
+计算节点用，数组/标量通吃并额外提供 linspace/arange 等构造函数）。
 """
 
 from __future__ import annotations
@@ -15,9 +19,11 @@ import ast
 import math
 from typing import Any, Mapping
 
+import numpy as np
+
 from .errors import ParamError
 
-__all__ = ["SAFE_MATH_NAMESPACE", "expr_names", "safe_eval"]
+__all__ = ["ARRAY_MATH_NAMESPACE", "SAFE_MATH_NAMESPACE", "expr_names", "safe_eval"]
 
 
 def expr_names(expr: str) -> set[str]:
@@ -61,7 +67,45 @@ SAFE_MATH_NAMESPACE: dict[str, Any] = {
 }
 SAFE_MATH_NAMESPACE = {k: v for k, v in SAFE_MATH_NAMESPACE.items() if v is not None}
 
-#: 白名单 AST 节点（表达式外层）
+#: 数组数学命名空间（numpy 逐元素实现）：compute 计算节点叠加本表后
+#: 同名函数覆盖标量版本，表达式对数组与标量统一求值
+ARRAY_MATH_NAMESPACE: dict[str, Any] = {
+    "abs": np.abs,
+    "min": np.minimum,
+    "max": np.maximum,
+    "round": np.round,
+    "sqrt": np.sqrt,
+    "cbrt": np.cbrt,
+    "exp": np.exp,
+    "log": np.log,
+    "log2": np.log2,
+    "log10": np.log10,
+    "sin": np.sin,
+    "cos": np.cos,
+    "tan": np.tan,
+    "asin": np.arcsin,
+    "acos": np.arccos,
+    "atan": np.arctan,
+    "atan2": np.arctan2,
+    "sinh": np.sinh,
+    "cosh": np.cosh,
+    "tanh": np.tanh,
+    "floor": np.floor,
+    "ceil": np.ceil,
+    "hypot": np.hypot,
+    "linspace": np.linspace,
+    "arange": np.arange,
+    "zeros": np.zeros,
+    "ones": np.ones,
+    "where": np.where,
+    "pi": np.pi,
+    "e": np.e,
+    "tau": 2.0 * np.pi,
+    "inf": np.inf,
+    "nan": np.nan,
+}
+
+#: 白名单 AST 节点（表达式外层；Subscript/Tuple 支持只读下标与多维索引）
 _ALLOWED_NODES = (
     ast.Expression,
     ast.BinOp,
@@ -71,6 +115,8 @@ _ALLOWED_NODES = (
     ast.Call,
     ast.Name,
     ast.Constant,
+    ast.Subscript,
+    ast.Tuple,
 )
 #: 白名单双目运算符
 _ALLOWED_BINOPS = (ast.Add, ast.Sub, ast.Mult, ast.Div, ast.FloorDiv, ast.Mod, ast.Pow)
@@ -80,6 +126,10 @@ _ALLOWED_UNARY = (ast.UAdd, ast.USub, ast.Not, ast.Invert)
 _ALLOWED_CMPOPS = (ast.Lt, ast.LtE, ast.Gt, ast.GtE, ast.Eq, ast.NotEq)
 #: 白名单布尔运算符
 _ALLOWED_BOOLOPS = (ast.And, ast.Or)
+#: 下标切片辅助节点（3.8 的 ast.Index/ast.ExtSlice 按存在性兼容追加）
+_SUBSCRIPT_LEAVES = tuple(
+    node for node in (getattr(ast, "Slice", None), getattr(ast, "Index", None), getattr(ast, "ExtSlice", None)) if node
+)
 
 
 def safe_eval(expr: str, namespace: Mapping[str, Any] | None = None) -> Any:
@@ -107,7 +157,7 @@ def safe_eval(expr: str, namespace: Mapping[str, Any] | None = None) -> Any:
 def _validate_tree(tree: ast.AST, expr: str) -> None:
     """递归校验 AST 节点均在白名单内（walk 会产出运算符/上下文叶子，一并校验）."""
     # 运算符与访问上下文叶子节点（BinOp.op / UnaryOp.op / Compare.ops / BoolOp.op / Name.ctx）
-    leaf_ok = (*_ALLOWED_BINOPS, *_ALLOWED_UNARY, *_ALLOWED_CMPOPS, *_ALLOWED_BOOLOPS, ast.Load)
+    leaf_ok = (*_ALLOWED_BINOPS, *_ALLOWED_UNARY, *_ALLOWED_CMPOPS, *_ALLOWED_BOOLOPS, *_SUBSCRIPT_LEAVES, ast.Load)
     for node in ast.walk(tree):
         if isinstance(node, leaf_ok):
             continue
