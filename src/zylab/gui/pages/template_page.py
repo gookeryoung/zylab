@@ -48,7 +48,7 @@ from ..qt_compat import (
     exec_dialog,
 )
 from ..widgets.dsl_param_form import DslParamForm
-from ..widgets.dsl_result_view import DslResultView
+from ..widgets.dsl_result_view import DslGroupedResultView, DslResultView
 from ..widgets.result_view import ResultView
 from ..widgets.template_dialog import TemplateDialog
 
@@ -247,36 +247,74 @@ class TemplatePage(QWidget):
 
     # ------------------------------------------------------------------ 结果渲染
 
-    def _rebuild_tabs(self) -> None:
-        """重建结果页签（按模板 results 声明，占位正文）."""
-        self._tabs.clear()
-        if self._template is None or not self._template.dsl_results:
-            self._tabs.addTab(self._placeholder, "结果")
-            return
+    def _result_pages(self) -> list[tuple[str, list[Any]]]:
+        """按 ``group`` 声明聚合结果为页序列.
+
+        同组（非空 group 且非 cloud）结果合并为一页，页名为组名；
+        未声明组或云图结果保持独立页（页名 = 结果标题）。组按首次
+        出现顺序聚合（非相邻同组声明并入同一页）。
+        """
+        if self._template is None:
+            return []
+        pages: list[tuple[str, list[Any]]] = []
+        index_by_group: dict[str, int] = {}
         for result in self._template.dsl_results:
-            self._tabs.addTab(DslResultView(), result.title)
+            if result.group and result.kind != "cloud":
+                if result.group in index_by_group:
+                    pages[index_by_group[result.group]][1].append(result)
+                    continue
+                index_by_group[result.group] = len(pages)
+                pages.append((result.group, [result]))
+            else:
+                pages.append((result.title, [result]))
+        return pages
+
+    def _rebuild_tabs(self) -> None:
+        """重建结果页签（按组聚合，占位正文；单页隐藏页签条）."""
+        self._tabs.clear()
+        pages = self._result_pages()
+        if not pages:
+            self._tabs.addTab(self._placeholder, "结果")
+        else:
+            for title, results in pages:
+                page = DslGroupedResultView() if len(results) > 1 else DslResultView()
+                self._tabs.addTab(page, title)
+        self._tabs.tabBar().setVisible(self._tabs.count() > 1)
 
     def _render_results(self) -> None:
-        """按输出载荷渲染各结果页（cloud 路由到解算视图）."""
+        """按输出载荷渲染各结果页（组页分块，cloud 路由到解算视图）."""
         if self._template is None:
             return
         self._tabs.clear()
-        for result in self._template.dsl_results:
+        for title, results in self._result_pages():
+            if len(results) > 1:  # 组页：逐块渲染，块级失败显示错误文本块
+                blocks: list[tuple[str, Any]] = []
+                for result in results:
+                    try:
+                        blocks.append((result.title, build_result(result, self._outputs)))
+                    except TemplateError as exc:
+                        blocks.append((result.title, str(exc)))
+                page = DslGroupedResultView()
+                page.set_data(blocks)
+                self._tabs.addTab(page, title)
+                continue
+            result = results[0]
             try:
                 data = build_result(result, self._outputs)
             except TemplateError as exc:
                 page = DslResultView()
                 page.set_error(str(exc))
-                self._tabs.addTab(page, result.title)
+                self._tabs.addTab(page, title)
                 continue
             if isinstance(data, CloudData):
-                self._tabs.addTab(self._build_cloud_page(data), result.title)
+                self._tabs.addTab(self._build_cloud_page(data), title)
             else:
                 page = DslResultView()
                 page.set_data(data)
-                self._tabs.addTab(page, result.title)
+                self._tabs.addTab(page, title)
         if self._tabs.count() == 0:  # 无 results 声明：保持占位页
             self._tabs.addTab(self._placeholder, "结果")
+        self._tabs.tabBar().setVisible(self._tabs.count() > 1)
 
     def _build_cloud_page(self, data: CloudData) -> QWidget:
         """云图页：既有解算视图渲染（解对象/模型预览，失败回落错误页）."""

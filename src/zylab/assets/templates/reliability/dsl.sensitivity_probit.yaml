@@ -29,6 +29,7 @@ pipeline:
       seed: "$seed"
 results:
   - id: curve
+    group: 分析结果
     kind: curve
     title: 响应概率拟合曲线
     x: test.curve_x
@@ -36,6 +37,7 @@ results:
     x_label: 刺激量
     y_label: 响应概率
   - id: summary
+    group: 分析结果
     kind: text
     title: 估计摘要
     text: "μ̂ = {mu:.4f}，σ̂ = {sigma:.4f}（{estimator}，收敛={converged}）"
@@ -45,6 +47,7 @@ results:
       estimator: "test.estimate.estimator"
       converged: "test.estimate.converged"
   - id: records
+    group: 分析结果
     kind: table
     title: 试验记录
     columns:

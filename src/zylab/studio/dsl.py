@@ -96,14 +96,16 @@ class DslResult:
 
     :param id: 结果项 id（模板内唯一）。
     :param kind: 视图种类（curve/table/text/cloud）。
-    :param title: 结果页签标题。
+    :param title: 结果页签标题（分组时为组内块标题）。
     :param spec: 种类相关配置（curve 的 x/y、table 的 columns、cloud 的 ref/field）。
+    :param group: 分组名（非空时同组结果合并为一页按块渲染；空串独立成页）。
     """
 
     id: str
     kind: str
     title: str
     spec: dict[str, Any]
+    group: str = ""
 
 
 @dataclass(frozen=True)
@@ -382,9 +384,10 @@ def _parse_results(raw: Any) -> tuple[DslResult, ...]:
         if rid in seen:
             raise TemplateError(f"结果 id 重复: {rid!r}")
         seen.add(rid)
-        spec = {k: v for k, v in spec_raw.items() if k not in ("id", "kind", "title")}
+        group = str(spec_raw.get("group", ""))
+        spec = {k: v for k, v in spec_raw.items() if k not in ("id", "kind", "title", "group")}
         _validate_result_spec(kind, spec, rid)
-        results.append(DslResult(id=rid, kind=kind, title=str(spec_raw.get("title", rid)), spec=spec))
+        results.append(DslResult(id=rid, kind=kind, title=str(spec_raw.get("title", rid)), spec=spec, group=group))
     return tuple(results)
 
 

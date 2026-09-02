@@ -336,6 +336,62 @@ def test_page_market_empty(qtbot, monkeypatch, tmp_path: Path) -> None:
 
 
 @pytest.mark.gui
+def test_page_grouped_results_single_tab(qtbot) -> None:
+    """同组结果合并一页按块渲染；单页隐藏页签条；块级失败显示错误块."""
+    from zylab.gui.qt_compat import QGroupBox
+    from zylab.gui.widgets.dsl_result_view import DslGroupedResultView
+
+    yaml_text = _YAML.replace("  - id: curve_y\n", "  - id: curve_y\n    group: 分析结果\n")
+    yaml_text = yaml_text.replace("  - id: summary\n", "  - id: summary\n    group: 分析结果\n")
+    page = TemplatePage()
+    qtbot.addWidget(page)
+    page.load_template(dsl_from_yaml(yaml_text))
+    # 加载期即聚合为一页（组名页签），单页隐藏页签条
+    assert page._tabs.count() == 1
+    assert page._tabs.tabText(0) == "分析结果"
+    assert page._tabs.tabBar().isHidden()
+
+    with qtbot.waitSignal(page.run_finished, timeout=10000):
+        page.run()
+    assert page._tabs.count() == 1
+    grouped = page._tabs.widget(0)
+    assert isinstance(grouped, DslGroupedResultView)
+    widgets = [grouped._layout.itemAt(i).widget() for i in range(grouped._layout.count())]
+    boxes = [w for w in widgets if isinstance(w, QGroupBox)]
+    assert [b.title() for b in boxes] == ["平方曲线", "摘要"]
+    # 曲线块定高（同页多块不挤占）、摘要块文本渲染
+    assert boxes[0].height() > 0
+
+
+@pytest.mark.gui
+def test_page_grouped_block_error_isolated(qtbot) -> None:
+    """组内单块引用失败仅该块显示错误文本，其余块正常渲染."""
+    from zylab.gui.qt_compat import QGroupBox
+    from zylab.gui.widgets.dsl_result_view import DslGroupedResultView
+
+    yaml_text = _YAML.replace("  - id: curve_y\n", "  - id: curve_y\n    group: 分析结果\n")
+    yaml_text = yaml_text.replace("  - id: summary\n", "  - id: summary\n    group: 分析结果\n")
+    yaml_text = yaml_text.replace("y: sweep.series.y", "y: sweep.series.ghost")  # 曲线引用失败
+    page = TemplatePage()
+    qtbot.addWidget(page)
+    page.load_template(dsl_from_yaml(yaml_text))
+    with qtbot.waitSignal(page.run_finished, timeout=10000):
+        page.run()
+    grouped = page._tabs.widget(0)
+    assert isinstance(grouped, DslGroupedResultView)
+    widgets = [grouped._layout.itemAt(i).widget() for i in range(grouped._layout.count())]
+    boxes = [w for w in widgets if isinstance(w, QGroupBox)]
+    assert [b.title() for b in boxes] == ["平方曲线", "摘要"]
+    from zylab.gui.qt_compat import QLabel
+
+    error_texts = [lab for lab in boxes[0].findChildren(QLabel) if lab.objectName() == "errorText"]
+    assert error_texts and "ghost" in error_texts[0].text()
+    # 摘要块正常渲染文本
+    result_texts = [lab for lab in boxes[1].findChildren(QLabel) if lab.objectName() == "resultText"]
+    assert result_texts and "最大值" in result_texts[0].text()
+
+
+@pytest.mark.gui
 def test_page_result_error_and_cloud_fallback(qtbot) -> None:
     """结果引用失败显示错误页；cloud 非解对象载荷回落解算视图错误提示."""
     from zylab.gui.widgets.result_view import ResultView
