@@ -1,0 +1,48 @@
+{% extends "zylab/base.html" %}
+
+{% block title %}新建工程 · zylab Web{% endblock %}
+
+{% block nav %}<a href="{% url 'project_list' %}" style="color:#fff;opacity:.8">← 返回</a>{% endblock %}
+
+{% block content %}
+<div class="page-head">
+  <h1>新建工程</h1>
+</div>
+
+{% if error %}
+<div style="padding:10px 18px;border-radius:6px;margin-bottom:16px;background:#fdecea;border:1px solid #dc3545;color:#a71d2a;font-size:13px">{{ error }}</div>
+{% endif %}
+
+<form method="post" style="max-width:560px;background:#fff;border:1px solid #e3e8ea;border-radius:8px;padding:24px">
+  {% csrf_token %}
+  <div style="margin-bottom:16px">
+    <label style="display:block;font-size:13px;font-weight:600;margin-bottom:6px">工程名</label>
+    <input name="name" value="{{ name|default:'' }}" required placeholder="例如 cantilever_static"
+      style="width:100%;padding:8px 12px;border:1px solid #e3e8ea;border-radius:6px;font-size:14px;box-sizing:border-box">
+  </div>
+  <div style="margin-bottom:20px">
+    <label style="display:block;font-size:13px;font-weight:600;margin-bottom:6px">内置模板</label>
+    <select name="template_id" required
+      style="width:100%;padding:8px 12px;border:1px solid #e3e8ea;border-radius:6px;font-size:14px;background:#fff">
+      {% for t in builtins %}
+      <option value="{{ t.template_id }}">{{ t.discipline }} · {{ t.name }}（{{ t.node_count }} 节点）</option>
+      {% endfor %}
+    </select>
+    {% if builtins %}
+    <div style="margin-top:16px;max-height:280px;overflow:auto;border:1px solid #e3e8ea;border-radius:6px">
+      {% regroup builtins by discipline as by_disc %}
+      {% for group in by_disc %}
+      <div style="padding:8px 12px;background:#fafbfc;border-bottom:1px solid #e3e8ea;font-size:12px;color:#6b7680;font-weight:600">{{ group.grouper }}</div>
+      {% for t in group.list %}
+      <div style="padding:10px 12px;border-bottom:1px solid #f0f3f5">
+        <div style="font-size:13px;font-weight:500">{{ t.name }}</div>
+        {% if t.description %}<div style="font-size:12px;color:#888;margin-top:2px">{{ t.description }}</div>{% endif %}
+      </div>
+      {% endfor %}
+      {% endfor %}
+    </div>
+    {% endif %}
+  </div>
+  <button type="submit" style="padding:10px 24px;background:#056574;color:#fff;border:none;border-radius:6px;cursor:pointer;font-size:14px">创建并进入编辑器</button>
+</form>
+{% endblock %}

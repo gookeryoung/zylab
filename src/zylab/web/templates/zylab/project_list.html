@@ -1,0 +1,76 @@
+{% extends "zylab/base.html" %}
+
+{% block title %}工程 · zylab Web{% endblock %}
+
+{% block nav %}
+  <span style="opacity:.75">工程目录：{{ projects_dir }}</span>
+{% endblock %}
+
+{% block content %}
+{% if msg %}
+<div style="padding:10px 18px;border-radius:6px;margin-bottom:16px;background:#e8f4f6;border:1px solid #056574;color:#056574;font-size:13px">{{ msg }}</div>
+{% endif %}
+
+<div style="display:flex;gap:16px;margin-bottom:16px">
+  <form method="post" style="display:flex;gap:10px;align-items:flex-end;flex:1;min-width:0">
+    {% csrf_token %}
+    <input type="hidden" name="action" value="create">
+    <div style="flex:1;min-width:0">
+      <label style="display:block;font-size:12px;color:#6b7680;margin-bottom:4px">工程名</label>
+      <input name="name" placeholder="输入工程名" required
+        style="width:100%;padding:8px 12px;border:1px solid #e3e8ea;border-radius:6px;font-size:14px;box-sizing:border-box">
+    </div>
+    <div style="flex:2;min-width:0">
+      <label style="display:block;font-size:12px;color:#6b7680;margin-bottom:4px">模板</label>
+      <select name="template_id" required
+        style="width:100%;padding:8px 12px;border:1px solid #e3e8ea;border-radius:6px;font-size:14px;background:#fff">
+        {% for t in builtins %}
+        <option value="{{ t.template_id }}">{{ t.discipline }} · {{ t.name }}（{{ t.node_count }} 节点）</option>
+        {% endfor %}
+      </select>
+    </div>
+    <button type="submit" style="padding:8px 20px;background:#056574;color:#fff;border:none;border-radius:6px;cursor:pointer;font-size:14px;white-space:nowrap">+ 新建</button>
+  </form>
+  <a href="{% url 'project_new' %}" style="display:inline-block;padding:8px 16px;border:1px solid #e3e8ea;border-radius:6px;text-decoration:none;color:#1f2933;font-size:14px;white-space:nowrap">进阶新建 →</a>
+</div>
+
+<div class="page-head">
+  <h1>已有工程</h1>
+  <span class="count">{{ projects|length }} 个</span>
+</div>
+<div class="card">
+  {% if projects %}
+  <table>
+    <thead>
+      <tr>
+        <th>名称</th>
+        <th class="num">修改时间</th>
+        <th class="num">大小</th>
+        <th class="num">操作</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for p in projects %}
+      <tr>
+        <td class="name"><a href="{% url 'project_editor' p.name %}" style="color:#056574;text-decoration:none">{{ p.name }}</a>
+          <div class="path">{{ p.path }}</div>
+        </td>
+        <td class="num">{{ p.modified|date:"Y-m-d H:i" }}</td>
+        <td class="num">{{ p.size_kb|floatformat:1 }} KB</td>
+        <td class="num">
+          <form method="post" onsubmit="return confirm('确认删除工程「{{ p.name }}」？')" style="display:inline">
+            {% csrf_token %}
+            <input type="hidden" name="action" value="delete">
+            <input type="hidden" name="name" value="{{ p.name }}">
+            <button type="submit" style="padding:4px 10px;border:1px solid #e3e8ea;border-radius:4px;background:#fff;cursor:pointer;font-size:12px;color:#888">删除</button>
+          </form>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <div class="empty">暂无工程：选上方模板创建，或从桌面端保存后刷新</div>
+  {% endif %}
+</div>
+{% endblock %}

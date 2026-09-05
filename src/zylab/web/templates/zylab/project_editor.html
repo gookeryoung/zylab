@@ -1,0 +1,86 @@
+{% extends "zylab/base.html" %}
+
+{% block title %}{{ name }} · zylab Web{% endblock %}
+
+{% block nav %}
+  <a href="{% url 'project_list' %}" style="color:#fff;opacity:.8">← 工程列表</a>
+  <span style="opacity:.5;margin:0 12px">|</span>
+  <span style="font-weight:600">{{ template.name }}</span>
+{% endblock %}
+
+{% block style %}
+<style>
+  .workflow {
+    display: grid;
+    grid-template-columns: repeat({{ layout.cols }}, 200px);
+    grid-auto-rows: minmax(48px, auto);
+    gap: 16px 32px;
+    padding: 24px;
+    position: relative;
+  }
+  .node {
+    border: 1px solid #d0d7de;
+    border-radius: 8px;
+    padding: 12px 14px;
+    background: #fff;
+    font-size: 13px;
+    position: relative;
+  }
+  .node-title { font-weight: 600; color: #1f2933; display:flex; justify-content:space-between; align-items:center }
+  .node-type { font-size: 11px; color:#6b7680; margin-top:4px }
+  .node-state {
+    font-size: 11px; padding:2px 8px; border-radius:10px;
+  }
+  .state-ready { background:#fff8e1; color:#e68a00 }
+  .state-up_to_date { background:#e8f5e9; color:#2e7d32 }
+  .state-running { background:#e3f2fd; color:#1565c0 }
+  .state-unfulfilled { background:#f5f5f5; color:#888 }
+  .state-failed { background:#ffebee; color:#c62828 }
+  .node-error { font-size:11px; color:#c62828; margin-top:6px }
+  .node-elapsed { font-size:11px; color:#6b7680; margin-top:4px }
+  .node-io { margin-top:8px; font-size:11px; color:#555 }
+  .node-io .port { color:#056574 }
+  .canvas-wrap { position: relative; overflow-x: auto; background:#fafbfc; border-radius:8px; border:1px solid #e3e8ea }
+  .canvas-wrap svg { position: absolute; top:0; left:0; pointer-events:none; width:100%; height:100% }
+  .col-label { font-size:12px; color:#6b7680; font-weight:600; text-align:center; padding:4px 0 }
+</style>
+{% endblock %}
+
+{% block content %}
+<div style="display:flex;gap:12px;margin-bottom:12px;align-items:center">
+  <div style="font-size:12px;color:#6b7680">模板：{{ template.id }} · {{ template.discipline }}</div>
+  {% if template.results %}<div style="font-size:12px;color:#6b7680">结果节点：{{ template.results|join:"," }}</div>{% endif %}
+</div>
+
+<div class="canvas-wrap">
+  <div class="workflow">
+    {% for node in layout.nodes %}
+    <div class="node" style="grid-column:{{ node.col|add:1 }}; grid-row:{{ node.row|add:1 }}">
+      <div class="node-title">
+        <span>{{ node.label }}</span>
+        <span class="node-state state-{{ node.state }}" title="{{ node.state }}">{% if node.state == "up_to_date" %}✓{% elif node.state == "running" %}▶{% elif node.state == "failed" %}✗{% elif node.state == "ready" %}◯{% else %}—{% endif %}</span>
+      </div>
+      <div class="node-type">{{ node.type_label }}</div>
+      {% if node.inputs %}
+      <div class="node-io">
+        {% for port, ref in node.inputs %}
+        <div><span class="port">●</span> {{ port }} ← {{ ref }}</div>
+        {% endfor %}
+      </div>
+      {% endif %}
+      {% if node.error %}<div class="node-error">{{ node.error }}</div>{% endif %}
+      {% if node.elapsed %}<div class="node-elapsed">耗时 {{ node.elapsed|floatformat:2 }}s</div>{% endif %}
+    </div>
+    {% endfor %}
+  </div>
+
+  <!-- SVG 连线：端点需与节点端口对齐，这里按节点中心 + 输入端口偏移计算 -->
+  <svg preserveAspectRatio="none" viewBox="0 0 {{ layout.cols }} 1" style="visibility:hidden;position:absolute;width:0;height:0">
+  </svg>
+</div>
+
+<div style="margin-top:16px;padding:12px 16px;background:#fff;border:1px solid #e3e8ea;border-radius:8px;font-size:12px;color:#6b7680">
+  节点数 {{ layout.nodes|length }} · 分层 {{ layout.cols }} · 连线 {{ layout.edges|length }}
+  <span style="float:right">运行与参数编辑：W3 落地</span>
+</div>
+{% endblock %}

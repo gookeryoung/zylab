@@ -34,6 +34,8 @@ select = [
 
 [lint.per-file-ignores]
 "**/tests/**" = ["ARG001", "ARG002"]
+# Django 视图签名强制 request 参数存在（即使未使用）
+"**/web/views.py" = ["ARG001"]
 # Django settings 分层沿用官方 star-import 惯例（dev/prod 继承 base），
 # 行内不写 noqa（避免与 per-file-ignores 叠加触发 RUF100）
 "**/web/settings/dev.py" = ["F401", "F403", "F405"]
