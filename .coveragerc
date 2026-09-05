@@ -1,7 +1,11 @@
 [run]
+; Python 3.8/3.9 环境无 Django，web 包不可导入也不计入覆盖率：
+; CI 3.8 任务设置 ZYLAB_COV_OMIT_WEB=zylab/web/*，其余环境留空（空模式不匹配任何文件）
 branch = true
 concurrency = thread
-omit = tests/*
+omit =
+    tests/*
+    ${ZYLAB_COV_OMIT_WEB}
 source = zylab
 
 [report]

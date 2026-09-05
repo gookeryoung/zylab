@@ -65,4 +65,6 @@ jobs:
       - name: Run tests
         env:
           QT_QPA_PLATFORM: offscreen
+          # 3.8 线无 Django：web 包不可导入，从覆盖率统计中排除
+          ZYLAB_COV_OMIT_WEB: ${{ matrix.python-version == '3.8' && 'zylab/web/*' || '' }}
         run: uv run pytest -m "not slow" --cov=zylab --cov-fail-under=95 --cov-report=term-missing
