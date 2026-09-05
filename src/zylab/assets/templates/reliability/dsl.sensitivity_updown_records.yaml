@@ -26,7 +26,6 @@ pipeline:
       seed: "$seed"
 results:
   - id: curve
-    group: 分析结果
     kind: curve
     title: 响应概率拟合曲线
     x: test.curve_x
@@ -34,7 +33,6 @@ results:
     x_label: 刺激量
     y_label: 响应概率
   - id: summary
-    group: 分析结果
     kind: text
     title: 估计摘要
     text: "μ̂ = {mu:.4f}（95% CI [{mu_lo:.4f}, {mu_hi:.4f}]），σ̂ = {sigma:.4f}（95% CI [{sigma_lo:.4f}, {sigma_hi:.4f}]，{estimator}）"
@@ -47,7 +45,6 @@ results:
       sigma_hi: "test.ci_sigma_high"
       estimator: "test.estimate.estimator"
   - id: dixon_mood_params
-    group: 分析结果
     kind: text
     title: Dixon-Mood 中间参数
     text: "n = {n}，A = {a:.0f}，B = {b:.0f}，M = {m:.4f}，ρ = {rho:.5f}，G = {g:.3f}，H = {h:.3f}（se(μ̂) = G·σ̂/√n，se(σ̂) = H·σ̂/√n）"
@@ -60,7 +57,6 @@ results:
       g: "test.detail.g_factor"
       h: "test.detail.h_factor"
   - id: response_table
-    group: 分析结果
     kind: table
     title: 响应点估计（95% CI）
     columns:
@@ -70,7 +66,6 @@ results:
       - {title: 置信下限, ref: test.points.x_low}
       - {title: 置信上限, ref: test.points.x_high}
   - id: records
-    group: 分析结果
     kind: table
     title: 试验记录
     columns:

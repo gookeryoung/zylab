@@ -198,9 +198,7 @@ def test_yaml_syntax_error() -> None:
 
 def test_result_group_parsed() -> None:
     """结果声明的 group 字段解析为 DslResult.group 并从 spec 排除；缺省空串."""
-    text = _MINIMAL_YAML.replace(
-        "  - id: summary\n    kind: text", "  - id: summary\n    group: 分析结果\n    kind: text"
-    )
+    text = _MINIMAL_YAML.replace("  - id: summary\n    kind: text", "  - id: summary\n    group: 分析结果\n    kind: text")
     t = dsl_from_yaml(text)
     summary = next(r for r in t.dsl_results if r.id == "summary")
     assert summary.group == "分析结果"
