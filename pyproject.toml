@@ -32,7 +32,7 @@ license = "MIT"
 name = "zylab"
 readme = "README.md"
 requires-python = ">=3.8"
-version = "0.1.4"
+version = "0.1.5"
 
 [project.optional-dependencies]
 dev = ["zylab[lint,test]", "prek>=0.4.5", "tox-uv>=1.13.1", "tox>=4.25.0"]
