@@ -253,4 +253,8 @@ class WorkspaceManager:
         raw_path = data.get("path")
         if not isinstance(raw_path, str) or not raw_path.strip():
             return None
-        return self.set_workspace(raw_path)  # 复用切换逻辑（校验 + os.chdir + 广播）
+        info = self.set_workspace(raw_path)  # 复用切换逻辑（校验 + os.chdir + 广播）
+        # 持久化路径已不存在时 set_workspace 返回 source="invalid"，须静默跳过
+        if info.source == "invalid":
+            return None
+        return info

@@ -88,6 +88,35 @@ _TOOL_TIPS = {
 }
 
 
+def _confirm(
+    parent: QWidget, title: str, text: str, options: tuple[tuple[str, QMessageBox.ButtonRole], ...]
+) -> str | None:
+    """弹出自带中文按钮文字的确认框，返回所选按钮文本（取消/关窗返回 None）.
+
+    Qt 标准按钮文字依赖 ``qtbase_*.qm`` 翻译文件，部分 PySide2 发行缺
+    ``qtbase_zh_CN.qm``（仅含繁体），导致按钮回退英文；这里显式指定中文
+    按钮文本，不依赖运行时翻译文件。
+
+    :param parent: 父窗口。
+    :param title: 对话框标题。
+    :param text: 提示正文。
+    :param options: ``(按钮文字, 按钮角色)`` 序列，顺序即显示顺序。
+    :returns: 所选按钮文字；用户直接关窗或按 Esc 时为 None。
+    """
+    box = QMessageBox(parent)
+    box.setWindowTitle(title)
+    box.setText(text)
+    box.setIcon(QMessageBox.Question)
+    buttons = [box.addButton(label, role) for label, role in options]
+    box.setDefaultButton(buttons[0])
+    exec_dialog(box)
+    clicked = box.clickedButton()
+    for (label, _role), button in zip(options, buttons):
+        if clicked is button:
+            return label
+    return None
+
+
 class CellEditor(QPlainTextEdit):
     """单元代码编辑器（Ctrl+Enter 运行 / Shift+Enter 运行并推进 / Tab 缩进）.
 
@@ -461,17 +490,19 @@ class NotebookPage(QWidget):
         """关闭前保存询问：接受/保存返回 True（可放弃），取消返回 False."""
         if not self._dirty:
             return True
-        ret = QMessageBox.question(
+        choice = _confirm(
             self,
             "保存笔记本",
             "笔记本有未保存的修改，是否保存？",
-            QMessageBox.Save | QMessageBox.Discard | QMessageBox.Cancel,
+            (
+                ("保存", QMessageBox.AcceptRole),
+                ("放弃", QMessageBox.DestructiveRole),
+                ("取消", QMessageBox.RejectRole),
+            ),
         )
-        if ret == QMessageBox.Cancel:
-            return False
-        if ret == QMessageBox.Save:
+        if choice == "保存":
             return self.save()
-        return True  # Discard
+        return choice == "放弃"
 
     def refresh_vars(self) -> None:
         """按命名空间当前状态刷新变量浏览器."""
@@ -487,13 +518,16 @@ class NotebookPage(QWidget):
 
     def restart_kernel(self) -> None:
         """重启内核：确认后清空命名空间/计数并失效全部单元输出（jupyter Restart Kernel 语义）."""
-        ret = QMessageBox.question(
+        choice = _confirm(
             self,
             "重启内核",
             "重启将清空全部变量与单元输出，确认重启？",
-            QMessageBox.Yes | QMessageBox.No,
+            (
+                ("重启", QMessageBox.YesRole),
+                ("取消", QMessageBox.NoRole),
+            ),
         )
-        if ret != QMessageBox.Yes:
+        if choice != "重启":
             return
         self._kernel.restart_kernel()
         for widget in self._widgets:

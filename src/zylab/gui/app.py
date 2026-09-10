@@ -125,20 +125,39 @@ def create_app(argv: list[str] | None = None, theme_name: str = theme.DEFAULT_TH
 
 
 def _load_qt_translations(app: QApplication) -> None:
-    """加载 Qt 标准翻译文件，使 QMessageBox/QFileDialog 等按钮本地化."""
+    """加载 Qt 标准翻译文件，使 QMessageBox/QFileDialog 等按钮本地化.
+
+    优先加载项目 ``assets/translations/`` 下的内置翻译文件（兜底 PySide2
+    Windows 发行包漏掉的 ``qtbase_zh_CN.qm``），再 fallback 到 PySide2
+    自带翻译目录。仅中文环境生效。
+    """
     locale = QLocale.system()
     if locale.language() != QLocale.Chinese:
         return  # 非中文环境跳过，Qt 自带英文无需翻译
+
+    # 项目内置翻译目录（随包分发，兜底 PySide2 发行包缺失）
+    bundled = Path(__file__).resolve().parent.parent / "assets" / "translations"
+
     # Qt6 用 .path()，Qt5 用 .location()
     path_getter = getattr(QLibraryInfo, "path", getattr(QLibraryInfo, "location", None))
-    if path_getter is None:
-        return
-    transl_path = path_getter(QLibraryInfo.TranslationsPath)
-    # qtbase 含 QMessageBox/QFileDialog/QInputDialog 等核心组件翻译
+    sys_transl = path_getter(QLibraryInfo.TranslationsPath) if path_getter else None
+
+    # 候选搜索路径：项目内置 → 系统 PySide2 自带
+    search_dirs: list[Path] = []
+    if bundled.is_dir():
+        search_dirs.append(bundled)
+    if sys_transl and Path(sys_transl).is_dir():
+        search_dirs.append(Path(sys_transl))
+
     for fname in ("qtbase", "qt"):
+        # 用 locale.name() 得到 "zh_CN"，尝试精确匹配
         translator = QTranslator(app)
-        if translator.load(locale, fname, "_", transl_path):
+        loaded = translator.load(locale, fname, "_", str(bundled))
+        if not loaded and sys_transl:
+            loaded = translator.load(locale, fname, "_", sys_transl)
+        if loaded:
             app.installTranslator(translator)
+            logger.debug("Qt 翻译已加载: %s", fname)
 
 
 def register_user_themes(data_dir: Path) -> list[str]:

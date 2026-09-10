@@ -12,7 +12,7 @@ def test_plot_publishes_event() -> None:
     received: list[PlotRequest] = []
     bus.subscribe(TOPIC_PLOT_REQUESTED, received.append)
     plot = make_plot_function(bus)
-    plot([1, 2, 3], [4, 5, 6], title="标题", xlabel="x轴", ylabel="y轴", clear=True)
+    plot([1, 2, 3], [4, 5, 6], title="标题", xlabel="x轴", ylabel="y轴", clear=True, label="曲线A")
     assert len(received) == 1
     req = received[0]
     assert list(req.x) == [1, 2, 3]
@@ -21,6 +21,7 @@ def test_plot_publishes_event() -> None:
     assert req.xlabel == "x轴"
     assert req.ylabel == "y轴"
     assert req.clear is True
+    assert req.extra == {"label": "曲线A"}
 
 
 def test_plot_y_only_generates_x() -> None:

@@ -197,6 +197,7 @@ class VarDetailDialog(QDialog):
         else:
             root.addWidget(self._build_text_view(), stretch=1)
         buttons = QDialogButtonBox(QDialogButtonBox.Close)
+        buttons.button(QDialogButtonBox.Close).setText("关闭")
         buttons.rejected.connect(self.reject)
         root.addWidget(buttons)
 

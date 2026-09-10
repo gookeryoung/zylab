@@ -294,7 +294,7 @@ def test_execute_cell_syntax_error() -> None:
 def test_execute_cell_captures_plot_requests() -> None:
     """单元执行期间 plot() 请求被捕获并快照为 PlotOutput（多请求合并单图）."""
     kernel = ReplKernel()
-    source = "x = linspace(0, pi, 4)\nplot(x, sin(x), title='正弦', xlabel='t')\nplot(x, cos(x))\ncos(x)"
+    source = "x = linspace(0, pi, 4)\nplot(x, sin(x), title='正弦', xlabel='t', label='sin')\nplot(x, cos(x), label='cos')\ncos(x)"
     execution = kernel.execute_cell(source)
     kinds = [type(o).__name__ for o in execution.outputs]
     assert kinds == ["PlotOutput", "ResultOutput"]
@@ -302,6 +302,8 @@ def test_execute_cell_captures_plot_requests() -> None:
     assert plot.title == "正弦"
     assert len(plot.series) == 2
     assert plot.series[0].x == [0.0, np.pi / 3, 2 * np.pi / 3, np.pi]
+    assert plot.series[0].label == "sin"
+    assert plot.series[1].label == "cos"
     assert len(plot.series[1].y) == 4
     # 执行后总线订阅已清理（临时捕获器不留残留）
     assert kernel.bus.subscriber_count("sci.plot.requested") == 0

@@ -357,6 +357,45 @@ def test_maybe_save_not_dirty_returns_true(page: NotebookPage) -> None:
     assert page.maybe_save() is True
 
 
+@pytest.mark.gui
+def test_maybe_save_dirty_discard_returns_true(page: NotebookPage, monkeypatch: pytest.MonkeyPatch) -> None:
+    """dirty 且选择「放弃」时放行关闭（不保存）."""
+    page._dirty = True
+    monkeypatch.setattr("zylab.gui.pages.notebook_page._confirm", lambda *_a, **_k: "放弃")
+    assert page.maybe_save() is True
+
+
+@pytest.mark.gui
+def test_maybe_save_dirty_cancel_returns_false(page: NotebookPage, monkeypatch: pytest.MonkeyPatch) -> None:
+    """dirty 且取消（或直接关窗）时阻止关闭."""
+    page._dirty = True
+    monkeypatch.setattr("zylab.gui.pages.notebook_page._confirm", lambda *_a, **_k: None)
+    assert page.maybe_save() is False
+
+
+@pytest.mark.gui
+def test_maybe_save_dirty_save_calls_save(page: NotebookPage, monkeypatch: pytest.MonkeyPatch) -> None:
+    """dirty 且选择「保存」时触发保存."""
+    page._dirty = True
+    monkeypatch.setattr("zylab.gui.pages.notebook_page._confirm", lambda *_a, **_k: "保存")
+    monkeypatch.setattr(NotebookPage, "save", lambda _self: True)
+    assert page.maybe_save() is True
+
+
+@pytest.mark.gui
+def test_confirm_uses_chinese_buttons(monkeypatch: pytest.MonkeyPatch) -> None:
+    """_confirm 弹出框使用显式中文按钮（不依赖 Qt 翻译文件）."""
+    import zylab.gui.pages.notebook_page as mod
+
+    boxes: list = []
+    monkeypatch.setattr(mod, "exec_dialog", lambda box: boxes.append(box) or 0)
+    result = mod._confirm(
+        None, "标题", "正文", (("确定", mod.QMessageBox.AcceptRole), ("取消", mod.QMessageBox.RejectRole))
+    )
+    assert result is None  # 未点击任何按钮（exec 返回 0）
+    assert [b.text() for b in boxes[0].buttons()] == ["确定", "取消"]
+
+
 # ------------------------------------------------ 变量侧栏折叠（jupyterlab 语义）
 
 
@@ -442,9 +481,7 @@ def test_restart_kernel_resets_outputs(
     page: NotebookPage, status_messages: list[str], monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """确认重启后：变量清空、单元输出失效、计数归零、状态提示."""
-    from zylab.gui.qt_compat import QMessageBox
-
-    monkeypatch.setattr(QMessageBox, "question", staticmethod(lambda *_a, **_k: QMessageBox.Yes))
+    monkeypatch.setattr("zylab.gui.pages.notebook_page._confirm", lambda *_a, **_k: "重启")
     page._widgets[0].editor.setPlainText("v = 3\nv")
     page.run_current()
     assert page._widgets[0].cell.execution_count == 1
@@ -459,9 +496,7 @@ def test_restart_kernel_resets_outputs(
 @pytest.mark.gui
 def test_restart_kernel_cancel_keeps_state(page: NotebookPage, monkeypatch: pytest.MonkeyPatch) -> None:
     """取消重启应保持变量与输出不变."""
-    from zylab.gui.qt_compat import QMessageBox
-
-    monkeypatch.setattr(QMessageBox, "question", staticmethod(lambda *_a, **_k: QMessageBox.No))
+    monkeypatch.setattr("zylab.gui.pages.notebook_page._confirm", lambda *_a, **_k: "取消")
     page._widgets[0].editor.setPlainText("keep = 1")
     page.run_current()
     page.restart_kernel()

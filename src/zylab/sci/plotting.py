@@ -46,19 +46,37 @@ def make_plot_function(bus: EventBus) -> Any:
 
         plot(x, y)
         plot(y)                  # x 自动取 0..n-1
-        plot(x, y, title="正弦", xlabel="t", ylabel="v", clear=True)
+        plot(x, y, title="正弦", xlabel="t", ylabel="v", clear=True, label="sin")
     """
 
     def plot(  # noqa: PLR0913
-        x: Any, y: Any = None, *, title: str = "", xlabel: str = "", ylabel: str = "", clear: bool = False
+        x: Any,
+        y: Any = None,
+        *,
+        title: str = "",
+        xlabel: str = "",
+        ylabel: str = "",
+        clear: bool = False,
+        label: str = "",
     ) -> None:
-        """发布绘图请求事件（无订阅者时静默）."""
+        """发布绘图请求事件（无订阅者时静默）.
+
+        :param label: 曲线图例名（同一单元多次 ``plot`` 合并为多曲线单图时用于区分）.
+        """
         if y is None:
             y = x
             x = np.arange(len(y))
         bus.publish(
             TOPIC_PLOT_REQUESTED,
-            PlotRequest(x=np.asarray(x), y=np.asarray(y), title=title, xlabel=xlabel, ylabel=ylabel, clear=clear),
+            PlotRequest(
+                x=np.asarray(x),
+                y=np.asarray(y),
+                title=title,
+                xlabel=xlabel,
+                ylabel=ylabel,
+                clear=clear,
+                extra={"label": label},
+            ),
         )
 
     return plot

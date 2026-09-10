@@ -5,6 +5,8 @@ from __future__ import annotations
 import os
 from pathlib import Path
 
+import pytest
+
 from zylab.console import ReplKernel
 from zylab.core import EventBus
 from zylab.sci import (
@@ -132,6 +134,33 @@ class TestWorkspaceManager:
         (data_dir / CURRENT_WORKSPACE_FILE).write_text(f'{{"path": "{ghost}"}}', encoding="utf-8")
         wm = WorkspaceManager(data_dir=data_dir)
         assert wm.load() is None
+
+    @pytest.mark.parametrize(
+        "payload",
+        [
+            '{"path": ""}',
+            '{"path": "   "}',
+            '{"path": 123}',
+            '{"path": null}',
+        ],
+    )
+    def test_load_skips_invalid_path_field(self, tmp_path: Path, payload: str) -> None:
+        """workspace.json 的 path 字段为空或非字符串时静默跳过."""
+        data_dir = tmp_path / "state"
+        data_dir.mkdir()
+        (data_dir / CURRENT_WORKSPACE_FILE).write_text(payload, encoding="utf-8")
+        wm = WorkspaceManager(data_dir=data_dir)
+        assert wm.load() is None
+
+    def test_save_failure_returns_none(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        """持久化写入失败时 save 返回 None（仅记日志不抛）."""
+        wm = WorkspaceManager(data_dir=tmp_path)
+
+        def _fail_write(*_args: object, **_kwargs: object) -> None:
+            raise OSError("磁盘写入失败")
+
+        monkeypatch.setattr(Path, "write_text", _fail_write)
+        assert wm.save() is None
 
 
 class TestKernelCwd:

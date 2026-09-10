@@ -418,11 +418,17 @@ class StudioPage(QWidget):
             return
         from ..qt_compat import QInputDialog
 
-        name, ok = QInputDialog.getText(self, "另存为模板", "模板名称:", text=f"{self._graph.template.name} 副本")
-        if ok:
-            template = self._save_template_as(name)
-            if template is not None:
-                self._status_label.setText(f"模板已保存: {template.name}")
+        dialog = QInputDialog(self)
+        dialog.setWindowTitle("另存为模板")
+        dialog.setLabelText("模板名称:")
+        dialog.setTextValue(f"{self._graph.template.name} 副本")
+        dialog.setOkButtonText("确定")
+        dialog.setCancelButtonText("取消")
+        if not exec_dialog(dialog):
+            return
+        template = self._save_template_as(dialog.textValue())
+        if template is not None:
+            self._status_label.setText(f"模板已保存: {template.name}")
 
     def _on_save_project(self) -> None:
         """对话框：保存工程."""
