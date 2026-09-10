@@ -700,7 +700,7 @@ class NotebookPage(QWidget):
         self._splitter = splitter
 
         root = QVBoxLayout(self)
-        root.setContentsMargins(0, theme.SPACING_SM, theme.SPACING_MD, theme.SPACING_MD)
+        root.setContentsMargins(theme.SPACING_MD, theme.SPACING_SM, theme.SPACING_MD, theme.SPACING_MD)
         root.setSpacing(theme.SPACING_SM)
         root.addLayout(bar)
         root.addWidget(splitter, stretch=1)

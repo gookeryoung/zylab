@@ -496,8 +496,6 @@ class MainWindow(QMainWindow):
                 item = self._sidebar.item(row)
                 item.setText("")
                 item.setToolTip(item.toolTip() if item.toolTip() else _NAV_LABELS[row])
-            self._refresh_sidebar_icons()
-            self._splitter.setSizes([48, max(0, self._splitter.width() - 48 - self._splitter.handleWidth())])
         else:
             self._sidebar.setFixedWidth(theme.SIDEBAR_WIDTH)
             self._sidebar_container.setFixedWidth(theme.SIDEBAR_WIDTH)
@@ -506,13 +504,11 @@ class MainWindow(QMainWindow):
                 item = self._sidebar.item(row)
                 item.setText(labels[row])
                 item.setToolTip("")
-            self._refresh_sidebar_icons()
-            self._splitter.setSizes(
-                [
-                    theme.SIDEBAR_WIDTH,
-                    max(0, self._splitter.width() - theme.SIDEBAR_WIDTH - self._splitter.handleWidth()),
-                ]
-            )
+        self._refresh_sidebar_icons()
+        w = self._splitter.width()
+        h = self._splitter.handleWidth()
+        sw = self._sidebar_container.width()
+        self._splitter.setSizes([sw, w - sw - h])
 
     def _load_gui_state(self) -> None:
         """加载 gui_state.json（侧边栏折叠、窗口几何等）."""
