@@ -671,7 +671,8 @@ class NotebookPage(QWidget):
 
         self._cells_host = QWidget()
         self._cells_layout = QVBoxLayout(self._cells_host)
-        self._cells_layout.setContentsMargins(theme.SPACING_MD, theme.SPACING_MD, theme.SPACING_SM, theme.SPACING_MD)
+        # 左右边距留 0，由父级 root 的 SPACING_MD 统一控制，与顶部工具栏对齐
+        self._cells_layout.setContentsMargins(0, theme.SPACING_MD, 0, theme.SPACING_MD)
         self._cells_layout.setSpacing(theme.SPACING_MD)
         self._cells_layout.addStretch(1)
 
