@@ -46,6 +46,27 @@ QLabel#headerMeta {
     color: ${QSS_NAV_TEXT};
     font-size: ${FONT_CAPTION};
 }
+/* 工作区显示（MATLAB 风格 cwd）：头部 nav 色系紧凑按钮组 */
+QLabel#workspaceLabel {
+    color: ${QSS_NAV_TEXT};
+    font-family: ${FONT_MONO};
+    font-size: ${FONT_CAPTION};
+    max-width: 240px;
+}
+QPushButton#workspaceBtn {
+    background: transparent;
+    color: ${QSS_NAV_TEXT};
+    border: 1px solid transparent;
+    border-radius: ${RADIUS_SM};
+    padding: 0;
+}
+QPushButton#workspaceBtn:hover {
+    background-color: ${QSS_NAV_BG_HOVER};
+    border-color: ${QSS_NAV_ACCENT};
+}
+QPushButton#workspaceBtn:pressed {
+    background-color: ${QSS_NAV_BG_SELECTED};
+}
 QPushButton#headerBtn {
     background: transparent;
     color: ${QSS_NAV_TEXT};
@@ -539,6 +560,13 @@ QStatusBar {
     max-height: 28px;
 }
 QStatusBar::item { border: none; }
+QLabel#statusCwdLabel {
+    background: transparent;
+    color: ${QSS_TEXT_SECONDARY};
+    font-family: ${FONT_MONO};
+    font-size: ${FONT_CAPTION};
+    padding: 0 12px;
+}
 
 /* ------------------------------------------------ 滚动条 */
 QScrollBar:vertical { background: transparent; width: 10px; margin: 0; }

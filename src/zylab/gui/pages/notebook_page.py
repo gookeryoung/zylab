@@ -89,10 +89,49 @@ _TOOL_TIPS = {
 
 
 class CellEditor(QPlainTextEdit):
-    """单元代码编辑器（Ctrl+Enter 运行 / Shift+Enter 运行并推进 / Tab 缩进）."""
+    """单元代码编辑器（Ctrl+Enter 运行 / Shift+Enter 运行并推进 / Tab 缩进）.
+
+    高度自适应 document 行数：关闭垂直滚动条，每次文本变更或宽度变化后
+    根据 ``document.size().height()`` 重算自身 fixedHeight，交给外层布局
+    自然撑开（jupyter 风格，单元格内部不滚动）。
+    """
 
     #: 参数 advance：True = 运行后推进下格（Shift+Enter）
     run_requested = Signal(bool)
+
+    def __init__(self, *args, **kwargs) -> None:
+        super().__init__(*args, **kwargs)
+        # 关闭垂直滚动条，让高度随内容自适应（水平滚动保留）
+        self.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        self.setHorizontalScrollBarPolicy(Qt.ScrollBarAsNeeded)
+        self.textChanged.connect(self._adjust_height)
+
+    def _adjust_height(self) -> None:
+        """根据文档实际高度设置 fixedHeight，让外层 layout 自然撑开.
+
+        保守计算：用 contentsMargins + frameWidth 精确补齐 QSS 的 padding
+        和边框，避免最后一行被裁掉；视口宽度为 0 时跳过（构造早期无意义）。
+        """
+        viewport_w = self.viewport().width()
+        if viewport_w <= 0:
+            return
+        # 先让 document 按当前视口宽度重新排版
+        self.document().setTextWidth(viewport_w)
+        doc_h = self.document().size().height()
+        # 精确补齐 QSS padding + 边框
+        margins = self.contentsMargins()
+        extra = margins.top() + margins.bottom() + 2 * self.frameWidth()
+        self.setFixedHeight(int(doc_h) + extra)
+
+    def setFont(self, font) -> None:  # Qt 命名约定
+        """覆盖 setFont：字体变更后重算高度（行高变化影响文档尺寸）."""
+        super().setFont(font)
+        self._adjust_height()
+
+    def resizeEvent(self, event) -> None:  # Qt 命名约定
+        """宽度变化时重算高度（自动换行位置变了，文档高度也会变）."""
+        super().resizeEvent(event)
+        self._adjust_height()
 
     def keyPressEvent(self, event: QKeyEvent) -> None:  # Qt 命名约定
         """按键分发：运行快捷键拦截、Tab 插入 4 空格、其余默认."""
@@ -176,7 +215,6 @@ class CellWidget(QFrame):
         row.addLayout(body, stretch=1)
         row.addWidget(toolbar)
 
-        self._editor.setMinimumHeight(56)
         self._update_count_label()
         self.render_outputs()
 
@@ -330,7 +368,7 @@ class CellWidget(QFrame):
         legend = plot.addLegend(offset=(8, 8)) if any(s.label for s in out.series) else None
         if legend is not None:
             legend.setLabelTextColor(pal.text_primary)
-        plot.setMinimumHeight(260)
+        plot.setMinimumHeight(180)
         for index, series in enumerate(out.series):
             color = getattr(pal, _CURVE_KEYS[index % len(_CURVE_KEYS)])
             plot.plot(

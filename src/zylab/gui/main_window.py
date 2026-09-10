@@ -7,7 +7,7 @@ import platform
 from zylab import __version__
 from zylab.console import ReplKernel
 from zylab.core import EventBus, default_data_dir
-from zylab.sci import WorkspaceManager
+from zylab.sci import TOPIC_WORKSPACE_CHANGED, WorkspaceInfo, WorkspaceManager
 
 from . import theme
 from .app import apply_theme, save_theme_name
@@ -17,6 +17,7 @@ from .pages.studio_page import StudioPage
 from .pages.template_page import TemplatePage
 from .qt_compat import (
     QEvent,
+    QFileDialog,
     QFrame,
     QHBoxLayout,
     QKeySequence,
@@ -25,6 +26,7 @@ from .qt_compat import (
     QListWidget,
     QListWidgetItem,
     QMainWindow,
+    QPushButton,
     QShortcut,
     QSize,
     QSplitter,
@@ -110,11 +112,11 @@ class MainWindow(QMainWindow):
         self.setCentralWidget(central)
 
     def _build_header(self) -> QFrame:
-        """构建头部条：左侧标题 + 居中命令搜索框 + 右侧运行环境信息."""
+        """构建头部条：左侧标题 + 居中命令搜索框 + 工作区 + 右侧运行环境信息."""
         bar = QFrame(objectName="headerBar")
         layout = QHBoxLayout(bar)
         layout.setContentsMargins(theme.SPACING_MD, 0, theme.SPACING_MD, 0)
-        layout.addWidget(QLabel("zylab", objectName="headerTitle"))
+        layout.addWidget(QLabel("zylab", objectName="headerTitle"), alignment=Qt.AlignVCenter)
         # 命令搜索框（VS Code 命令面板入口：点击或 Ctrl+Shift+P 弹出）
         self._command_search = QLineEdit(objectName="commandSearch")
         self._command_search.setReadOnly(True)
@@ -122,9 +124,23 @@ class MainWindow(QMainWindow):
         self._command_search.setFixedWidth(300)
         self._command_search.setFixedHeight(26)
         self._command_search.installEventFilter(self)
-        layout.addWidget(self._command_search, stretch=1, alignment=Qt.AlignHCenter)
+        layout.addWidget(self._command_search, stretch=1, alignment=Qt.AlignVCenter)
+
+        # MATLAB 风格工作区：路径 label + 切换按钮
+        self._workspace_label = QLabel(objectName="workspaceLabel")
+        self._workspace_label.setToolTip("当前工作区（MATLAB 风格 cwd）")
+        self._workspace_label.setFixedHeight(26)
+        self._workspace_btn = QPushButton(objectName="workspaceBtn")
+        self._workspace_btn.setToolTip("切换工作区目录")
+        self._workspace_btn.setFixedSize(26, 26)
+        self._workspace_btn.setIconSize(QSize(14, 14))
+        self._workspace_btn.clicked.connect(self._on_switch_workspace)
+        layout.addWidget(self._workspace_label, alignment=Qt.AlignVCenter)
+        layout.addWidget(self._workspace_btn, alignment=Qt.AlignVCenter)
+        self._refresh_workspace_ui()
+
         meta = QLabel(f"Python {platform.python_version()} · v{__version__}", objectName="headerMeta")
-        layout.addWidget(meta)
+        layout.addWidget(meta, alignment=Qt.AlignVCenter)
         return bar
 
     def _set_theme(self, name: str, persist: bool) -> None:
@@ -138,6 +154,7 @@ class MainWindow(QMainWindow):
         if name != theme.current_palette().name:
             apply_theme(QApplication.instance(), name)
         self._refresh_sidebar_icons()
+        self._refresh_workspace_ui()
         self._notebook_page.refresh_theme()
         self._studio_page.refresh_theme()
         self._template_page.refresh_theme()
@@ -153,6 +170,42 @@ class MainWindow(QMainWindow):
             if item is not None:
                 color = pal.nav_accent if row == self._sidebar.currentRow() else pal.nav_text
                 item.setIcon(nav_icon(name, color))
+        # 工作区切换按钮（header 色系）
+        self._workspace_btn.setIcon(nav_icon("open_project", pal.nav_text))
+
+    def _refresh_workspace_ui(self) -> None:
+        """刷新头部和状态栏的工作区路径显示（只读 self._workspace_manager）."""
+        pal = theme.current_palette()
+        wm = self._workspace_manager
+        path_str = str(wm.cwd)
+        # 头部 label：显示目录名 + 父目录（如 "zylab · F:/Dev"），过长用省略
+        name = wm.cwd.name or wm.cwd.parent.name  # 根目录兜底
+        parent = wm.cwd.parent.name if wm.cwd.parent.name else wm.cwd.parent
+        display = f"{name} · {parent}"
+        self._workspace_label.setText(display)
+        self._workspace_label.setToolTip(path_str)
+        self._workspace_label.setStyleSheet(f"color: {pal.nav_text};")
+        # 状态栏 widget：始终显示完整 cwd（等宽字体更易读）
+        if hasattr(self, "_status_cwd_label"):
+            self._status_cwd_label.setText(f"  📁 {path_str}")
+
+    def _on_switch_workspace(self) -> None:
+        """弹出目录选择对话框，确认后经 WorkspaceManager 切换工作区."""
+        current = str(self._workspace_manager.cwd)
+        target = QFileDialog.getExistingDirectory(
+            self,
+            "选择工作区目录",
+            current,
+            QFileDialog.ShowDirsOnly | QFileDialog.DontResolveSymlinks,
+        )
+        if not target:
+            return  # 用户取消
+        info = self._workspace_manager.set_workspace(target)
+        if info.source == "invalid":
+            self.statusBar().showMessage(f"切换失败：目录不存在 — {target}")
+            return
+        self._workspace_manager.save()
+        self.statusBar().showMessage(f"工作区已切换：{info.path}")
 
     def _build_about_page(self) -> QWidget:
         """构建关于页."""
@@ -166,13 +219,26 @@ class MainWindow(QMainWindow):
         return page
 
     def _connect(self) -> None:
-        """连接导航与跨页信号."""
+        """连接导航与跨页信号；订阅工作区变更事件同步 UI；状态栏常驻工作区路径."""
         self._sidebar.currentRowChanged.connect(self._stack.setCurrentIndex)
         self._sidebar.currentRowChanged.connect(lambda _row: self._refresh_sidebar_icons())
         # 笔记本/模板页状态提示统一进主窗口状态栏；模板声明的主题按预览语义应用
         self._notebook_page.status_message.connect(self.statusBar().showMessage)
         self._template_page.status_message.connect(self.statusBar().showMessage)
         self._template_page.theme_requested.connect(lambda name: self._set_theme(name, persist=False))
+        # 工作区变更事件 → 头部/状态栏刷新
+        self._bus.subscribe(TOPIC_WORKSPACE_CHANGED, self._on_workspace_changed)
+        # 状态栏永久 widget：完整路径（左对齐，点击等价工作区切换）
+        self._status_cwd_label = QLabel(objectName="statusCwdLabel")
+        self._status_cwd_label.setToolTip("当前工作区（MATLAB cwd），点击切换")
+        self._status_cwd_label.mouseDoubleClickEvent = lambda _e: self._on_switch_workspace()
+        self.statusBar().addPermanentWidget(self._status_cwd_label, 1)
+        self._refresh_workspace_ui()
+
+    def _on_workspace_changed(self, info: object) -> None:
+        """WorkspaceManager 切路径后刷新头部与状态栏的工作区显示."""
+        if isinstance(info, WorkspaceInfo):
+            self._refresh_workspace_ui()
 
     def _setup_command_palette(self) -> None:
         """装配命令面板：注册全局命令 + Ctrl+Shift+P 快捷键."""
@@ -227,6 +293,15 @@ class MainWindow(QMainWindow):
         )
         register(
             Command("theme.select", "选择主题（上下键实时预览）", self._palette.open_theme_picker, keywords="theme")
+        )
+        register(
+            Command(
+                "workspace.switch",
+                "切换工作区目录（MATLAB cd 等价）",
+                self._on_switch_workspace,
+                keywords="workspace cwd cd",
+                shortcut="Ctrl+Shift+D",
+            )
         )
 
     def _open_template_page(self) -> None:
