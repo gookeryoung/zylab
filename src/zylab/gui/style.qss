@@ -204,6 +204,10 @@ QFrame#summaryDivider {
 }
 
 /* ------------------------------------------------ 侧边栏 */
+QWidget#sidebarContainer {
+    background-color: ${QSS_NAV_BG};
+}
+
 QListWidget#sidebar {
     background-color: ${QSS_NAV_BG};
     color: ${QSS_NAV_TEXT};

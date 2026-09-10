@@ -106,7 +106,7 @@ class MainWindow(QMainWindow):
         self._sidebar_handle.setToolTip("折叠/展开侧边栏 (Ctrl+B)")
         self._sidebar_handle.setText("«")
         self._sidebar_handle.clicked.connect(self._toggle_sidebar)
-        self._sidebar_container = QWidget()
+        self._sidebar_container = QWidget(objectName="sidebarContainer")
         _sb_layout = QVBoxLayout(self._sidebar_container)
         _sb_layout.setContentsMargins(0, 0, 0, 0)
         _sb_layout.setSpacing(0)
@@ -494,7 +494,7 @@ class MainWindow(QMainWindow):
                 item.setToolTip(item.toolTip() if item.toolTip() else _NAV_LABELS[row])
         else:
             self._sidebar.setFixedWidth(theme.SIDEBAR_WIDTH)
-            self._sidebar_container.setFixedWidth(theme.SIDEBAR_WIDTH + 4)
+            self._sidebar_container.setFixedWidth(theme.SIDEBAR_WIDTH)
             labels = _NAV_LABELS
             for row in range(self._sidebar.count()):
                 item = self._sidebar.item(row)
