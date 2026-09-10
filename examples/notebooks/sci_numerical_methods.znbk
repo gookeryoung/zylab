@@ -3,12 +3,12 @@
   "metadata": {
     "title": "科学计算：数值方法",
     "description": "傅里叶级数逼近、常微分方程数值解（欧拉/RK4）、牛顿法求根与梯形法则积分，含公式与收敛曲线。",
-    "created": "2026-09-10T14:40:00",
-    "modified": "2026-09-10T14:40:00"
+    "created": "2026-09-10T14:56:50",
+    "modified": "2026-09-10T14:56:50"
   },
   "cells": [
     {
-      "id": "3a33cdcfa51f49c0a4c5ef91cb368de5",
+      "id": "0ddd0dff0ea34a0ba592f17559c5cf2a",
       "source": "# 傅里叶级数：方波的正弦级数逼近\n# f(x) = (4/π)·Σ_{k=1,3,5,…} sin(kx)/k\n# 谐波项越多越接近方波；间断点附近存在吉布斯过冲（约 9%）\ndef square_wave(x, n_terms):\n    s = np.zeros_like(x)\n    for k in range(1, 2 * n_terms, 2):\n        s += sin(k * x) / k\n    return (4 / pi) * s\n\nx = linspace(-pi, pi, 800)\nplot(x, square_wave(x, 1), title=\"傅里叶级数逼近方波\", xlabel=\"x\", ylabel=\"f(x)\", label=\"1 项\")\nplot(x, square_wave(x, 3), label=\"3 项\")\nplot(x, square_wave(x, 20), label=\"20 项\")\n",
       "execution_count": 1,
       "outputs": [
@@ -4844,7 +4844,7 @@
       ]
     },
     {
-      "id": "f31b4d2ee63541a189f8943397e07780",
+      "id": "bf5ff722e86940d7964a857a227ee27f",
       "source": "# 常微分方程数值解：逻辑斯蒂增长\n# dy/dt = r·y·(1 - y/K)，精确解 y(t) = K / (1 + ((K-y0)/y0)·e^(-rt))\n# 对比显式欧拉法与 4 阶龙格-库塔（RK4）\nr, K, y0 = 0.8, 100.0, 5.0\nt = linspace(0, 10, 100)\ndt = t[1] - t[0]\n\ndef rhs(y):\n    return r * y * (1 - y / K)\n\n# 欧拉法\ny_euler = np.zeros_like(t)\ny_euler[0] = y0\nfor i in range(len(t) - 1):\n    y_euler[i + 1] = y_euler[i] + dt * rhs(y_euler[i])\n\n# RK4\ny_rk4 = np.zeros_like(t)\ny_rk4[0] = y0\nfor i in range(len(t) - 1):\n    y = y_rk4[i]\n    k1 = rhs(y)\n    k2 = rhs(y + dt / 2 * k1)\n    k3 = rhs(y + dt / 2 * k2)\n    k4 = rhs(y + dt * k3)\n    y_rk4[i + 1] = y + dt / 6 * (k1 + 2 * k2 + 2 * k3 + k4)\n\ny_exact = K / (1 + (K - y0) / y0 * exp(-r * t))\nplot(t, y_exact, title=\"逻辑斯蒂增长 dy/dt = r·y(1-y/K)\", xlabel=\"t\", ylabel=\"y(t)\", label=\"精确解\")\nplot(t, y_euler, label=\"欧拉法\")\nplot(t, y_rk4, label=\"RK4\")\n",
       "execution_count": 2,
       "outputs": [
@@ -5480,7 +5480,7 @@
       ]
     },
     {
-      "id": "9e8bd469ccba41959f800ea15e2f817a",
+      "id": "846b7526d67b4680848230b4ba97c0b0",
       "source": "# 数值求根：牛顿-拉夫森法\n# 求 f(x)=x³-2x-5=0 的根，迭代 x_{n+1} = x_n - f(x_n)/f'(x_n)\ndef f(x):\n    return x ** 3 - 2 * x - 5\n\ndef df(x):\n    return 3 * x ** 2 - 2\n\nx = 2.0\nhistory = [x]\nfor _ in range(20):\n    x = x - f(x) / df(x)\n    history.append(x)\n    if abs(f(x)) < 1e-12:\n        break\nprint(f\"牛顿法近似根: {x:.12f}\")\n\nerrors = array([abs(f(v)) for v in history])\nplot(arange(len(errors)), errors, title=\"牛顿法收敛（|f(x)| 随迭代次数）\", xlabel=\"迭代次数\", ylabel=\"|f(x)|\", label=\"|f(x)|\")\n",
       "execution_count": 3,
       "outputs": [
@@ -5517,7 +5517,7 @@
       ]
     },
     {
-      "id": "c6c2e9f944c74a2f8666e076365ea4aa",
+      "id": "404993896b8246d3870e80a1cdbe86e2",
       "source": "# 数值积分：梯形法则\n# ∫₀^π sin(x)dx = 2，等分 N 段时误差 ~ O(1/N²)\ndef trapezoid(f, a, b, n):\n    x = linspace(a, b, n + 1)\n    y = f(x)\n    return (b - a) / n * (0.5 * y[0] + y[1:-1].sum() + 0.5 * y[-1])\n\nexact = 2.0\nNs = array([4, 8, 16, 32, 64, 128, 256, 512])\nerrors = array([abs(trapezoid(sin, 0, pi, n) - exact) for n in Ns])\nprint(\"N=512 误差:\", errors[-1])\nplot(Ns, errors, title=\"梯形法则误差收敛（误差 ~ 1/N²）\", xlabel=\"分段数 N\", ylabel=\"绝对误差\", label=\"|误差|\")\n",
       "execution_count": 4,
       "outputs": [

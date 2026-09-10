@@ -3,12 +3,12 @@
   "metadata": {
     "title": "统计学：正态分布与中心极限定理",
     "description": "正态分布 PDF/CDF、中心极限定理与最小二乘线性回归，含公式推导与曲线对比。",
-    "created": "2026-09-10T14:40:00",
-    "modified": "2026-09-10T14:40:00"
+    "created": "2026-09-10T14:56:50",
+    "modified": "2026-09-10T14:56:50"
   },
   "cells": [
     {
-      "id": "3ff102d3863b44468d5661324ea6b111",
+      "id": "d2be4115f0124b9fb978f65fb2820097",
       "source": "# 正态分布概率密度函数（PDF）\n# f(x; μ, σ) = 1/(σ√(2π)) · exp(-(x-μ)²/(2σ²))\n# 固定 μ=0，σ 越大曲线越扁平、越矮（总面积恒为 1）\ndef normal_pdf(x, mu=0.0, sigma=1.0):\n    return 1.0 / (sigma * sqrt(2 * pi)) * exp(-((x - mu) ** 2) / (2 * sigma ** 2))\n\nx = linspace(-6, 6, 400)\nplot(x, normal_pdf(x, 0, 0.5), title=\"正态分布概率密度函数 f(x; 0, σ)\", xlabel=\"x\", ylabel=\"概率密度\", label=\"σ=0.5\")\nplot(x, normal_pdf(x, 0, 1.0), label=\"σ=1.0\")\nplot(x, normal_pdf(x, 0, 2.0), label=\"σ=2.0\")\n",
       "execution_count": 1,
       "outputs": [
@@ -2444,7 +2444,7 @@
       ]
     },
     {
-      "id": "64853bb6ab1d4aa8a53439c468148a34",
+      "id": "e82ff140554a4f4cb408f9ba626f72e1",
       "source": "# 标准正态累积分布函数（CDF）\n# Φ(x) = ½·[1 + erf(x/√2)]，其中 erf 为误差函数\n# Φ(-x) = 1 - Φ(x)；Φ(0) = 0.5\nfrom scipy.stats import norm\n\nx = linspace(-4, 4, 400)\nplot(x, norm.cdf(x), title=\"标准正态累积分布函数 Φ(x)\", xlabel=\"x\", ylabel=\"Φ(x)\", label=\"Φ(x)\")\n",
       "execution_count": 2,
       "outputs": [
@@ -3266,7 +3266,7 @@
       ]
     },
     {
-      "id": "bdbe2bfad0bd4aa1ac567cd5384d8574",
+      "id": "bae10a6d4c0c4dcb914beee6d18ed8dc",
       "source": "# 中心极限定理（CLT）\n# 设 X_i ~ U(0,1)，则 μ=1/2、σ²=1/12。\n# 样本均值 X̄ 标准化后 Z = (X̄-μ)/(σ/√n) 依分布收敛到标准正态 N(0,1)\nfrom scipy.stats import norm\n\nrng = np.random.default_rng(42)\nsamples = 2000\nmu, sigma = 0.5, sqrt(1 / 12)\n\nz_axis = linspace(-4, 4, 400)\nplot(z_axis, norm.cdf(z_axis), title=\"中心极限定理：均匀样本均值 → 标准正态\", xlabel=\"Z = (X̄-μ)/(σ/√n)\", ylabel=\"累积概率\", label=\"标准正态 Φ(z)\")\n\nfor n in (2, 30):\n    means = rng.uniform(0, 1, size=(samples, n)).mean(axis=1)\n    z = (means - mu) / (sigma / sqrt(n))\n    z_sorted = np.sort(z)\n    ecdf = np.arange(1, samples + 1) / samples\n    plot(z_sorted, ecdf, label=f\"n={n}\")\n",
       "execution_count": 3,
       "outputs": [
@@ -12102,7 +12102,7 @@
       ]
     },
     {
-      "id": "4c78150817564494a5cc233f0f4f94af",
+      "id": "750f0b385e9b44b385b83f3254f07a82",
       "source": "# 线性回归（最小二乘）\n# 拟合 y = β₀ + β₁x，最小化残差平方和 Σ(yᵢ - (β₀+β₁xᵢ))²\n# 正规方程解：β₁ = Cov(x,y)/Var(x)，β₀ = ȳ - β₁x̄\nrng = np.random.default_rng(7)\nx = linspace(0, 10, 30)\ny_true = 2.5 * x + 1.0\ny = y_true + rng.normal(0, 1.5, size=x.shape)\n\nbeta1 = np.cov(x, y)[0, 1] / np.var(x)\nbeta0 = y.mean() - beta1 * x.mean()\nprint(f\"最小二乘拟合: y = {beta0:.3f} + {beta1:.3f}·x\")\n\nplot(x, y_true, title=\"线性回归（最小二乘）\", xlabel=\"x\", ylabel=\"y\", label=\"真实直线 y=2.5x+1\")\nplot(x, y, label=\"观测样本（含噪声）\")\nx_fit = array([x.min(), x.max()])\nplot(x_fit, beta0 + beta1 * x_fit, label=f\"拟合直线 y={beta0:.2f}+{beta1:.2f}x\")\n",
       "execution_count": 4,
       "outputs": [

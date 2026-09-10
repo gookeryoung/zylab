@@ -33,3 +33,22 @@ def test_register_fonts_loads_builtin(qapp) -> None:
     assert "DejaVu Sans Mono" in register_fonts()
     # PySide2 需实例化调用，PySide6 静态/实例均可
     assert "DejaVu Sans Mono" in QFontDatabase().families()
+
+
+@pytest.mark.gui
+def test_load_qt_translations_skips_non_chinese(qapp, monkeypatch) -> None:
+    """非中文环境下应跳过 Qt 翻译加载（不安装新翻译器）."""
+    from PySide2.QtCore import QLocale, QTranslator
+
+    # 先记录已有翻译器（pytest-qt qapp 可能已加载）
+    before = set(id(t) for t in qapp.findChildren(QTranslator))
+
+    monkeypatch.setattr(QLocale, "system", staticmethod(lambda: QLocale(QLocale.English, QLocale.UnitedStates)))
+
+    from zylab.gui.app import _load_qt_translations
+
+    _load_qt_translations(qapp)
+
+    after = set(id(t) for t in qapp.findChildren(QTranslator))
+    # 非中文环境不应新增任何翻译器
+    assert after - before == set()

@@ -3,12 +3,12 @@
   "metadata": {
     "title": "空气动力学：翼型与标准大气",
     "description": "NACA 翼型几何、国际标准大气温度、薄翼理论升力系数与空气阻力，含公式与曲线。",
-    "created": "2026-09-10T14:40:00",
-    "modified": "2026-09-10T14:40:00"
+    "created": "2026-09-10T14:56:50",
+    "modified": "2026-09-10T14:56:50"
   },
   "cells": [
     {
-      "id": "ca0d0c69e7354bcdb69bce4ec03f2fb1",
+      "id": "5434054caee44c39b96597025f9bf524",
       "source": "# NACA 4 位数翼型几何\n# 厚度分布: y_t = (t/0.2)·c·[0.2969√(x/c) - 0.1260(x/c) - 0.3516(x/c)² + 0.2843(x/c)³ - 0.1015(x/c)⁴]\n# 中弧线: 前段 y_c = (m/p²)(2p(x/c)-(x/c)²)，后段 y_c = (m/(1-p)²)((1-2p)+2p(x/c)-(x/c)²)\n# 示例 NACA 2412：m=0.02, p=0.4, t=0.12\nc = 1.0\nm, p, t = 0.02, 0.4, 0.12\nx = linspace(0, c, 400)\n\nyc = np.where(\n    x < p * c,\n    m / p ** 2 * (2 * p * (x / c) - (x / c) ** 2),\n    m / (1 - p) ** 2 * ((1 - 2 * p) + 2 * p * (x / c) - (x / c) ** 2),\n)\nyt = (t / 0.2) * c * (\n    0.2969 * sqrt(x / c) - 0.1260 * (x / c) - 0.3516 * (x / c) ** 2\n    + 0.2843 * (x / c) ** 3 - 0.1015 * (x / c) ** 4\n)\ntheta = np.arctan(np.gradient(yc, x))\n\nxu = x - yt * np.sin(theta)\nyu = yc + yt * np.cos(theta)\nxl = x + yt * np.sin(theta)\nyl = yc - yt * np.cos(theta)\n\nplot(xu, yu, title=\"NACA 2412 翼型几何\", xlabel=\"x/c\", ylabel=\"y/c\", label=\"上表面\")\nplot(xl, yl, label=\"下表面\")\nplot(x, yc, label=\"中弧线\")\n",
       "execution_count": 1,
       "outputs": [
@@ -2444,7 +2444,7 @@
       ]
     },
     {
-      "id": "864b1d35ac0341228f534596a0ba1b44",
+      "id": "a263504b706948fbb629f0ebbbbf08f1",
       "source": "# 国际标准大气（ISA）— 温度随高度变化\n# 对流层(0-11 km)：T = T0 - L·h，温度递减率 L=6.5 K/km\n# 平流层(11-20 km)：T = 216.65 K 恒定\nT0, L = 288.15, 0.0065\nh = linspace(0, 20000, 400)\nT = np.where(h <= 11000, T0 - L * h, 216.65)\nplot(h / 1000, T, title=\"国际标准大气温度随高度\", xlabel=\"高度 (km)\", ylabel=\"温度 (K)\", label=\"温度 T\")\n",
       "execution_count": 2,
       "outputs": [
@@ -3266,7 +3266,7 @@
       ]
     },
     {
-      "id": "df9a9af97d38472db3dd9d3542d1c7e0",
+      "id": "7d681829d5a24f26813a0b843be8a7a5",
       "source": "# 薄翼理论：升力系数随攻角线性变化\n# Cl = 2π·(α - α0)，α 为攻角（弧度），α0 为零升攻角\n# 对称翼型 α0=0°；带弯度翼型（如 NACA 2412）α0≈-2°\nalpha_deg = linspace(-5, 15, 200)\nalpha = np.deg2rad(alpha_deg)\ncl_sym = 2 * pi * alpha\ncl_cambered = 2 * pi * (alpha - np.deg2rad(-2))\nplot(alpha_deg, cl_sym, title=\"升力系数随攻角（薄翼理论）\", xlabel=\"攻角 α (°)\", ylabel=\"升力系数 Cl\", label=\"对称翼型 (α0=0°)\")\nplot(alpha_deg, cl_cambered, label=\"NACA 2412 (α0≈-2°)\")\n",
       "execution_count": 3,
       "outputs": [
@@ -4095,7 +4095,7 @@
       ]
     },
     {
-      "id": "83c55b341ebc422ea4014c0110010b6d",
+      "id": "b87542883f4c41d4b583597042afe21a",
       "source": "# 空气阻力：阻力随速度平方增长\n# D = ½·ρ·v²·Cd·A，ρ 空气密度、Cd 阻力系数、A 迎风面积\nrho, Cd, A = 1.225, 0.3, 2.0\nv = linspace(0, 100, 200)\nD = 0.5 * rho * v ** 2 * Cd * A\nplot(v, D, title=\"空气阻力随速度（D = ½ρv²CdA）\", xlabel=\"速度 v (m/s)\", ylabel=\"阻力 D (N)\", label=\"阻力\")\n",
       "execution_count": 4,
       "outputs": [
