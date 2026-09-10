@@ -91,9 +91,10 @@ _TOOL_TIPS = {
 class CellEditor(QPlainTextEdit):
     """单元代码编辑器（Ctrl+Enter 运行 / Shift+Enter 运行并推进 / Tab 缩进）.
 
-    高度自适应 document 行数：关闭垂直滚动条，每次文本变更或宽度变化后
-    根据 ``document.size().height()`` 重算自身 fixedHeight，交给外层布局
-    自然撑开（jupyter 风格，单元格内部不滚动）。
+    高度自适应 document 行数：关闭垂直滚动条，每次文本变更、show 事件或
+    宽度变化后，按各 block 的实际 ``blockBoundingRect`` 高度累加，再加上
+    QSS 通过 ``contentsMargins`` 注入的 padding + 边框，算出最终 fixedHeight。
+    外层 layout 据此自然撑开 —— jupyter 风格，单元格内部不滚动。
     """
 
     #: 参数 advance：True = 运行后推进下格（Shift+Enter）
@@ -107,21 +108,39 @@ class CellEditor(QPlainTextEdit):
         self.textChanged.connect(self._adjust_height)
 
     def _adjust_height(self) -> None:
-        """根据文档实际高度设置 fixedHeight，让外层 layout 自然撑开.
+        """根据所有 block 的实际高度设置 fixedHeight，交给外层 layout 撑开.
 
-        保守计算：用 contentsMargins + frameWidth 精确补齐 QSS 的 padding
-        和边框，避免最后一行被裁掉；视口宽度为 0 时跳过（构造早期无意义）。
+        关键细节：
+        - ``documentLayout().documentSize().height()`` 在 PySide2/offscreen
+          下返回的是 **blockCount** 而非像素高度，所以必须逐个累加
+          ``blockBoundingRect().height()``；
+        - QSS 的 padding + 边框被 Qt 注入到 ``contentsMargins()``，show
+          之后才正确（构造期间只是 frameWidth），所以 ``showEvent`` 必须
+          覆盖一次，在 QSS 应用后重新计算；
+        - 实际文本排版宽度 = viewport 宽度 - 左右 contentsMargins。
         """
         viewport_w = self.viewport().width()
         if viewport_w <= 0:
             return
-        # 先让 document 按当前视口宽度重新排版
-        self.document().setTextWidth(viewport_w)
-        doc_h = self.document().size().height()
-        # 精确补齐 QSS padding + 边框
-        margins = self.contentsMargins()
-        extra = margins.top() + margins.bottom() + 2 * self.frameWidth()
-        self.setFixedHeight(int(doc_h) + extra)
+        cm = self.contentsMargins()
+        text_w = viewport_w - cm.left() - cm.right()
+        if text_w <= 0:
+            return
+        self.document().setTextWidth(text_w)
+        # 逐个 block 累加实际高度（末 block 无下一行间距，Qt 会给足高度）
+        layout = self.document().documentLayout()
+        total = 0.0
+        for i in range(self.document().blockCount()):
+            block = self.document().findBlockByNumber(i)
+            total += layout.blockBoundingRect(block).height()
+        # 总高度 = 文本像素高度 + 上下 padding + 边框（已含在 contentsMargins）
+        extra = cm.top() + cm.bottom()
+        self.setFixedHeight(int(total) + extra)
+
+    def showEvent(self, event) -> None:  # Qt 命名约定
+        """首次显示：QSS 此时已应用，contentsMargins 才是正确的 padding + 边框."""
+        super().showEvent(event)
+        self._adjust_height()
 
     def setFont(self, font) -> None:  # Qt 命名约定
         """覆盖 setFont：字体变更后重算高度（行高变化影响文档尺寸）."""
