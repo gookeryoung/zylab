@@ -304,20 +304,42 @@ class MainWindow(QMainWindow):
         self.statusBar().showMessage(f"工作区已切换：{info.path}")
 
     def _connect(self) -> None:
-        """连接导航与跨页信号；订阅工作区变更事件同步 UI；状态栏常驻工作区路径."""
+        """连接导航与跨页信号；订阅工作区变更事件同步 UI；状态栏常驻工作区路径与运行状态."""
+
         self._sidebar.currentRowChanged.connect(self._stack.setCurrentIndex)
         self._sidebar.currentRowChanged.connect(lambda _row: self._refresh_sidebar_icons())
         # 笔记本/参数化计算页状态提示统一进主窗口状态栏；参数化计算声明的主题按预览语义应用
         self._notebook_page.status_message.connect(self.statusBar().showMessage)
         self._template_page.status_message.connect(self.statusBar().showMessage)
         self._template_page.theme_requested.connect(lambda name: self._set_theme(name, persist=False))
+        # 参数化计算运行完成/失败 → 主窗口右下 indicator（覆盖 template_page 内联状态显示）
+        self._template_page.run_finished.connect(self._on_template_run_finished)
+        # 工作台运行成功/失败 → 主窗口右下 indicator
+        self._studio_page.run_status_changed.connect(self.set_run_status)
         # 工作区变更事件 → 头部/状态栏刷新
         self._bus.subscribe(TOPIC_WORKSPACE_CHANGED, self._on_workspace_changed)
-        # 状态栏永久 widget：完整路径（左对齐，点击等价工作区切换）
+        # 状态栏永久 widget：完整路径（左对齐，双击切换）
         self._status_cwd_label = QLabel(objectName="statusCwdLabel")
-        self._status_cwd_label.setToolTip("当前工作区（MATLAB cwd），点击切换")
+        self._status_cwd_label.setToolTip("当前工作区（MATLAB cwd），双击切换")
         self._status_cwd_label.mouseDoubleClickEvent = lambda _e: self._on_switch_workspace()
         self.statusBar().addPermanentWidget(self._status_cwd_label, 1)
+        # 状态栏永久 widget：运行状态 indicator（右对齐，icon + 颜色 + 文字）
+        # PySide2 QLabel 无 setIcon，用 pixmap + text 两个 QLabel 组合
+        pal = theme.current_palette()
+        self._run_indicator_widget = QWidget(objectName="runStatusIndicator")
+        indicator_layout = QHBoxLayout(self._run_indicator_widget)
+        indicator_layout.setContentsMargins(12, 0, 12, 0)
+        indicator_layout.setSpacing(4)
+        self._indicator_icon = QLabel()
+        self._indicator_icon.setFixedSize(16, 16)
+        self._indicator_text = QLabel("就绪")
+        self._indicator_text.setAlignment(Qt.AlignCenter)
+        self._indicator_text.setStyleSheet(f"color: {pal.text_secondary};")
+        self._run_indicator_widget.setToolTip("运行状态（工作台/参数化计算运行完成后在此统一显示）")
+        indicator_layout.addWidget(self._indicator_icon)
+        indicator_layout.addWidget(self._indicator_text)
+        self.set_run_status("idle")  # 初始化 icon + 颜色
+        self.statusBar().addPermanentWidget(self._run_indicator_widget, 0)
         self._refresh_workspace_ui()
         self._refresh_workspace_menu()
 
@@ -543,6 +565,43 @@ class MainWindow(QMainWindow):
         if self.width() < 1000 and not self._sidebar_folded:
             self._sidebar_folded = True
             self._apply_sidebar_folded()
+
+    # ------------------------------------------------------------------ 运行状态 indicator
+
+    def set_run_status(self, state: str, detail: str = "") -> None:
+        """设置右下角运行状态 indicator（工作台/参数化计算运行完成后由主窗口统一呈现）.
+
+        :param state: "idle"（就绪）/ "running"（运行中）/ "success"（成功）/ "error"（失败）.
+        :param detail: 失败时的错误详情（tooltip 承载，不超过 200 字）。
+        """
+        from .icons import tinted_pixmap
+
+        pal = theme.current_palette()
+        state_map = {
+            "idle": ("question", "就绪", pal.text_secondary),
+            "running": ("play", "计算中…", pal.primary),
+            "success": ("check", "运行完成", pal.success_text),
+            "error": ("cross", "运行失败", pal.danger_text),
+        }
+        icon_name, label, color = state_map.get(state, state_map["idle"])
+        # PySide2 QLabel 无 setIcon，用 tinted_pixmap 渲染为 QPixmap 再 setPixmap
+        self._indicator_icon.setPixmap(tinted_pixmap(icon_name, color, 16))
+        self._indicator_text.setText(label)
+        self._indicator_text.setStyleSheet(f"color: {color};")
+        if detail and state == "error":
+            self._run_indicator_widget.setToolTip(f"运行失败：{detail[:200]}")
+        elif detail:
+            self._run_indicator_widget.setToolTip(detail[:200])
+        else:
+            self._run_indicator_widget.setToolTip("运行状态（工作台/参数化计算运行完成后在此统一显示）")
+
+    def _on_template_run_finished(self, outputs: dict, error: str) -> None:
+        """template_page.run_finished 信号 → 更新主窗口 indicator."""
+        if error:
+            self.set_run_status("error", error)
+        else:
+            count = len(outputs) if outputs else 0
+            self.set_run_status("success", f"共 {count} 个节点产出结果" if count else "")
 
     def closeEvent(self, event) -> None:  # Qt 命名约定
         """关闭前询问保存笔记本，持久化工作区路径，终止后台求解执行器."""

@@ -85,6 +85,8 @@ class _StudioBridge(QObject):
     node_progress = Signal(str, float, str)
     node_result = Signal(str, object)
     node_failed = Signal(str, str)
+    #: 运行整体结束：state="running"/"success"/"error"/"idle", detail 承载错误信息
+    finished_with_state = Signal(str, str)
 
     def dispatch(self, event: NodeRunEvent) -> None:
         """将节点运行事件转译为 Qt 信号."""
@@ -107,6 +109,9 @@ class _PreviewBridge(QObject):
 
 class StudioPage(QWidget):
     """分析工作台页（参数化计算配置化多学科计算工具）."""
+
+    #: 运行整体状态变更通知主窗口更新右下 indicator
+    run_status_changed = Signal(str, str)  # (state, detail)
 
     def __init__(self, parent: QWidget | None = None, data_dir: Path | None = None) -> None:
         """初始化工作台页：参数化计算注册表（内置 + 用户目录 + 插件）+ Workbench 布局."""
@@ -254,6 +259,7 @@ class StudioPage(QWidget):
         self._bridge.node_progress.connect(self._on_node_progress)
         self._bridge.node_result.connect(self._on_node_result)
         self._bridge.node_failed.connect(self._on_node_failed)
+        self._bridge.finished_with_state.connect(self.run_status_changed)
         self._preview_bridge.done.connect(self._on_preview_done)
 
     def _classic_templates(self) -> list[Template]:
@@ -468,6 +474,7 @@ class StudioPage(QWidget):
             self._runner.cancel()
         self._set_running_ui(False)
         self._status_label.setText("已取消")
+        self.run_status_changed.emit("idle", "运行已取消")
         self._canvas.refresh_states()
 
     def _run_node(self, node_id: str) -> None:
@@ -492,6 +499,8 @@ class StudioPage(QWidget):
         self._param_form.set_fields_enabled(not running)
         if running:
             self._status_label.setText("运行中…")
+            self._bridge.finished_with_state.emit("running", "")
+            self.run_status_changed.emit("running", "")
 
     # ------------------------------------------------------------------ 节点事件（主线程）
 
@@ -514,11 +523,13 @@ class StudioPage(QWidget):
         QTimer.singleShot(0, self._sync_idle_ui)
 
     def _on_node_failed(self, node_id: str, message: str) -> None:
-        """节点失败：画布标记 + 该节点结果页显示错误."""
+        """节点失败：画布标记 + 该节点结果页显示错误 + 通知主窗口 indicator."""
         self._canvas.refresh_states()
         if self._graph is not None:
             self._result_view.show_error(node_id, self._graph.node(node_id).name, message)
         self._status_label.setText("运行失败")
+        self._bridge.finished_with_state.emit("error", message)
+        self.run_status_changed.emit("error", message)
         QTimer.singleShot(0, self._sync_idle_ui)
 
     def _sync_idle_ui(self) -> None:
@@ -527,6 +538,8 @@ class StudioPage(QWidget):
             self._set_running_ui(False)
             if "失败" not in self._status_label.text():
                 self._status_label.setText("运行完成")
+                self._bridge.finished_with_state.emit("success", "")
+                self.run_status_changed.emit("success", "")
 
     # ------------------------------------------------------------------ 节点交互
 

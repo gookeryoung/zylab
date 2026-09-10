@@ -300,14 +300,15 @@ class ResultStreamView(QWidget):
                 w.deleteLater()
 
         if not blocks:
-            self._run_header.setText("尚未运行")
+            self._run_header.setText("")
             placeholder = QLabel("暂无结果", objectName="secondaryText")
             placeholder.setAlignment(Qt.AlignCenter)
             self._container_layout.addWidget(placeholder)
             self._container_layout.addStretch()
             return
 
-        self._run_header.setText(f"运行完成 · {len(blocks)} 结果块")
+        # 运行完成状态统一由主窗口右下角 indicator 承载，此处仅静默重建块
+        self._run_header.setText("")
         for title, payload, style in blocks:
             self._container_layout.addWidget(ResultBlockCard(title, payload, style))
         self._container_layout.addStretch()

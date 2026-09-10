@@ -231,7 +231,7 @@ class TemplatePage(QWidget):
         self.run_finished.emit(outputs, "")
 
     def _on_run_finished(self, outputs: dict, error: str) -> None:
-        """主线程渲染结果（成功建各结果页，失败提示首个错误）."""
+        """主线程渲染结果（成功建各结果页，失败提示首个错误）；成败发 run_finished 供主窗口 indicator 消费."""
         self._running = False
         self._param_form.set_fields_enabled(True)
         self._run_btn.setEnabled(self._template is not None)
@@ -239,13 +239,13 @@ class TemplatePage(QWidget):
             self._outputs = {}
             self._rebuild_tabs()
             self._status_label.setText("运行失败")
+            # 失败详情用临时消息 showMessage（3秒消失），成败图标由 indicator 承载
             self.status_message.emit(f"运行失败: {error}")
             return
         self._outputs = outputs
         self._render_results()
         self._export_btn.setEnabled(True)
         self._status_label.setText("运行完成")
-        self.status_message.emit("运行完成")
 
     # ------------------------------------------------------------------ 结果渲染
 

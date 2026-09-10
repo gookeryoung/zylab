@@ -96,7 +96,8 @@ def test_page_load_and_run(qtbot, template) -> None:
     assert page._tabs.count() == 1
     curve_page = page._tabs.widget(0)
     assert isinstance(curve_page, ResultStreamView)
-    assert curve_page._run_header.text().startswith("运行完成")
+    # 运行完成状态统一由主窗口右下角 indicator 承载，ResultStreamView._run_header 静默为空
+    assert curve_page._run_header.text() == ""
     assert page._status_label.text() == "运行完成"
     assert page._export_btn.isEnabled()
 
