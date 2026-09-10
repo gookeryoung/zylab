@@ -7,7 +7,7 @@ import platform
 from zylab import __version__
 from zylab.console import ReplKernel
 from zylab.core import EventBus, default_data_dir
-from zylab.sci import TOPIC_WORKSPACE_CHANGED, WorkspaceManager
+from zylab.sci import WorkspaceManager
 
 from . import theme
 from .app import apply_theme, save_theme_name

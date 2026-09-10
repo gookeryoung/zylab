@@ -13,7 +13,7 @@
     },
     {
       "id": "35c7b96be3e5490e8cd165f9b8223e05",
-      "source": "from pathlib import Path\n\ncwd = Path.cwd()\noutput_png = cwd / \"energy_density_compare.png\"\noutput_pdf = cwd / \"energy_density_compare.pdf\"",
+      "source": "# MATLAB 风格工作区：cwd 为内核自动注入的当前工作目录（pathlib.Path）\n# 内核启动时自动恢复上次关闭前的工作区路径；cd(path) 可切换\nprint(f\"当前工作区: {cwd}\")\n\noutput_png = cwd / \"energy_density_compare.png\"\noutput_pdf = cwd / \"energy_density_compare.pdf\"",
       "execution_count": 2,
       "outputs": []
     },

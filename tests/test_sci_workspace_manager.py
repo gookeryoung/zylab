@@ -5,8 +5,6 @@ from __future__ import annotations
 import os
 from pathlib import Path
 
-import pytest
-
 from zylab.console import ReplKernel
 from zylab.core import EventBus
 from zylab.sci import (
