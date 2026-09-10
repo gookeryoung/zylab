@@ -11,7 +11,7 @@ from pathlib import Path
 from string import Template
 
 from . import theme
-from .qt_compat import QApplication, QFontDatabase, exec_app
+from .qt_compat import QApplication, QFontDatabase, QLibraryInfo, QLocale, QTranslator, exec_app
 
 __all__ = [
     "apply_theme",
@@ -109,13 +109,36 @@ def apply_theme(app: QApplication, name: str) -> theme.Palette:
 
 
 def create_app(argv: list[str] | None = None, theme_name: str = theme.DEFAULT_THEME) -> QApplication:
-    """创建 QApplication（Fusion 风格 + 指定主题样式表）；已有实例则复用并重刷主题."""
+    """创建 QApplication（Fusion 风格 + 指定主题样式表 + Qt 标准对话框本地化）.
+
+    加载系统 locale 对应的 Qt 翻译文件（如 ``qtbase_zh_CN.qm``），
+    使 QMessageBox/QFileDialog/QInputDialog 等标准对话框的按钮文字
+    （Save/Discard/Cancel 等）显示为本地化语言。
+    """
     existing = QApplication.instance()
     app = existing if isinstance(existing, QApplication) else QApplication(argv if argv is not None else sys.argv)
     app.setStyle("Fusion")
+    _load_qt_translations(app)
     register_fonts()
     apply_theme(app, theme_name)
     return app
+
+
+def _load_qt_translations(app: QApplication) -> None:
+    """加载 Qt 标准翻译文件，使 QMessageBox/QFileDialog 等按钮本地化."""
+    locale = QLocale.system()
+    if locale.language() != QLocale.Chinese:
+        return  # 非中文环境跳过，Qt 自带英文无需翻译
+    # Qt6 用 .path()，Qt5 用 .location()
+    path_getter = getattr(QLibraryInfo, "path", getattr(QLibraryInfo, "location", None))
+    if path_getter is None:
+        return
+    transl_path = path_getter(QLibraryInfo.TranslationsPath)
+    # qtbase 含 QMessageBox/QFileDialog/QInputDialog 等核心组件翻译
+    for fname in ("qtbase", "qt"):
+        translator = QTranslator(app)
+        if translator.load(locale, fname, "_", transl_path):
+            app.installTranslator(translator)
 
 
 def register_user_themes(data_dir: Path) -> list[str]:
