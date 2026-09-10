@@ -265,8 +265,8 @@ class ResultStreamView(QWidget):
         root.setContentsMargins(0, 0, 0, 0)
         root.setSpacing(0)
 
-        # 运行状态头（极简，兼容既有测试；jupyter 无状态头但保留此 API）
-        self._run_header = QLabel("尚未运行", objectName="secondaryText")
+        # 运行状态头（静默占位；运行生命周期状态已统一到主窗口右下 indicator）
+        self._run_header = QLabel("", objectName="secondaryText")
         root.addWidget(self._run_header)
 
         # 滚动区 + 容器

@@ -79,6 +79,8 @@ class TemplatePage(QWidget):
     theme_requested = Signal(str)
     #: 后台运行完成（outputs 载荷表, 首个错误串）
     run_finished = Signal(object, str)
+    #: 运行生命周期状态变更（主窗口右下 indicator 统一承载：idle/running/success/error）
+    run_state_changed = Signal(str, str)  # (state, detail)
 
     def __init__(self, parent: QWidget | None = None) -> None:
         """初始化：占位界面（加载参数化计算后重建）."""
@@ -144,13 +146,11 @@ class TemplatePage(QWidget):
         self._export_btn = QPushButton("导出报告", objectName="flatBtn")
         self._export_btn.clicked.connect(self.export_report)
         self._export_btn.setEnabled(False)
-        self._status_label = QLabel("未加载参数化计算", objectName="secondaryText")
         layout.addWidget(self._market_btn)
         layout.addWidget(self._load_btn)
         layout.addWidget(self._run_btn)
         layout.addWidget(self._export_btn)
         layout.addStretch()
-        layout.addWidget(self._status_label)
         return bar
 
     def open_market(self) -> None:
@@ -193,7 +193,7 @@ class TemplatePage(QWidget):
         self._rebuild_tabs()
         self._run_btn.setEnabled(True)
         self._export_btn.setEnabled(False)
-        self._status_label.setText(f"已加载: {template.name}")
+        self.run_state_changed.emit("idle", f"已加载: {template.name}")
         if template.theme:
             self.theme_requested.emit(template.theme)
         self.status_message.emit(f"已加载: {template.name}")
@@ -213,7 +213,7 @@ class TemplatePage(QWidget):
         self._running = True
         self._param_form.set_fields_enabled(False)
         self._run_btn.setEnabled(False)
-        self._status_label.setText("计算中…")
+        self.run_state_changed.emit("running", f"计算 {self._template.name}")
         self._thread = threading.Thread(target=self._run_worker, args=(executable,), daemon=True)
         self._thread.start()
 
@@ -238,14 +238,14 @@ class TemplatePage(QWidget):
         if error:
             self._outputs = {}
             self._rebuild_tabs()
-            self._status_label.setText("运行失败")
+            self.run_state_changed.emit("error", error)
             # 失败详情用临时消息 showMessage（3秒消失），成败图标由 indicator 承载
             self.status_message.emit(f"运行失败: {error}")
             return
         self._outputs = outputs
         self._render_results()
         self._export_btn.setEnabled(True)
-        self._status_label.setText("运行完成")
+        self.run_state_changed.emit("success", f"共 {len(self._outputs)} 个节点产出结果")
 
     # ------------------------------------------------------------------ 结果渲染
 

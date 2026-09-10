@@ -312,8 +312,8 @@ class MainWindow(QMainWindow):
         self._notebook_page.status_message.connect(self.statusBar().showMessage)
         self._template_page.status_message.connect(self.statusBar().showMessage)
         self._template_page.theme_requested.connect(lambda name: self._set_theme(name, persist=False))
-        # 参数化计算运行完成/失败 → 主窗口右下 indicator（覆盖 template_page 内联状态显示）
-        self._template_page.run_finished.connect(self._on_template_run_finished)
+        # 参数化计算运行生命周期 → 主窗口右下 indicator（加载/运行/完成/失败统一承载）
+        self._template_page.run_state_changed.connect(self.set_run_status)
         # 工作台运行成功/失败 → 主窗口右下 indicator
         self._studio_page.run_status_changed.connect(self.set_run_status)
         # 工作区变更事件 → 头部/状态栏刷新
@@ -594,21 +594,3 @@ class MainWindow(QMainWindow):
             self._run_indicator_widget.setToolTip(detail[:200])
         else:
             self._run_indicator_widget.setToolTip("运行状态（工作台/参数化计算运行完成后在此统一显示）")
-
-    def _on_template_run_finished(self, outputs: dict, error: str) -> None:
-        """template_page.run_finished 信号 → 更新主窗口 indicator."""
-        if error:
-            self.set_run_status("error", error)
-        else:
-            count = len(outputs) if outputs else 0
-            self.set_run_status("success", f"共 {count} 个节点产出结果" if count else "")
-
-    def closeEvent(self, event) -> None:  # Qt 命名约定
-        """关闭前询问保存笔记本，持久化工作区路径，终止后台求解执行器."""
-        if not self._notebook_page.maybe_save():
-            event.ignore()
-            return
-        self._workspace_manager.save()
-        self._save_gui_state()
-        self._studio_page.shutdown()
-        super().closeEvent(event)

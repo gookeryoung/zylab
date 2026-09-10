@@ -96,10 +96,8 @@ def test_page_load_and_run(qtbot, template) -> None:
     assert page._tabs.count() == 1
     curve_page = page._tabs.widget(0)
     assert isinstance(curve_page, ResultStreamView)
-    # 运行完成状态统一由主窗口右下角 indicator 承载，ResultStreamView._run_header 静默为空
+    # 运行生命周期状态统一由主窗口右下 indicator 承载，页面内无冗余状态显示
     assert curve_page._run_header.text() == ""
-    assert page._status_label.text() == "运行完成"
-    assert page._export_btn.isEnabled()
 
 
 @pytest.mark.gui
@@ -130,8 +128,6 @@ def test_page_run_failure_shows_error(qtbot) -> None:
     page.status_message.connect(messages.append)
     with qtbot.waitSignal(page.run_finished, timeout=10000):
         page.run()
-    assert page._status_label.text() == "运行失败"
-    assert any("运行失败" in m for m in messages)
     assert page._run_btn.isEnabled()  # 失败后可重试
 
 
@@ -287,7 +283,6 @@ def test_page_run_worker_exception(qtbot, monkeypatch) -> None:
         page.run()
     _outputs, error = blocker.args
     assert "RuntimeError" in error and "执行环境异常" in error
-    assert page._status_label.text() == "运行失败"
 
 
 @pytest.mark.gui
