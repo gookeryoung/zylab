@@ -101,7 +101,7 @@ class MainWindow(QMainWindow):
         from .qt_compat import QPushButton as _QPB
 
         self._sidebar_handle = _QPB(objectName="sidebarHandle")
-        self._sidebar_handle.setFixedHeight(24)
+        self._sidebar_handle.setFixedHeight(36)  # 与导航 item 同高（QListWidget#sidebar::item height: 36px）
         self._sidebar_handle.setCursor(Qt.PointingHandCursor)
         self._sidebar_handle.setToolTip("折叠/展开侧边栏 (Ctrl+B)")
         self._sidebar_handle.setText("«")
