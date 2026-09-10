@@ -299,6 +299,7 @@ def test_run_updown_bootstrap_correction() -> None:
     assert first.sigma_hat == second.sigma_hat
 
 
+@pytest.mark.slow()
 def test_dixon_mood_bootstrap_reduces_degenerate_bias() -> None:
     """步长超适用域（d/σ=3）场景：bootstrap 修正降低 σ̂ 的系统偏差.
 

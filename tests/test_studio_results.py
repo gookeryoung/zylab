@@ -278,6 +278,7 @@ results:
     assert data.series[0].y == (0.0, 1.0, 4.0)
 
 
+@pytest.mark.slow()
 def test_build_result_from_reliability_templates() -> None:
     """十个感度试验 DSL 模板端到端：节点执行 + 曲线/文本/表格三视图解析.
 
