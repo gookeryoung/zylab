@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-import platform
-
 from zylab import __version__
 from zylab.console import ReplKernel
 from zylab.core import EventBus, default_data_dir
@@ -19,7 +17,6 @@ from .qt_compat import (
     QEvent,
     QFileDialog,
     QFrame,
-    QGridLayout,
     QHBoxLayout,
     QKeySequence,
     QLabel,
@@ -29,7 +26,6 @@ from .qt_compat import (
     QMainWindow,
     QMenu,
     QPushButton,
-    QScrollArea,
     QShortcut,
     QSize,
     QSplitter,
@@ -46,7 +42,7 @@ __all__ = ["MainWindow"]
 _PAGE_CONSOLE = 0
 _PAGE_FEA = 1
 _PAGE_TEMPLATE = 2
-_PAGE_ABOUT = 3
+_NAV_LABELS = ("笔记本", "工作台", "计算模板")
 
 #: 侧边栏图标显示尺寸（像素）
 _NAV_ICON_SIZE = QSize(14, 14)
@@ -70,7 +66,13 @@ class MainWindow(QMainWindow):
         self._kernel = ReplKernel(self._bus)
         self._kernel.set_workspace_manager(self._workspace_manager)
 
+        # 侧边栏折叠状态（默认展开；恢复上次会话）
+        self._sidebar_folded = False
+
         self._build_ui()
+        self._load_gui_state()
+        self._apply_sidebar_folded()
+        self._install_page_shortcuts()
         self._setup_command_palette()
         self._connect()
         self.statusBar().showMessage("就绪")
@@ -90,10 +92,26 @@ class MainWindow(QMainWindow):
 
         splitter = QSplitter(Qt.Horizontal)
         self._sidebar = QListWidget(objectName="sidebar")
-        for label in ("笔记本", "分析", "模板", "关于"):
+        for label in _NAV_LABELS:
             QListWidgetItem(label, self._sidebar)
         self._sidebar.setIconSize(_NAV_ICON_SIZE)
         self._sidebar.setFixedWidth(theme.SIDEBAR_WIDTH)
+
+        # 侧边栏折叠手柄（包在容器底部）
+        from .qt_compat import QPushButton as _QPB
+
+        self._sidebar_handle = _QPB(objectName="sidebarHandle")
+        self._sidebar_handle.setFixedHeight(24)
+        self._sidebar_handle.setCursor(Qt.PointingHandCursor)
+        self._sidebar_handle.setToolTip("折叠/展开侧边栏 (Ctrl+B)")
+        self._sidebar_handle.setText("«")
+        self._sidebar_handle.clicked.connect(self._toggle_sidebar)
+        self._sidebar_container = QWidget()
+        _sb_layout = QVBoxLayout(self._sidebar_container)
+        _sb_layout.setContentsMargins(0, 0, 0, 0)
+        _sb_layout.setSpacing(0)
+        _sb_layout.addWidget(self._sidebar)
+        _sb_layout.addWidget(self._sidebar_handle)
         self._sidebar.setCurrentRow(_PAGE_CONSOLE)
         self._refresh_sidebar_icons()
 
@@ -101,13 +119,11 @@ class MainWindow(QMainWindow):
         self._notebook_page = NotebookPage(self._kernel, self._bus)
         self._studio_page = StudioPage()
         self._template_page = TemplatePage()
-        self._about_page = self._build_about_page()
         self._stack.addWidget(self._notebook_page)
         self._stack.addWidget(self._studio_page)
         self._stack.addWidget(self._template_page)
-        self._stack.addWidget(self._about_page)
 
-        splitter.addWidget(self._sidebar)
+        splitter.addWidget(self._sidebar_container)
         splitter.addWidget(self._stack)
         splitter.setStretchFactor(0, 0)
         splitter.setStretchFactor(1, 1)
@@ -177,6 +193,15 @@ class MainWindow(QMainWindow):
         self._command_search.installEventFilter(self)
         layout.addWidget(self._command_search, alignment=Qt.AlignVCenter)
 
+        # 右：帮助按钮（关于 zylab，降级自侧边栏导航项）
+        self._help_btn = QPushButton(objectName="headerHelpBtn")
+        self._help_btn.setToolTip("关于 zylab")
+        self._help_btn.setFixedSize(24, 24)
+        self._help_btn.setIconSize(QSize(12, 12))
+        self._help_btn.setIcon(nav_icon("question", theme.current_palette().nav_text))
+        self._help_btn.clicked.connect(self._open_about_dialog)
+        layout.addWidget(self._help_btn, alignment=Qt.AlignVCenter)
+
         self._refresh_workspace_ui()
         return bar
 
@@ -211,6 +236,10 @@ class MainWindow(QMainWindow):
         # 工作区下拉历史按钮（箭头）+ 打开文件夹按钮
         self._workspace_history_btn.setIcon(nav_icon("arrow_down", pal.nav_text))
         self._workspace_open_btn.setIcon(nav_icon("open_file", pal.nav_text))
+
+        # 手柄文字同步折叠状态
+        self._sidebar_handle.setText("»" if self._sidebar_folded else "«")
+        self._sidebar_handle.setToolTip("展开侧边栏 (Ctrl+B)" if self._sidebar_folded else "折叠侧边栏 (Ctrl+B)")
 
     def _refresh_workspace_ui(self) -> None:
         """刷新头部和状态栏的工作区路径显示（只读 self._workspace_manager）."""
@@ -266,106 +295,9 @@ class MainWindow(QMainWindow):
             self.statusBar().showMessage(f"切换失败：目录不存在 — {target_path}")
             return
         self._workspace_manager.save()
+        self._save_gui_state()
         self._refresh_workspace_menu()
         self.statusBar().showMessage(f"工作区已切换：{info.path}")
-
-    def _build_about_page(self) -> QWidget:
-        """构建关于页：卡片式布局，包含版本/环境/技术栈/许可证完整信息."""
-        # 外层滚动区：内容较多时可滚动，保持页面一致
-        scroll = QScrollArea(objectName="aboutScroll")
-        scroll.setWidgetResizable(True)
-        scroll.setFrameShape(QFrame.NoFrame)
-
-        container = QWidget(objectName="aboutContainer")
-        root = QVBoxLayout(container)
-        root.setContentsMargins(theme.SPACING_XL, theme.SPACING_XL, theme.SPACING_XL, theme.SPACING_XL)
-        root.setSpacing(theme.SPACING_LG)
-
-        # --- 头部：品牌区 ---
-        brand = QFrame(objectName="aboutBrand")
-        brand_layout = QVBoxLayout(brand)
-        brand_layout.setContentsMargins(theme.SPACING_LG, theme.SPACING_LG, theme.SPACING_LG, theme.SPACING_LG)
-        brand_layout.setSpacing(theme.SPACING_XS)
-        app_name = QLabel("zylab", objectName="aboutAppName")
-        app_desc = QLabel("通用科学计算仿真分析平台", objectName="aboutAppDesc")
-        app_desc.setWordWrap(True)
-        brand_layout.addWidget(app_name)
-        brand_layout.addWidget(app_desc)
-        root.addWidget(brand)
-
-        # --- 信息卡片网格 ---
-        grid = QGridLayout()
-        grid.setHorizontalSpacing(theme.SPACING_MD)
-        grid.setVerticalSpacing(theme.SPACING_MD)
-
-        grid.addWidget(self._build_info_card("产品版本", f"v{__version__}", None), 0, 0)
-        grid.addWidget(self._build_info_card("Python", platform.python_version(), None), 0, 1)
-        grid.addWidget(self._build_info_card("Qt 框架", self._qt_version(), None), 1, 0)
-        grid.addWidget(self._build_info_card("操作系统", f"{platform.system()} {platform.release()}", None), 1, 1)
-        root.addLayout(grid)
-
-        # --- 技术栈卡片 ---
-        tech_card = QFrame(objectName="aboutCard")
-        tech_layout = QVBoxLayout(tech_card)
-        tech_layout.setContentsMargins(theme.SPACING_LG, theme.SPACING_LG, theme.SPACING_LG, theme.SPACING_LG)
-        tech_layout.setSpacing(theme.SPACING_SM)
-        tech_title = QLabel("技术栈", objectName="aboutCardTitle")
-        tech_desc = QLabel(
-            "PySide2/PySide6 · NumPy · SciPy · matplotlib · 离线可用的 FEA 求解内核",
-            objectName="aboutBody",
-        )
-        tech_desc.setWordWrap(True)
-        tech_layout.addWidget(tech_title)
-        tech_layout.addWidget(tech_desc)
-        root.addWidget(tech_card)
-
-        # --- 开源信息 ---
-        license_card = QFrame(objectName="aboutCard")
-        lic_layout = QVBoxLayout(license_card)
-        lic_layout.setContentsMargins(theme.SPACING_LG, theme.SPACING_LG, theme.SPACING_LG, theme.SPACING_LG)
-        lic_layout.setSpacing(theme.SPACING_SM)
-        lic_title = QLabel("开源许可", objectName="aboutCardTitle")
-        lic_body = QLabel(
-            "zylab 采用 MIT License 开源发布。\n使用 Python 标准库与第三方开源库，各库保留其原始许可。",
-            objectName="aboutBody",
-        )
-        lic_body.setWordWrap(True)
-        lic_layout.addWidget(lic_title)
-        lic_layout.addWidget(lic_body)
-        root.addWidget(license_card)
-
-        root.addStretch()
-        scroll.setWidget(container)
-        return scroll
-
-    @staticmethod
-    def _build_info_card(title: str, value: str, _subtitle: str | None) -> QFrame:
-        """构建单条信息卡片（标题 + 值）."""
-        card = QFrame(objectName="aboutCard")
-        layout = QVBoxLayout(card)
-        layout.setContentsMargins(theme.SPACING_MD, theme.SPACING_MD, theme.SPACING_MD, theme.SPACING_MD)
-        layout.setSpacing(theme.SPACING_XS)
-        t = QLabel(title, objectName="aboutInfoTitle")
-        v = QLabel(value, objectName="aboutInfoValue")
-        v.setWordWrap(True)
-        layout.addWidget(t)
-        layout.addWidget(v)
-        return card
-
-    @staticmethod
-    def _qt_version() -> str:
-        """运行时 Qt 版本（PySide6 用 __version__，PySide2 无此属性时退回 qt_version_tag）."""
-        try:
-            from PySide6.QtCore import __version__  # type: ignore[attr-defined]
-
-            return f"PySide6 {__version__}"
-        except (ImportError, AttributeError):
-            try:
-                import PySide2  # type: ignore[import-not-found]
-
-                return f"PySide2 {getattr(PySide2, '__version__', 'unknown')}"
-            except ImportError:
-                return "unknown"
 
     def _connect(self) -> None:
         """连接导航与跨页信号；订阅工作区变更事件同步 UI；状态栏常驻工作区路径."""
@@ -399,6 +331,77 @@ class MainWindow(QMainWindow):
         self._register_commands()
         QShortcut(QKeySequence("Ctrl+Shift+P"), self, self._palette.open_commands)
 
+    def _open_about_dialog(self) -> None:
+        """弹出关于对话框（独立 QDialog，而非侧边栏页面）."""
+        from .qt_compat import QDialog
+
+        dlg = QDialog(self)
+        dlg.setWindowTitle("关于 zylab")
+        dlg.setMinimumWidth(420)
+        root = QVBoxLayout(dlg)
+        root.setContentsMargins(theme.SPACING_LG, theme.SPACING_LG, theme.SPACING_LG, theme.SPACING_LG)
+        root.setSpacing(theme.SPACING_MD)
+
+        brand = QLabel("zylab", objectName="aboutAppName")
+        desc = QLabel("通用科学计算仿真分析平台", objectName="aboutAppDesc")
+        desc.setWordWrap(True)
+        version_label = QLabel(f"版本 v{__version__}")
+        tech = QLabel("技术栈：PySide2/PySide6 · NumPy · SciPy · matplotlib · 离线 FEA 求解内核")
+        tech.setWordWrap(True)
+        lic = QLabel("开源许可：MIT License。\nzylab 采用 MIT License 开源发布，使用 Python 标准库与第三方开源库。")
+        lic.setWordWrap(True)
+
+        for w in (brand, desc, version_label, tech, lic):
+            root.addWidget(w)
+        root.addStretch()
+
+        dlg.exec_() if hasattr(dlg, "exec_") else dlg.exec()
+
+    def _install_page_shortcuts(self) -> None:
+        """页面级快捷键：Ctrl+1/2/3 直达，Ctrl+PgDn/PgUp 循环切换."""
+        from .qt_compat import QKeySequence
+
+        bindings = (
+            ("Ctrl+1", lambda: self._sidebar.setCurrentRow(_PAGE_CONSOLE)),
+            ("Ctrl+2", lambda: self._sidebar.setCurrentRow(_PAGE_FEA)),
+            ("Ctrl+3", lambda: self._sidebar.setCurrentRow(_PAGE_TEMPLATE)),
+            ("Ctrl+PageDown", self._cycle_next_page),
+            ("Ctrl+PageUp", self._cycle_prev_page),
+            ("Ctrl+B", self._toggle_sidebar),
+            ("F5", self._global_run),
+        )
+        for key, handler in bindings:
+            QShortcut(QKeySequence(key), self, activated=handler)  # type: ignore[arg-type]
+
+    def _cycle_next_page(self) -> None:
+        """Ctrl+PgDn：切换到下一页（循环回到首页）."""
+        current = self._sidebar.currentRow()
+        total = self._sidebar.count()
+        self._sidebar.setCurrentRow((current + 1) % total)
+
+    def _cycle_prev_page(self) -> None:
+        """Ctrl+PgUp：切换到上一页（循环到末页）."""
+        current = self._sidebar.currentRow()
+        total = self._sidebar.count()
+        self._sidebar.setCurrentRow((current - 1) % total)
+
+    def _global_run(self) -> None:
+        """F5 全局运行：按当前激活页分发到对应 run 方法.
+
+        - 笔记本页：run_all()（顺序执行全部单元）
+        - 工作台页：暂不支持直接运行
+        - 模板页：run()（运行当前 DSL 模板）
+        """
+        row = self._sidebar.currentRow()
+        if row == _PAGE_CONSOLE:
+            self.statusBar().showMessage("笔记本：运行全部单元（F5）…")
+            self._notebook_page.run_all()
+        elif row == _PAGE_FEA:
+            self.statusBar().showMessage("工作台：请通过模板或笔记本 F5 触发运行")
+        elif row == _PAGE_TEMPLATE:
+            self.statusBar().showMessage("计算模板：运行当前 DSL（F5）…")
+            self._template_page.run()
+
     def _register_commands(self) -> None:
         """注册全局命令（页面导航 / 笔记本操作 / 主题切换）."""
         page = self._notebook_page
@@ -414,7 +417,7 @@ class MainWindow(QMainWindow):
         register(
             Command(
                 "go.analysis",
-                "转到：分析",
+                "转到：工作台",
                 lambda: self._sidebar.setCurrentRow(_PAGE_FEA),
                 keywords="goto analysis fea",
             )
@@ -422,15 +425,13 @@ class MainWindow(QMainWindow):
         register(
             Command(
                 "go.template",
-                "转到：模板",
+                "转到：计算模板",
                 lambda: self._sidebar.setCurrentRow(_PAGE_TEMPLATE),
                 keywords="goto template dsl",
             )
         )
         register(Command("template.load", "加载 DSL 模板", self._open_template_page, keywords="load template dsl yaml"))
-        register(
-            Command("go.about", "转到：关于", lambda: self._sidebar.setCurrentRow(_PAGE_ABOUT), keywords="goto about")
-        )
+        register(Command("go.about", "关于 zylab", self._open_about_dialog, keywords="goto about help"))
         register(Command("notebook.new", "新建笔记本", page.new_notebook, keywords="new notebook", shortcut="Ctrl+N"))
         register(
             Command("notebook.open", "打开笔记本", page.open_notebook, keywords="open notebook", shortcut="Ctrl+O")
@@ -454,6 +455,15 @@ class MainWindow(QMainWindow):
                 shortcut="Ctrl+Shift+D",
             )
         )
+        register(
+            Command(
+                "run.global",
+                "F5：运行（按当前页自动分发）",
+                self._global_run,
+                keywords="run execute f5 运行",
+                shortcut="F5",
+            )
+        )
 
     def _open_template_page(self) -> None:
         """跳转模板页并直接弹出模板文件选择（命令面板一键加载）."""
@@ -467,11 +477,69 @@ class MainWindow(QMainWindow):
             return True
         return super().eventFilter(obj, event)
 
+    def _toggle_sidebar(self) -> None:
+        """切换侧边栏折叠状态."""
+        self._sidebar_folded = not self._sidebar_folded
+        self._apply_sidebar_folded()
+
+    def _apply_sidebar_folded(self) -> None:
+        """应用折叠状态：改变宽度 + 隐藏/显示导航项文字 + 刷新手柄."""
+        theme.current_palette()
+        if self._sidebar_folded:
+            self._sidebar.setFixedWidth(48)
+            self._sidebar_container.setFixedWidth(48)
+            for row in range(self._sidebar.count()):
+                item = self._sidebar.item(row)
+                item.setText("")
+                item.setToolTip(item.toolTip() if item.toolTip() else _NAV_LABELS[row])
+        else:
+            self._sidebar.setFixedWidth(theme.SIDEBAR_WIDTH)
+            self._sidebar_container.setFixedWidth(theme.SIDEBAR_WIDTH + 4)
+            labels = _NAV_LABELS
+            for row in range(self._sidebar.count()):
+                item = self._sidebar.item(row)
+                item.setText(labels[row])
+                item.setToolTip("")
+        self._refresh_sidebar_icons()
+
+    def _load_gui_state(self) -> None:
+        """加载 gui_state.json（侧边栏折叠、窗口几何等）."""
+        import json
+
+        try:
+            path = default_data_dir() / "gui_state.json"
+            if path.is_file():
+                state = json.loads(path.read_text(encoding="utf-8"))
+                self._sidebar_folded = bool(state.get("sidebar_folded", False))
+        except (OSError, ValueError):
+            pass  # 文件不存在或损坏，忽略
+
+    def _save_gui_state(self) -> None:
+        """保存 gui_state.json."""
+        import json
+
+        try:
+            path = default_data_dir() / "gui_state.json"
+            path.write_text(
+                json.dumps({"sidebar_folded": self._sidebar_folded}, indent=2),
+                encoding="utf-8",
+            )
+        except OSError:
+            pass
+
+    def resizeEvent(self, event) -> None:  # Qt 命名约定
+        """窗口宽度 <1000px 自动折叠侧边栏（窄屏响应）."""
+        super().resizeEvent(event)
+        if self.width() < 1000 and not self._sidebar_folded:
+            self._sidebar_folded = True
+            self._apply_sidebar_folded()
+
     def closeEvent(self, event) -> None:  # Qt 命名约定
         """关闭前询问保存笔记本，持久化工作区路径，终止后台求解执行器."""
         if not self._notebook_page.maybe_save():
             event.ignore()
             return
         self._workspace_manager.save()
+        self._save_gui_state()
         self._studio_page.shutdown()
         super().closeEvent(event)

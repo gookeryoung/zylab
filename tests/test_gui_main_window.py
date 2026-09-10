@@ -12,7 +12,13 @@ from zylab.gui.qt_compat import Qt
 
 @pytest.fixture
 def isolated_data_dir(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Path:
-    """劫持默认数据目录到临时路径，避免污染真实用户目录."""
+    """劫持默认数据目录到临时路径，避免污染真实用户目录.
+
+    Python from-import 在目标模块创建新绑定，monkeypatch 源头不会
+    影响已绑定名字，因此须同时 patch 所有引用目标。此处覆盖被测
+    main_window 模块与测试自身两处。
+    """
+    monkeypatch.setattr("zylab.core.default_data_dir", lambda: tmp_path)
     monkeypatch.setattr("zylab.gui.main_window.default_data_dir", lambda: tmp_path)
     return tmp_path
 
@@ -23,7 +29,7 @@ def test_main_window_builds(qtbot, isolated_data_dir: Path) -> None:
     win = MainWindow()
     qtbot.addWidget(win)
     assert "zylab" in win.windowTitle()
-    assert win._stack.count() == 4  # 笔记本/工作台/模板应用/关于
+    assert win._stack.count() == 3  # 笔记本/工作台/模板（关于已降级为头部帮助按钮）
     assert win._sidebar.currentRow() == 0
 
 
@@ -160,6 +166,7 @@ def test_main_window_registers_global_commands(qtbot, isolated_data_dir: Path) -
         "go.notebook",
         "go.analysis",
         "go.about",
+        "run.global",
         "notebook.new",
         "notebook.open",
         "notebook.save",
@@ -167,3 +174,142 @@ def test_main_window_registers_global_commands(qtbot, isolated_data_dir: Path) -
         "notebook.restart",
         "theme.select",
     } <= set(win._palette._by_id)
+
+
+@pytest.mark.gui
+def test_main_window_about_dialog_opens(qtbot, isolated_data_dir: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """帮助按钮存在；_open_about_dialog 调用可执行（monkeypatch exec_ 避免弹模态）."""
+    win = MainWindow()
+    qtbot.addWidget(win)
+    assert hasattr(win, "_help_btn") and win._help_btn is not None
+    # patch exec_/exec 避免真正弹模态（_open_about_dialog 内部局部导入 QDialog）
+    from zylab.gui.qt_compat import QDialog
+
+    monkeypatch.setattr(QDialog, "exec_", lambda _self: None, raising=False)
+    monkeypatch.setattr(QDialog, "exec", lambda _self: None, raising=False)
+    win._open_about_dialog()
+    # go.about 命令存在且已改为打开对话框
+    cmd = win._palette._by_id.get("go.about")
+    assert cmd is not None
+    assert "关于" in cmd.title
+
+
+@pytest.mark.gui
+def test_main_window_page_shortcuts_installed(qtbot, isolated_data_dir: Path) -> None:
+    """Ctrl+1/2/3 与 Ctrl+PgDn/PgUp 快捷键应安装."""
+    win = MainWindow()
+    qtbot.addWidget(win)
+    # 验证 5 个快捷键已安装（对象列表中能找到 activated 信号）
+    shortcuts = [obj for obj in win.children() if hasattr(obj, "activated") and "QShortcut" in type(obj).__name__]
+    assert len(shortcuts) >= 5, f"Expected >=5 shortcuts, got {len(shortcuts)}"
+
+
+@pytest.mark.gui
+def test_main_window_cycle_pages(qtbot, isolated_data_dir: Path) -> None:
+    """Ctrl+PgDn/PgUp 应循环切换侧边栏选中行."""
+    win = MainWindow()
+    qtbot.addWidget(win)
+    win._sidebar.setCurrentRow(0)
+    win._cycle_next_page()
+    assert win._sidebar.currentRow() == 1
+    win._cycle_next_page()
+    assert win._sidebar.currentRow() == 2
+    win._cycle_next_page()
+    assert win._sidebar.currentRow() == 0
+    win._cycle_prev_page()
+    assert win._sidebar.currentRow() == 2
+    win._cycle_prev_page()
+    assert win._sidebar.currentRow() == 1
+
+
+@pytest.mark.gui
+def test_main_window_sidebar_toggle(qtbot, isolated_data_dir):
+    """_toggle_sidebar 应切换折叠状态并更新宽度与手柄."""
+    win = MainWindow()
+    qtbot.addWidget(win)
+    assert not win._sidebar_folded
+    win._toggle_sidebar()
+    assert win._sidebar_folded
+    win._toggle_sidebar()
+    assert not win._sidebar_folded
+
+
+@pytest.mark.gui
+def test_main_window_gui_state_save_load(qtbot, isolated_data_dir):
+    """_save_gui_state 写入后 _load_gui_state 应能恢复."""
+    import json
+
+    from zylab.core import default_data_dir as _ddd
+
+    win = MainWindow()
+    qtbot.addWidget(win)
+    win._sidebar_folded = True
+    win._save_gui_state()
+    path = _ddd() / "gui_state.json"
+    assert path.is_file()
+    state = json.loads(path.read_text(encoding="utf-8"))
+    assert state["sidebar_folded"] is True
+    win._sidebar_folded = False
+    win._load_gui_state()
+    assert win._sidebar_folded is True
+    path.unlink()
+
+
+@pytest.mark.gui
+def test_main_window_f5_installed(qtbot, isolated_data_dir: Path) -> None:
+    """F5 全局运行快捷键应已安装."""
+    win = MainWindow()
+    qtbot.addWidget(win)
+    shortcuts = [obj for obj in win.children() if hasattr(obj, "activated") and "QShortcut" in type(obj).__name__]
+    # 快捷键总数：Ctrl+1/2/3 + Ctrl+PgDn/PgUp + Ctrl+B + F5 = 7
+    assert len(shortcuts) >= 7, f"Expected >=7 shortcuts, got {len(shortcuts)}"
+
+
+@pytest.mark.gui
+def test_main_window_f5_global_run_dispatches(qtbot, isolated_data_dir: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """F5 应按当前页分发给对应 run 方法."""
+    win = MainWindow()
+    qtbot.addWidget(win)
+
+    # patch 三个 run 方法为 spy，捕获调用
+    calls = {"nb": 0, "tp": 0, "msg": []}
+
+    def _spy_nb():
+        calls["nb"] += 1
+
+    def _spy_tp():
+        calls["tp"] += 1
+
+    def _spy_msg(text):
+        calls["msg"].append(text)
+
+    monkeypatch.setattr(win._notebook_page, "run_all", _spy_nb)
+    monkeypatch.setattr(win._template_page, "run", _spy_tp)
+    monkeypatch.setattr(win.statusBar(), "showMessage", _spy_msg, raising=False)
+
+    # 笔记本页 → run_all
+    win._sidebar.setCurrentRow(0)
+    win._global_run()
+    assert calls["nb"] == 1
+    assert calls["tp"] == 0
+    assert any("笔记本" in m for m in calls["msg"])
+
+    # 工作台页 → 提示不支持
+    calls["nb"] = 0
+    calls["tp"] = 0
+    calls["msg"].clear()
+    win._sidebar.setCurrentRow(1)
+    win._global_run()
+    assert calls["nb"] == 0
+    assert calls["tp"] == 0
+    assert any("工作台" in m for m in calls["msg"])
+
+    # 模板页 → run()
+    calls["nb"] = 0
+    calls["tp"] = 0
+    calls["msg"].clear()
+    win._sidebar.setCurrentRow(2)
+    win._global_run()
+    assert calls["nb"] == 0
+    assert calls["tp"] == 1
+    assert any("模板" in m for m in calls["msg"])
