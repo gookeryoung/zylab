@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import platform
-import sys
 
 from zylab import __version__
 from zylab.console import ReplKernel
@@ -17,7 +16,6 @@ from .pages.notebook_page import NotebookPage
 from .pages.studio_page import StudioPage
 from .pages.template_page import TemplatePage
 from .qt_compat import (
-    QDesktopServices,
     QEvent,
     QFileDialog,
     QFrame,
@@ -36,7 +34,6 @@ from .qt_compat import (
     QSplitter,
     QStackedWidget,
     Qt,
-    QUrl,
     QVBoxLayout,
     QWidget,
 )
@@ -117,66 +114,44 @@ class MainWindow(QMainWindow):
         self.setCentralWidget(central)
 
     def _build_header(self) -> QFrame:
-        """构建头部条：左侧标题 + 居中命令搜索框 + 工作区分组 + 分隔 + 环境版本分组."""
+        """构建头部条：左侧标题 + 居中 MATLAB 风格工作区地址栏 + 右侧功能搜索框."""
         bar = QFrame(objectName="headerBar")
         layout = QHBoxLayout(bar)
         layout.setContentsMargins(theme.SPACING_MD, 0, theme.SPACING_MD, 0)
-        # 左：标题
+        layout.setSpacing(theme.SPACING_SM)
+
+        # 左：应用标题
         layout.addWidget(QLabel("zylab", objectName="headerTitle"), alignment=Qt.AlignVCenter)
-        # 命令搜索框（VS Code 命令面板入口：点击或 Ctrl+Shift+P 弹出）
+
+        # 中：工作区地址栏（MATLAB 风格，居中且醒目）
+        workspace_bar = QFrame(objectName="workspaceBar")
+        ws_layout = QHBoxLayout(workspace_bar)
+        ws_layout.setContentsMargins(theme.SPACING_SM, 2, theme.SPACING_XS, 2)
+        ws_layout.setSpacing(theme.SPACING_XS)
+        ws_icon = QLabel(objectName="workspaceIcon")
+        ws_icon.setFixedSize(20, 20)
+        self._workspace_label = QLabel(objectName="workspaceLabel")
+        self._workspace_label.setToolTip("当前工作区（MATLAB 风格 cwd）")
+        self._workspace_label.setMinimumWidth(180)
+        self._workspace_label.setMaximumWidth(520)
+        self._workspace_btn = QPushButton(objectName="workspaceBtn")
+        self._workspace_btn.setToolTip("切换工作区目录")
+        self._workspace_btn.setFixedSize(26, 26)
+        self._workspace_btn.setIconSize(QSize(14, 14))
+        self._workspace_btn.clicked.connect(self._on_switch_workspace)
+        ws_layout.addWidget(ws_icon)
+        ws_layout.addWidget(self._workspace_label, stretch=1)
+        ws_layout.addWidget(self._workspace_btn)
+        layout.addWidget(workspace_bar, stretch=1, alignment=Qt.AlignVCenter)
+
+        # 右：功能搜索框（VS Code 命令面板入口：点击或 Ctrl+Shift+P 弹出）
         self._command_search = QLineEdit(objectName="commandSearch")
         self._command_search.setReadOnly(True)
         self._command_search.setPlaceholderText("搜索功能 (Ctrl+Shift+P)")
-        self._command_search.setFixedWidth(300)
-        self._command_search.setFixedHeight(26)
+        self._command_search.setFixedWidth(280)
+        self._command_search.setFixedHeight(28)
         self._command_search.installEventFilter(self)
-        layout.addWidget(self._command_search, stretch=1, alignment=Qt.AlignVCenter)
-
-        # headerGroup 内部元素统一高度，与 headerBar 整体高度配合
-        _ITEM_H = 26
-        _GROUP_MARGIN_V = 2  # 上/下 margin，配合 _ITEM_H 形成 30px 胶囊
-
-        # 工作区分组：tag + 路径 label + 切换按钮（包进 headerGroup 容器）
-        workspace_group = QFrame(objectName="headerGroup")
-        ws_layout = QHBoxLayout(workspace_group)
-        ws_layout.setContentsMargins(theme.SPACING_XS, _GROUP_MARGIN_V, theme.SPACING_XS, _GROUP_MARGIN_V)
-        ws_layout.setSpacing(theme.SPACING_XS)
-        ws_tag = QLabel("工作区", objectName="headerTag")
-        ws_tag.setFixedHeight(_ITEM_H)
-        self._workspace_label = QLabel(objectName="workspaceLabel")
-        self._workspace_label.setToolTip("当前工作区（MATLAB 风格 cwd）")
-        self._workspace_label.setFixedHeight(_ITEM_H)
-        self._workspace_btn = QPushButton(objectName="workspaceBtn")
-        self._workspace_btn.setToolTip("切换工作区目录")
-        self._workspace_btn.setFixedSize(_ITEM_H, _ITEM_H)
-        self._workspace_btn.setIconSize(QSize(14, 14))
-        self._workspace_btn.clicked.connect(self._on_switch_workspace)
-        ws_layout.addWidget(ws_tag)
-        ws_layout.addWidget(self._workspace_label)
-        ws_layout.addWidget(self._workspace_btn)
-        layout.addWidget(workspace_group, alignment=Qt.AlignVCenter)
-
-        # 竖向分隔线（与 headerGroup 同高：_ITEM_H + 上下 margin）
-        separator = QLabel(objectName="headerSeparator")
-        separator.setFixedWidth(1)
-        separator.setFixedHeight(_ITEM_H + _GROUP_MARGIN_V * 2)
-        layout.addWidget(separator, alignment=Qt.AlignVCenter)
-
-        # 环境版本分组：tag + Python 版本 + 应用版本（与工作区分组同高同 margin）
-        env_group = QFrame(objectName="headerGroup")
-        env_layout = QHBoxLayout(env_group)
-        env_layout.setContentsMargins(theme.SPACING_XS, _GROUP_MARGIN_V, theme.SPACING_XS, _GROUP_MARGIN_V)
-        env_layout.setSpacing(theme.SPACING_XS)
-        env_tag = QLabel("环境", objectName="headerTag")
-        env_tag.setFixedHeight(_ITEM_H)
-        meta_py = QLabel(f"Python {platform.python_version()}", objectName="headerMeta")
-        meta_py.setFixedHeight(_ITEM_H)
-        meta_ver = QLabel(f"v{__version__}", objectName="headerVersion")
-        meta_ver.setFixedHeight(_ITEM_H)
-        env_layout.addWidget(env_tag)
-        env_layout.addWidget(meta_py)
-        env_layout.addWidget(meta_ver)
-        layout.addWidget(env_group, alignment=Qt.AlignVCenter)
+        layout.addWidget(self._command_search, alignment=Qt.AlignVCenter)
 
         self._refresh_workspace_ui()
         return bar
@@ -201,28 +176,27 @@ class MainWindow(QMainWindow):
             self.statusBar().showMessage(f"主题已切换: {theme.current_palette().display_name}")
 
     def _refresh_sidebar_icons(self) -> None:
-        """按当前主题色重绘侧边栏图标（选中行用强调色）."""
+        """按当前主题色重绘侧边栏图标（选中行用强调色）+ 工作区图标."""
         pal = theme.current_palette()
         for row, name in enumerate(NAV_ICON_NAMES):
             item = self._sidebar.item(row)
             if item is not None:
                 color = pal.nav_accent if row == self._sidebar.currentRow() else pal.nav_text
                 item.setIcon(nav_icon(name, color))
-        # 工作区切换按钮（header 色系）
+        # 工作区切换按钮与文件夹图标
         self._workspace_btn.setIcon(nav_icon("open_project", pal.nav_text))
+        # 工作区地址栏前的文件夹图标（复用 open_file 图标，主题色）
+        icon_widget = self.findChild(QLabel, "workspaceIcon")
+        if icon_widget is not None:
+            icon_widget.setPixmap(nav_icon("open_file", pal.nav_accent).pixmap(18, 18))
 
     def _refresh_workspace_ui(self) -> None:
         """刷新头部和状态栏的工作区路径显示（只读 self._workspace_manager）."""
-        pal = theme.current_palette()
         wm = self._workspace_manager
         path_str = str(wm.cwd)
-        # 头部 label：显示目录名 + 父目录（如 "zylab · F:/Dev"），过长用省略
-        name = wm.cwd.name or wm.cwd.parent.name  # 根目录兜底
-        parent = wm.cwd.parent.name if wm.cwd.parent.name else wm.cwd.parent
-        display = f"{name} · {parent}"
-        self._workspace_label.setText(display)
-        self._workspace_label.setToolTip(path_str)
-        self._workspace_label.setStyleSheet(f"color: {pal.nav_text};")
+        # MATLAB 风格地址栏：显示完整路径（等宽字体自然对齐），过长自动省略
+        self._workspace_label.setText(path_str)
+        self._workspace_label.setToolTip(f"当前工作区：{path_str}")
         # 状态栏 widget：始终显示完整 cwd（等宽字体更易读）
         if hasattr(self, "_status_cwd_label"):
             self._status_cwd_label.setText(f"  📁 {path_str}")
@@ -246,15 +220,102 @@ class MainWindow(QMainWindow):
         self.statusBar().showMessage(f"工作区已切换：{info.path}")
 
     def _build_about_page(self) -> QWidget:
-        """构建关于页."""
-        page = QWidget()
-        layout = QVBoxLayout(page)
-        layout.setContentsMargins(theme.SPACING_LG, theme.SPACING_LG, theme.SPACING_LG, theme.SPACING_LG)
-        title = QLabel("zylab 通用科学计算仿真分析平台", objectName="pageTitle")
-        layout.addWidget(title)
-        layout.addWidget(QLabel(f"版本 {__version__} · Python {platform.python_version()} · 离线可用"))
-        layout.addStretch()
-        return page
+        """构建关于页：卡片式布局，包含版本/环境/技术栈/许可证完整信息."""
+        # 外层滚动区：内容较多时可滚动，保持页面一致
+        scroll = QScrollArea(objectName="aboutScroll")
+        scroll.setWidgetResizable(True)
+        scroll.setFrameShape(QFrame.NoFrame)
+
+        container = QWidget(objectName="aboutContainer")
+        root = QVBoxLayout(container)
+        root.setContentsMargins(theme.SPACING_XL, theme.SPACING_XL, theme.SPACING_XL, theme.SPACING_XL)
+        root.setSpacing(theme.SPACING_LG)
+
+        # --- 头部：品牌区 ---
+        brand = QFrame(objectName="aboutBrand")
+        brand_layout = QVBoxLayout(brand)
+        brand_layout.setContentsMargins(theme.SPACING_LG, theme.SPACING_LG, theme.SPACING_LG, theme.SPACING_LG)
+        brand_layout.setSpacing(theme.SPACING_XS)
+        app_name = QLabel("zylab", objectName="aboutAppName")
+        app_desc = QLabel("通用科学计算仿真分析平台", objectName="aboutAppDesc")
+        app_desc.setWordWrap(True)
+        brand_layout.addWidget(app_name)
+        brand_layout.addWidget(app_desc)
+        root.addWidget(brand)
+
+        # --- 信息卡片网格 ---
+        grid = QGridLayout()
+        grid.setHorizontalSpacing(theme.SPACING_MD)
+        grid.setVerticalSpacing(theme.SPACING_MD)
+
+        grid.addWidget(self._build_info_card("产品版本", f"v{__version__}", None), 0, 0)
+        grid.addWidget(self._build_info_card("Python", platform.python_version(), None), 0, 1)
+        grid.addWidget(self._build_info_card("Qt 框架", self._qt_version(), None), 1, 0)
+        grid.addWidget(self._build_info_card("操作系统", f"{platform.system()} {platform.release()}", None), 1, 1)
+        root.addLayout(grid)
+
+        # --- 技术栈卡片 ---
+        tech_card = QFrame(objectName="aboutCard")
+        tech_layout = QVBoxLayout(tech_card)
+        tech_layout.setContentsMargins(theme.SPACING_LG, theme.SPACING_LG, theme.SPACING_LG, theme.SPACING_LG)
+        tech_layout.setSpacing(theme.SPACING_SM)
+        tech_title = QLabel("技术栈", objectName="aboutCardTitle")
+        tech_desc = QLabel(
+            "PySide2/PySide6 · NumPy · SciPy · matplotlib · 离线可用的 FEA 求解内核",
+            objectName="aboutBody",
+        )
+        tech_desc.setWordWrap(True)
+        tech_layout.addWidget(tech_title)
+        tech_layout.addWidget(tech_desc)
+        root.addWidget(tech_card)
+
+        # --- 开源信息 ---
+        license_card = QFrame(objectName="aboutCard")
+        lic_layout = QVBoxLayout(license_card)
+        lic_layout.setContentsMargins(theme.SPACING_LG, theme.SPACING_LG, theme.SPACING_LG, theme.SPACING_LG)
+        lic_layout.setSpacing(theme.SPACING_SM)
+        lic_title = QLabel("开源许可", objectName="aboutCardTitle")
+        lic_body = QLabel(
+            "zylab 采用 MIT License 开源发布。\n使用 Python 标准库与第三方开源库，各库保留其原始许可。",
+            objectName="aboutBody",
+        )
+        lic_body.setWordWrap(True)
+        lic_layout.addWidget(lic_title)
+        lic_layout.addWidget(lic_body)
+        root.addWidget(license_card)
+
+        root.addStretch()
+        scroll.setWidget(container)
+        return scroll
+
+    @staticmethod
+    def _build_info_card(title: str, value: str, _subtitle: str | None) -> QFrame:
+        """构建单条信息卡片（标题 + 值）."""
+        card = QFrame(objectName="aboutCard")
+        layout = QVBoxLayout(card)
+        layout.setContentsMargins(theme.SPACING_MD, theme.SPACING_MD, theme.SPACING_MD, theme.SPACING_MD)
+        layout.setSpacing(theme.SPACING_XS)
+        t = QLabel(title, objectName="aboutInfoTitle")
+        v = QLabel(value, objectName="aboutInfoValue")
+        v.setWordWrap(True)
+        layout.addWidget(t)
+        layout.addWidget(v)
+        return card
+
+    @staticmethod
+    def _qt_version() -> str:
+        """运行时 Qt 版本（PySide6 用 __version__，PySide2 无此属性时退回 qt_version_tag）."""
+        try:
+            from PySide6.QtCore import __version__  # type: ignore[attr-defined]
+
+            return f"PySide6 {__version__}"
+        except (ImportError, AttributeError):
+            try:
+                import PySide2  # type: ignore[import-not-found]
+
+                return f"PySide2 {getattr(PySide2, '__version__', 'unknown')}"
+            except ImportError:
+                return "unknown"
 
     def _connect(self) -> None:
         """连接导航与跨页信号；订阅工作区变更事件同步 UI；状态栏常驻工作区路径."""

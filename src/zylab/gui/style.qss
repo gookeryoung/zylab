@@ -69,37 +69,42 @@ QLabel#headerSeparator {
     border: none;
     min-height: 28px;
 }
-/* 工作区显示（MATLAB 风格 cwd）：头部 nav 色系紧凑按钮组 */
+/* 工作区地址栏（MATLAB 风格 cwd 地址栏：居中、完整路径、等宽字体、浅边框） */
+QFrame#workspaceBar {
+    background-color: ${QSS_BG_INPUT};
+    border: 1px solid ${QSS_BORDER};
+    border-radius: ${RADIUS_SM};
+    min-height: 28px;
+    max-height: 30px;
+}
+QFrame#workspaceBar:hover { border-color: ${QSS_NAV_ACCENT}; }
+QLabel#workspaceIcon {
+    background: transparent;
+    border: none;
+}
 QLabel#workspaceLabel {
-    color: ${QSS_NAV_TEXT};
+    color: ${QSS_TEXT_PRIMARY};
     font-family: ${FONT_MONO};
-    font-size: ${FONT_CAPTION};
-    max-width: 240px;
+    font-size: ${FONT_BODY};
+    background: transparent;
+    border: none;
+    padding: 0;
 }
 QPushButton#workspaceBtn {
     background: transparent;
-    color: ${QSS_NAV_TEXT};
+    color: ${QSS_TEXT_SECONDARY};
     border: 1px solid transparent;
     border-radius: ${RADIUS_SM};
     padding: 0;
 }
 QPushButton#workspaceBtn:hover {
-    background-color: ${QSS_NAV_BG_HOVER};
+    background-color: ${QSS_SELECTION_BG};
     border-color: ${QSS_NAV_ACCENT};
+    color: ${QSS_PRIMARY};
 }
 QPushButton#workspaceBtn:pressed {
-    background-color: ${QSS_NAV_BG_SELECTED};
+    background-color: ${QSS_BG_MUTED};
 }
-QPushButton#headerBtn {
-    background: transparent;
-    color: ${QSS_NAV_TEXT};
-    border: 1px solid ${QSS_NAV_ACCENT};
-    border-radius: ${RADIUS_SM};
-    padding: 2px 12px;
-    min-height: 0;
-}
-QPushButton#headerBtn:hover { background-color: ${QSS_NAV_BG_HOVER}; }
-QPushButton#headerBtn:pressed { background-color: ${QSS_NAV_BG_SELECTED}; }
 
 /* 头部条命令搜索框（VS Code 命令面板入口，nav 色系） */
 QLineEdit#commandSearch {
@@ -636,3 +641,56 @@ QSplitter::handle { background-color: ${QSS_BG_MUTED}; }
 QSplitter::handle:hover { background-color: ${QSS_BORDER}; }
 QSplitter::handle:horizontal { width: 1px; }
 QSplitter::handle:vertical { height: 1px; }
+
+/* ------------------------------------------------ 关于页面 */
+QScrollArea#aboutScroll {
+    background-color: ${QSS_BG_APP};
+    border: none;
+}
+QWidget#aboutContainer {
+    background-color: ${QSS_BG_APP};
+}
+/* 品牌头部区（页面首屏） */
+QFrame#aboutBrand {
+    background-color: ${QSS_PRIMARY};
+    border: none;
+    border-radius: ${RADIUS_MD};
+}
+QLabel#aboutAppName {
+    color: ${QSS_PRIMARY_TEXT};
+    font-size: 28px;
+    font-weight: bold;
+    letter-spacing: 2px;
+}
+QLabel#aboutAppDesc {
+    color: ${QSS_PRIMARY_TEXT};
+    font-size: ${FONT_BODY};
+    opacity: 0.9;
+}
+/* 通用卡片 */
+QFrame#aboutCard {
+    background-color: ${QSS_BG_MUTED};
+    border: 1px solid ${QSS_BORDER};
+    border-radius: ${RADIUS_MD};
+}
+QLabel#aboutCardTitle {
+    color: ${QSS_TEXT_PRIMARY};
+    font-size: ${FONT_HEADING};
+    font-weight: bold;
+}
+QLabel#aboutBody {
+    color: ${QSS_TEXT_SECONDARY};
+    font-size: ${FONT_BODY};
+    line-height: 1.6;
+}
+/* 信息卡片（两列网格） */
+QLabel#aboutInfoTitle {
+    color: ${QSS_TEXT_SECONDARY};
+    font-size: ${FONT_CAPTION};
+}
+QLabel#aboutInfoValue {
+    color: ${QSS_TEXT_PRIMARY};
+    font-family: ${FONT_MONO};
+    font-size: ${FONT_BODY};
+    font-weight: bold;
+}

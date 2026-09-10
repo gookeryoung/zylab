@@ -270,6 +270,7 @@ __all__ = [
     "QTranslator",
     "QTreeWidget",
     "QTreeWidgetItem",
+    "QUrl",
     "QVBoxLayout",
     "QWidget",
     "Qt",
