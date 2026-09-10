@@ -112,10 +112,11 @@ class MainWindow(QMainWindow):
         self.setCentralWidget(central)
 
     def _build_header(self) -> QFrame:
-        """构建头部条：左侧标题 + 居中命令搜索框 + 工作区 + 右侧运行环境信息."""
+        """构建头部条：左侧标题 + 居中命令搜索框 + 工作区分组 + 分隔 + 环境版本分组."""
         bar = QFrame(objectName="headerBar")
         layout = QHBoxLayout(bar)
         layout.setContentsMargins(theme.SPACING_MD, 0, theme.SPACING_MD, 0)
+        # 左：标题
         layout.addWidget(QLabel("zylab", objectName="headerTitle"), alignment=Qt.AlignVCenter)
         # 命令搜索框（VS Code 命令面板入口：点击或 Ctrl+Shift+P 弹出）
         self._command_search = QLineEdit(objectName="commandSearch")
@@ -126,7 +127,12 @@ class MainWindow(QMainWindow):
         self._command_search.installEventFilter(self)
         layout.addWidget(self._command_search, stretch=1, alignment=Qt.AlignVCenter)
 
-        # MATLAB 风格工作区：路径 label + 切换按钮
+        # 工作区分组：tag + 路径 label + 切换按钮（包进 headerGroup 容器）
+        workspace_group = QFrame(objectName="headerGroup")
+        ws_layout = QHBoxLayout(workspace_group)
+        ws_layout.setContentsMargins(theme.SPACING_XS, 2, theme.SPACING_XS, 2)
+        ws_layout.setSpacing(theme.SPACING_XS)
+        ws_tag = QLabel("工作区", objectName="headerTag")
         self._workspace_label = QLabel(objectName="workspaceLabel")
         self._workspace_label.setToolTip("当前工作区（MATLAB 风格 cwd）")
         self._workspace_label.setFixedHeight(26)
@@ -135,12 +141,31 @@ class MainWindow(QMainWindow):
         self._workspace_btn.setFixedSize(26, 26)
         self._workspace_btn.setIconSize(QSize(14, 14))
         self._workspace_btn.clicked.connect(self._on_switch_workspace)
-        layout.addWidget(self._workspace_label, alignment=Qt.AlignVCenter)
-        layout.addWidget(self._workspace_btn, alignment=Qt.AlignVCenter)
-        self._refresh_workspace_ui()
+        ws_layout.addWidget(ws_tag)
+        ws_layout.addWidget(self._workspace_label)
+        ws_layout.addWidget(self._workspace_btn)
+        layout.addWidget(workspace_group, alignment=Qt.AlignVCenter)
 
-        meta = QLabel(f"Python {platform.python_version()} · v{__version__}", objectName="headerMeta")
-        layout.addWidget(meta, alignment=Qt.AlignVCenter)
+        # 竖向分隔线
+        separator = QLabel(objectName="headerSeparator")
+        separator.setFixedHeight(20)
+        separator.setFixedWidth(1)
+        layout.addWidget(separator, alignment=Qt.AlignVCenter)
+
+        # 环境版本分组：tag + Python 版本 + 应用版本
+        env_group = QFrame(objectName="headerGroup")
+        env_layout = QHBoxLayout(env_group)
+        env_layout.setContentsMargins(theme.SPACING_XS, 2, theme.SPACING_XS, 2)
+        env_layout.setSpacing(theme.SPACING_XS)
+        env_tag = QLabel("环境", objectName="headerTag")
+        meta_py = QLabel(f"Python {platform.python_version()}", objectName="headerMeta")
+        meta_ver = QLabel(f"v{__version__}", objectName="headerVersion")
+        env_layout.addWidget(env_tag)
+        env_layout.addWidget(meta_py)
+        env_layout.addWidget(meta_ver)
+        layout.addWidget(env_group, alignment=Qt.AlignVCenter)
+
+        self._refresh_workspace_ui()
         return bar
 
     def _set_theme(self, name: str, persist: bool) -> None:
