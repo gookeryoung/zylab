@@ -10,6 +10,7 @@ from zylab.studio.results import (
     CloudData,
     CurveData,
     CurveSeries,
+    TableColumn,
     TableData,
     TextData,
 )
@@ -55,7 +56,11 @@ def test_render_table(qtbot) -> None:
     """表格页：列标题 + 单元格格式化（浮点 6 位有效数字）."""
     view = DslResultView()
     qtbot.addWidget(view)
-    data = TableData(title="结果表", columns=("L", "uy"), rows=((40.0, -0.241234), (60.0, -0.81)))
+    data = TableData(
+        title="结果表",
+        columns=(TableColumn(title="L"), TableColumn(title="uy")),
+        rows=((40.0, -0.241234), (60.0, -0.81)),
+    )
     view.set_data(data)
     assert view._title.text() == "结果表"
     table = view._body

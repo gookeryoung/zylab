@@ -46,7 +46,7 @@ from .module import (
 from .project_io import ProjectIOError, load_workflow, save_workflow
 from .registry import TemplateRegistry
 from .report import build_html, build_markdown
-from .results import CloudData, CurveData, CurveSeries, TableData, TextData, ViewData, build_result
+from .results import CloudData, CurveData, CurveSeries, TableColumn, TableData, TextData, ViewData, build_result
 from .runner import NodeRunEvent, WorkflowRunner
 from .template import ParamGroup, Template, TemplateNode, load_template, save_template, template_from_json
 
@@ -76,6 +76,7 @@ __all__ = [
     "ReportFn",
     "RunOutcome",
     "StudioError",
+    "TableColumn",
     "TableData",
     "Template",
     "TemplateError",

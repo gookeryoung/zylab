@@ -19,6 +19,7 @@
 from __future__ import annotations
 
 import base64
+import math
 from html import escape
 from typing import Any, Mapping
 
@@ -28,12 +29,30 @@ from zylab.fea.viewdata import cmap_lut, deformed_coords, mesh_edges, nodal_stre
 
 from .dsl import DslReportSection, DslTemplate
 from .errors import TemplateError
-from .results import CloudData, CurveData, TableData, TextData, ViewData, build_result
+from .results import CloudData, CurveData, TableColumn, TableData, TextData, ViewData, build_result
+from .richtext import markdown_to_html
 
 __all__ = ["build_html", "build_markdown"]
 
 #: 曲线序列色表（与 GUI 图例配色风格一致的循环色）
 _CURVE_COLORS = ("#4c8bf5", "#e4572e", "#2ca02c", "#9467bd", "#ff7f0e", "#17becf")
+
+_SEMANTIC_COLOR_MAP: dict[str, str] = {
+    "primary": "#4c8bf5",
+    "success": "#2ca02c",
+    "warning": "#ff7f0e",
+    "danger": "#e4572e",
+    "info": "#17becf",
+    "text": "#222222",
+    "text_secondary": "#666666",
+}
+
+
+def _resolve_curve_color(spec: str | None, index: int) -> str:
+    if spec:
+        return _SEMANTIC_COLOR_MAP.get(spec, spec)
+    return _CURVE_COLORS[index % len(_CURVE_COLORS)]
+
 
 _SVG_W = 640  # SVG 画布宽（像素）
 _SVG_H = 400  # SVG 画布高（像素）
@@ -206,11 +225,20 @@ def _md_view(view: ViewData) -> list[str]:
         uri = _svg_data_uri(_curve_svg(view))
         return [f"![{view.title}]({uri})", ""]
     if isinstance(view, TableData):
-        lines = [f"**{view.title}**", "", "| " + " | ".join(view.columns) + " |", "|" + " --- |" * len(view.columns)]
-        lines += ["| " + " | ".join(_fmt(cell) for cell in row) + " |" for row in view.rows]
+        lines = [
+            f"**{view.title}**",
+            "",
+            "| " + " | ".join(view.column_titles) + " |",
+            "|" + " --- |" * len(view.columns),
+        ]
+        for row in view.rows:
+            cells = []
+            for ci, cell in enumerate(row):
+                cells.append(_fmt_with_col(cell, view.columns[ci]))
+            lines.append("| " + " | ".join(cells) + " |")
         return [*lines, ""]
     if isinstance(view, TextData):
-        return [view.text, ""]
+        return [view.text, ""]  # markdown 原文直通
     return [*_cloud_md(view), ""]
 
 
@@ -219,12 +247,24 @@ def _html_view(view: ViewData) -> str:
     if isinstance(view, CurveData):
         return f'<img alt="{escape(view.title)}" src="{_svg_data_uri(_curve_svg(view))}">'
     if isinstance(view, TableData):
-        head = "".join(f"<th>{escape(name)}</th>" for name in view.columns)
-        body = "".join(
-            "<tr>" + "".join(f"<td>{escape(_fmt(cell))}</td>" for cell in row) + "</tr>" for row in view.rows
+        head = "".join(
+            f'<th align="{_col_html_align(view.columns[i])}">{escape(view.columns[i].title)}</th>'
+            for i in range(len(view.columns))
         )
-        return f"<table><tr>{head}</tr>{body}</table>"
+        body = ""
+        for row in view.rows:
+            cells = []
+            for ci, cell in enumerate(row):
+                cells.append(
+                    f'<td align="{_col_html_align(view.columns[ci])}">{escape(_fmt_with_col(cell, view.columns[ci]))}</td>'
+                )
+            body += "<tr>" + "".join(cells) + "</tr>"
+        return (
+            f'<table border="1" cellspacing="0" cellpadding="4" style="border-collapse:collapse">{head}{body}</table>'
+        )
     if isinstance(view, TextData):
+        if view.format == "markdown":
+            return markdown_to_html(view.text)
         return f"<p>{escape(view.text)}</p>"
     svg, fallback = _cloud_svg(view)
     if svg is None:
@@ -247,6 +287,24 @@ def _fmt(value: Any) -> str:
     return str(value)
 
 
+def _fmt_with_col(value: Any, col_def: TableColumn) -> str:
+    """按列声明的 printf 格式规格格式化单元格."""
+    fmt = col_def.format or ".6g"
+    if fmt and isinstance(value, float):
+        try:
+            return format(value, fmt)
+        except (ValueError, TypeError):
+            return str(value)
+    return str(value)
+
+
+def _col_html_align(col_def: TableColumn) -> str:
+    """HTML 表格列对齐（缺省 right）."""
+    if col_def.align in ("left", "center"):
+        return col_def.align
+    return "right"
+
+
 def _svg_data_uri(svg: str) -> str:
     """SVG 文本转 base64 data URI（自包含可离线渲染）."""
     return "data:image/svg+xml;base64," + base64.b64encode(svg.encode("utf-8")).decode("ascii")
@@ -265,7 +323,19 @@ def _curve_svg(data: CurveData) -> str:
     ys = [y for series in data.series for y in series.y]
     if not xs or not ys:
         raise TemplateError(f"曲线结果 {data.title!r} 无数据点")
-    x_min, x_max, y_min, y_max = min(xs), max(xs), min(ys), max(ys)
+    # 对数轴：所有数据点必须为正值
+    if data.log_x:
+        if any(x <= 0 for x in xs):
+            raise TemplateError(f"曲线结果 {data.title!r} 对数 x 轴遇非正值")
+        x_min, x_max = min(xs), max(xs)
+    else:
+        x_min, x_max = min(xs), max(xs)
+    if data.log_y:
+        if any(y <= 0 for y in ys):
+            raise TemplateError(f"曲线结果 {data.title!r} 对数 y 轴遇非正值")
+        y_min, y_max = min(ys), max(ys)
+    else:
+        y_min, y_max = min(ys), max(ys)
     if x_min == x_max:
         x_min, x_max = x_min - 1.0, x_max + 1.0
     if y_min == y_max:
@@ -278,13 +348,35 @@ def _curve_svg(data: CurveData) -> str:
         f'<rect x="{_SVG_PAD_L}" y="{_SVG_PAD_T}" width="{plot_w}" height="{plot_h}" fill="none" stroke="#cccccc"/>'
     )
     for index, series in enumerate(data.series):
-        points = " ".join(
-            f"{_SVG_PAD_L + (x - x_min) / (x_max - x_min) * plot_w:.1f},"
-            f"{_SVG_PAD_T + (1.0 - (y - y_min) / (y_max - y_min)) * plot_h:.1f}"
-            for x, y in zip(series.x, series.y)
+        style = data.series_styles[index] if index < len(data.series_styles) else {}
+
+        def _sx(x: float) -> float:
+            if data.log_x and x > 0 and x_min > 0:
+                v = (math.log10(x) - math.log10(x_min)) / (math.log10(x_max) - math.log10(x_min))
+            else:
+                v = (x - x_min) / (x_max - x_min)
+            return _SVG_PAD_L + v * plot_w
+
+        def _sy(y: float) -> float:
+            if data.log_y and y > 0 and y_min > 0:
+                v = (math.log10(y_max) - math.log10(y)) / (math.log10(y_max) - math.log10(y_min))
+            else:
+                v = 1.0 - (y - y_min) / (y_max - y_min)
+            return _SVG_PAD_T + v * plot_h
+
+        points = " ".join(f"{_sx(x):.1f},{_sy(y):.1f}" for x, y in zip(series.x, series.y))
+        color = _resolve_curve_color(style.get("color"), index)
+        stroke_w = float(style.get("width", 2))
+        dash = style.get("dash")
+        dash_attr = (
+            ' stroke-dasharray="4,2"' if dash == "dashed" else (' stroke-dasharray="1,2"' if dash == "dotted" else "")
         )
-        color = _CURVE_COLORS[index % len(_CURVE_COLORS)]
-        parts.append(f'<polyline points="{points}" fill="none" stroke="{color}" stroke-width="2"/>')
+        parts.append(f'<polyline points="{points}" fill="none" stroke="{color}" stroke-width="{stroke_w}"{dash_attr}/>')
+        if data.mark_peak and len(series.y) > 0:
+            peak_idx = max(range(len(series.y)), key=lambda i: abs(series.y[i]))  # type: ignore[arg-type]
+            parts.append(
+                f'<circle cx="{_sx(series.x[peak_idx]):.1f}" cy="{_sy(series.y[peak_idx]):.1f}" r="4" fill="#EF4444"/>'
+            )
     parts += _svg_axes(data, (x_min, x_max, y_min, y_max), (plot_w, plot_h))
     parts += _svg_legend(data)
     parts.append("</svg>")
@@ -324,7 +416,8 @@ def _svg_legend(data: CurveData) -> list[str]:
     """图例（右上角色块 + 序列名）."""
     parts: list[str] = []
     for index, series in enumerate(data.series):
-        color = _CURVE_COLORS[index % len(_CURVE_COLORS)]
+        style = data.series_styles[index] if index < len(data.series_styles) else {}
+        color = _resolve_curve_color(style.get("color"), index)
         x = _SVG_W - _SVG_PAD_R - 140
         y = _SVG_PAD_T + 8 + index * 18
         parts.append(f'<rect x="{x}" y="{y}" width="12" height="12" fill="{color}"/>')

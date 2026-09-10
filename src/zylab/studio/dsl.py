@@ -97,8 +97,11 @@ class DslResult:
     :param id: 结果项 id（参数化计算内唯一）。
     :param kind: 视图种类（curve/table/text/cloud）。
     :param title: 结果页签标题（分组时为组内块标题）。
-    :param spec: 种类相关配置（curve 的 x/y、table 的 columns、cloud 的 ref/field）。
+    :param spec: 种类相关配置（curve 的 x/y/log_y/series、table 的 columns、
+        cloud 的 ref/field、text 的 text/values/format/style）。
     :param group: 分组名（非空时同组结果合并为一页按块渲染；空串独立成页）。
+    :param format: 渲染格式（text 专用：plain/markdown；缺省 plain）。
+    :param style: 语义色（info/success/warning/error；缺省空串 = 无色）。
     """
 
     id: str
@@ -106,6 +109,8 @@ class DslResult:
     title: str
     spec: dict[str, Any]
     group: str = ""
+    format: str = ""
+    style: str = ""
 
 
 @dataclass(frozen=True)
@@ -385,9 +390,22 @@ def _parse_results(raw: Any) -> tuple[DslResult, ...]:
             raise TemplateError(f"结果 id 重复: {rid!r}")
         seen.add(rid)
         group = str(spec_raw.get("group", ""))
-        spec = {k: v for k, v in spec_raw.items() if k not in ("id", "kind", "title", "group")}
+        fmt = str(spec_raw.get("format", ""))
+        style = str(spec_raw.get("style", ""))
+        non_spec_keys = {"id", "kind", "title", "group", "format", "style"}
+        spec = {k: v for k, v in spec_raw.items() if k not in non_spec_keys}
         _validate_result_spec(kind, spec, rid)
-        results.append(DslResult(id=rid, kind=kind, title=str(spec_raw.get("title", rid)), spec=spec, group=group))
+        results.append(
+            DslResult(
+                id=rid,
+                kind=kind,
+                title=str(spec_raw.get("title", rid)),
+                spec=spec,
+                group=group,
+                format=fmt,
+                style=style,
+            )
+        )
     return tuple(results)
 
 

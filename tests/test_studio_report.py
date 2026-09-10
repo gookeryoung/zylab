@@ -111,7 +111,7 @@ def test_html_structure() -> None:
     assert "<title>悬臂梁扫参</title>" in html
     assert '<img alt="平方曲线" src="data:image/svg+xml;base64,' in html
     assert "<th>title</th>" not in html  # 表头用声明列名
-    assert "<td>2</td><td>4</td>" in html
+    assert '<td align="right">2</td><td align="right">4</td>' in html
     assert "<style>" in html
 
 
@@ -355,3 +355,190 @@ def test_cloud_svg_mode_shape_embedded() -> None:
     assert svg.startswith("<svg")
     assert svg.count("<polygon") == 4
     assert "一阶振型模" in svg
+
+
+# ---------------------------------------------------------------- L3 曲线/表格/文本增强测试
+
+
+def test_curve_log_axis_and_peak_svg() -> None:
+    """L3 曲线增强：log_x/log_y 对数轴 + mark_peak + series_styles 渲染为 SVG."""
+    from zylab.studio.report import _curve_svg
+    from zylab.studio.results import CurveData, CurveSeries
+
+    curve = CurveData(
+        title="对数轴曲线",
+        series=(CurveSeries(name="y", x=(1.0, 10.0, 50.0, 100.0), y=(2.0, 20.0, 100.0, 200.0)),),
+        x_label="x",
+        y_label="y",
+        log_x=True,
+        log_y=True,
+        mark_peak=True,
+        series_styles=({"color": "primary", "dash": "dashed", "width": 3},),
+    )
+    svg = _curve_svg(curve)
+    assert svg.startswith('<svg xmlns="http://www.w3.org/2000/svg"')
+    assert "<circle " in svg  # 峰值标记
+    assert 'stroke-dasharray="4,2"' in svg  # dashed 线型
+    assert 'stroke-width="3.0"' in svg
+    assert 'stroke="#4c8bf5"' in svg  # primary 语义色
+
+
+def test_curve_defaults_without_log_peak_style() -> None:
+    """L3 曲线增强：非对数/无峰值/无自定义样式时用默认值."""
+    from zylab.studio.report import _curve_svg
+    from zylab.studio.results import CurveData, CurveSeries
+
+    curve = CurveData(
+        title="简单曲线",
+        series=(CurveSeries(name="y", x=(0.0, 1.0, 2.0), y=(0.0, 1.0, 4.0)),),
+        log_x=False,
+        log_y=False,
+        mark_peak=False,
+    )
+    svg = _curve_svg(curve)
+    assert "<circle " not in svg  # 无峰值标记
+    assert 'stroke="#4c8bf5"' in svg  # 默认循环色表第 0 个
+
+
+def test_table_column_format_and_align_in_html_and_md() -> None:
+    """L3 表格增强：列级 printf format 和 align 在 Markdown/HTML 双载体渲染."""
+    from zylab.studio.report import _html_view, _md_view
+    from zylab.studio.results import TableColumn, TableData
+
+    table = TableData(
+        title="格式化表格",
+        columns=(
+            TableColumn(title="X", format=".2f", align="right"),
+            TableColumn(title="Y", format=".4g", align="center"),
+        ),
+        rows=((1.23456, 200.0), (50.0, 4000.1)),
+    )
+    html = _html_view(table)
+    md_lines = _md_view(table)
+    md_text = "|".join(md_lines)
+    assert 'align="right"' in html
+    assert 'align="center"' in html
+    assert "1.23" in md_text
+    assert "200" in md_text
+
+
+def test_markdown_text_rendered_in_html_report() -> None:
+    """L3 文本增强：format=markdown 时 HTML 报告中渲染为 HTML（非 escape 原文）."""
+    from zylab.studio.report import _html_view, _md_view
+    from zylab.studio.results import TextData
+
+    text = TextData(
+        title="摘要",
+        text="# 警告 **严重错误**",
+        format="markdown",
+        style="danger",
+    )
+    html = _html_view(text)
+    md_lines = _md_view(text)
+    assert "<h1>警告" in html and "</h1>" in html
+    assert "<strong>严重错误</strong>" in html
+    assert "# 警告" not in html  # 已被渲染成 <h1>
+    # Markdown 载体直接输出原文
+    assert any("警告" in line and "严重错误" in line for line in md_lines)
+
+
+def test_resolve_curve_color_semantic_and_fallback() -> None:
+    """_resolve_curve_color 支持语义色名解析 + hex 直通 + 循环色表回落."""
+    from zylab.studio.report import _CURVE_COLORS, _resolve_curve_color
+
+    assert _resolve_curve_color("primary", 0) == "#4c8bf5"
+    assert _resolve_curve_color("#FF0000", 0) == "#FF0000"  # hex 直通
+    assert _resolve_curve_color(None, 2) == _CURVE_COLORS[2]  # 循环色表回落
+
+
+def test_curve_degenerate_range_handled() -> None:
+    """退化为单值的曲线数据（x_min==x_max, y_min==y_max）渲染正常."""
+    from zylab.studio.report import _curve_svg
+    from zylab.studio.results import CurveData, CurveSeries
+
+    curve = CurveData(
+        title="退化曲线",
+        series=(CurveSeries(name="y", x=(5.0, 5.0, 5.0), y=(3.0, 3.0, 3.0)),),
+    )
+    svg = _curve_svg(curve)
+    assert svg.startswith('<svg xmlns="http://www.w3.org/2000/svg"')
+
+
+def test_curve_log_axis_rejects_non_positive() -> None:
+    """对数轴遇到非正值时抛 TemplateError."""
+    from zylab.studio.errors import TemplateError
+    from zylab.studio.report import _curve_svg
+    from zylab.studio.results import CurveData, CurveSeries
+
+    curve = CurveData(
+        title="错误曲线",
+        series=(CurveSeries(name="y", x=(-1.0, 2.0), y=(1.0, 4.0)),),
+        log_x=True,
+    )
+    try:
+        _curve_svg(curve)
+        raise AssertionError("应抛 TemplateError")
+    except TemplateError:
+        pass
+
+
+def test_table_default_format_when_not_specified() -> None:
+    """TableColumn 缺省 format 使用 .6g."""
+    from zylab.studio.report import _fmt_with_col
+    from zylab.studio.results import TableColumn
+
+    col = TableColumn(title="X")
+    assert _fmt_with_col(1.23456789, col) == "1.23457"
+
+
+def test_markdown_text_style_field_preserved_in_html() -> None:
+    """TextData style 字段在 HTML 输出中不报错（非 markdown 时走 escape 分支）."""
+    from zylab.studio.report import _html_view
+    from zylab.studio.results import TextData
+
+    text = TextData(title="t", text="hello", format="plain", style="info")
+    html = _html_view(text)
+    assert "<p>hello</p>" in html
+
+
+def test_curve_log_y_axis_rejects_non_positive() -> None:
+    """对数 y 轴遇到非正值时抛 TemplateError."""
+    from zylab.studio.errors import TemplateError
+    from zylab.studio.report import _curve_svg
+    from zylab.studio.results import CurveData, CurveSeries
+
+    curve = CurveData(
+        title="错误曲线",
+        series=(CurveSeries(name="y", x=(1.0, 2.0), y=(-1.0, 4.0)),),
+        log_y=True,
+    )
+    try:
+        _curve_svg(curve)
+        raise AssertionError("应抛 TemplateError")
+    except TemplateError:
+        pass
+
+
+def test_fmt_non_float_passthrough() -> None:
+    """_fmt 函数对非 float 值直接 str()."""
+    from zylab.studio.report import _fmt
+
+    assert _fmt("hello") == "hello"
+    assert _fmt(42) == "42"
+
+
+def test_fmt_with_col_raises_and_falls_back() -> None:
+    """_fmt_with_col 非法格式字符串回落 str."""
+    from zylab.studio.report import _fmt_with_col
+    from zylab.studio.results import TableColumn
+
+    assert _fmt_with_col(1.5, TableColumn(title="X", format="invalid")) == "1.5"
+
+
+def test_fmt_with_col_non_float_passthrough() -> None:
+    """_fmt_with_col 对非 float 值直接 str() 返回."""
+    from zylab.studio.report import _fmt_with_col
+    from zylab.studio.results import TableColumn
+
+    assert _fmt_with_col("hello", TableColumn(title="X", format=".2f")) == "hello"
+    assert _fmt_with_col(42, TableColumn(title="Y")) == "42"

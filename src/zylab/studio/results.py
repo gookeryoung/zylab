@@ -29,6 +29,7 @@ __all__ = [
     "CloudData",
     "CurveData",
     "CurveSeries",
+    "TableColumn",
     "TableData",
     "TextData",
     "ViewData",
@@ -52,6 +53,20 @@ class CurveSeries:
 
 
 @dataclass(frozen=True)
+class TableColumn:
+    """表格列定义（标题 + 可选格式/对齐）.
+
+    :param title: 列标题。
+    :param format: printf 格式规格（如 ".4g"）；空串用默认 ".6g"。
+    :param align: 对齐（left/center/right）；空串按类型自动。
+    """
+
+    title: str
+    format: str = ""
+    align: str = ""
+
+
+@dataclass(frozen=True)
 class CurveData:
     """曲线视图数据.
 
@@ -65,6 +80,10 @@ class CurveData:
     x_label: str = ""
     y_label: str = ""
     series: tuple[CurveSeries, ...] = ()
+    log_x: bool = False
+    log_y: bool = False
+    mark_peak: bool = False
+    series_styles: tuple[dict, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -77,8 +96,13 @@ class TableData:
     """
 
     title: str
-    columns: tuple[str, ...] = ()
+    columns: tuple[TableColumn, ...] = ()
     rows: tuple[tuple[Any, ...], ...] = ()
+
+    @property
+    def column_titles(self) -> tuple[str, ...]:
+        """列标题元组（向后兼容便利属性）。"""
+        return tuple(c.title for c in self.columns)
 
 
 @dataclass(frozen=True)
@@ -91,6 +115,8 @@ class TextData:
 
     title: str
     text: str = ""
+    format: str = ""
+    style: str = ""
 
 
 @dataclass(frozen=True)
@@ -161,11 +187,17 @@ def _build_curve(result: DslResult, outputs: Mapping[str, Any]) -> CurveData:
                 f"曲线结果 {result.id!r} 序列 {ref!r} 长度 {len(y_values)} 与 x 长度 {len(x_values)} 不匹配"
             )
         series.append(CurveSeries(name=ref.rpartition(".")[2], x=x_values, y=y_values))
+    series_styles_raw = spec.get("series", [])
+    series_styles = tuple(dict(s) for s in series_styles_raw) if isinstance(series_styles_raw, list) else ()
     return CurveData(
         title=result.title,
         x_label=str(spec.get("x_label", "")),
         y_label=str(spec.get("y_label", "")),
         series=tuple(series),
+        log_x=bool(spec.get("log_x", False)),
+        log_y=bool(spec.get("log_y", False)),
+        mark_peak=bool(spec.get("mark_peak", False)),
+        series_styles=series_styles,
     )
 
 
@@ -189,7 +221,21 @@ def _build_table(result: DslResult, outputs: Mapping[str, Any]) -> TableData:
     if len(lengths) > 1:
         raise TemplateError(f"表格结果 {result.id!r} 各列长度不一致: {sorted(lengths)}")
     rows = tuple(tuple(values[i] for values in column_values) for i in range(lengths.pop()))
-    return TableData(title=result.title, columns=tuple(titles), rows=rows)
+    columns_list: list[TableColumn] = []
+    for entry in columns_raw:
+        if isinstance(entry, Mapping):
+            ref = str(entry["ref"])
+            columns_list.append(
+                TableColumn(
+                    title=str(entry.get("title", ref.rpartition(".")[2])),
+                    format=str(entry.get("format", "")),
+                    align=str(entry.get("align", "")),
+                )
+            )
+        else:
+            ref = str(entry)
+            columns_list.append(TableColumn(title=ref.rpartition(".")[2]))
+    return TableData(title=result.title, columns=tuple(columns_list), rows=rows)
 
 
 def _build_text(result: DslResult, outputs: Mapping[str, Any]) -> TextData:
@@ -204,7 +250,12 @@ def _build_text(result: DslResult, outputs: Mapping[str, Any]) -> TextData:
         text = template.format(**subs)
     except (KeyError, IndexError, ValueError) as exc:
         raise TemplateError(f"文本结果 {result.id!r} 格式化失败: {exc}") from exc
-    return TextData(title=result.title, text=text)
+    return TextData(
+        title=result.title,
+        text=text,
+        format=result.format,
+        style=result.style,
+    )
 
 
 # ------------------------------------------------------------------ 引用解析

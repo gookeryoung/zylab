@@ -383,3 +383,29 @@ def test_load_dsl_yaml_error_wrapped_with_filename(tmp_path: Path) -> None:
     path.write_text("meta: {id: a, name: b}\npipeline: []\n", encoding="utf-8")  # 空节点列表
     with pytest.raises(TemplateError, match=r"bad\.yaml 非法"):
         load_dsl(path)
+
+
+def test_result_format_style_parsed() -> None:
+    """结果声明的 format / style 字段解析为 DslResult 顶层字段并从 spec 剔除."""
+    text = _MINIMAL_YAML.replace(
+        "  - id: summary\n    kind: text\n    title: 摘要\n    text: 计算完成",
+        "  - id: summary\n    kind: text\n    title: 摘要\n    format: markdown\n    style: success\n    text: 计算完成",
+    )
+    parsed = dsl_from_yaml(text)
+    summary = next(r for r in parsed.dsl_results if r.id == "summary")
+    assert summary.format == "markdown"
+    assert summary.style == "success"
+    assert "format" not in summary.spec and "style" not in summary.spec
+
+
+def test_curve_new_fields_accepted() -> None:
+    """curve 结果声明的 log_y / mark_peak / series 接受并进入 spec."""
+    text = _MINIMAL_YAML.replace(
+        "  - id: summary\n    kind: text\n    title: 摘要\n    text: 计算完成",
+        "  - id: curve_new\n    kind: curve\n    title: 曲线\n    x: test.x\n    y: test.y\n    log_y: true\n    mark_peak: true\n    series: [{color: primary}]",
+    )
+    parsed = dsl_from_yaml(text)
+    curve = next(r for r in parsed.dsl_results if r.id == "curve_new")
+    assert curve.spec.get("log_y") is True
+    assert curve.spec.get("mark_peak") is True
+    assert curve.spec.get("series") == [{"color": "primary"}]

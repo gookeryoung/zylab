@@ -109,7 +109,7 @@ def test_table_columns_transposed_to_rows() -> None:
     )
     data = build_result(result, _outputs())
     assert isinstance(data, TableData)
-    assert data.columns == ("长度 L", "tip")
+    assert data.column_titles == ("长度 L", "tip")
     assert data.rows == ((40.0, -0.24), (60.0, -0.81), (80.0, -1.92))
 
 
@@ -330,7 +330,7 @@ def test_build_result_from_reliability_templates() -> None:
             assert low < high
         table = views["records"]
         assert isinstance(table, TableData)
-        assert table.columns == ("刺激量", "响应")
+        assert table.column_titles == ("刺激量", "响应")
         assert len(table.rows) > 0
         assert all(len(row) == 2 for row in table.rows)
         if template.id in ("dsl.sensitivity_updown", "dsl.sensitivity_updown_records"):
@@ -340,8 +340,71 @@ def test_build_result_from_reliability_templates() -> None:
             assert "n = " in params_text.text and "ρ = " in params_text.text
             points = views["response_table"]
             assert isinstance(points, TableData)
-            assert points.columns == ("响应概率", "刺激量估计", "标准误", "置信下限", "置信上限")
+            assert points.column_titles == ("响应概率", "刺激量估计", "标准误", "置信下限", "置信上限")
             assert len(points.rows) > 0
             for row in points.rows:
                 low, high = float(row[3]), float(row[4])
                 assert low < high
+
+
+def test_text_format_and_style_passthrough() -> None:
+    """TextData 透传 DSL 层的 format / style 字段."""
+    from zylab.studio.dsl import DslResult
+
+    result = DslResult(
+        id="r1",
+        kind="text",
+        title="摘要",
+        spec={"text": "ok"},
+        format="markdown",
+        style="success",
+    )
+    data = build_result(result, {})
+    assert isinstance(data, TextData)
+    assert data.format == "markdown"
+    assert data.style == "success"
+
+
+def test_curve_log_and_peak_passthrough() -> None:
+    """CurveData 透传 DSL 层的 log_y / mark_peak / series_styles."""
+    from zylab.studio.dsl import DslResult
+
+    result = DslResult(
+        id="c1",
+        kind="curve",
+        title="曲线",
+        spec={
+            "x": "sweep.values",
+            "y": "sweep.series.tip",
+            "log_y": True,
+            "mark_peak": True,
+            "series": [{"color": "primary"}],
+        },
+    )
+    data = build_result(result, _outputs())
+    assert isinstance(data, CurveData)
+    assert data.log_y is True
+    assert data.mark_peak is True
+    assert data.series_styles == ({"color": "primary"},)
+
+
+def test_table_column_format_and_align_passthrough() -> None:
+    """TableColumn 透传 DSL 层的 format / align 列级字段."""
+    result = _result(
+        "table",
+        {
+            "columns": [
+                {"title": "L", "ref": "sweep.values", "format": ".4g", "align": "right"},
+                "sweep.series.tip",
+            ],
+        },
+    )
+    data = build_result(result, _outputs())
+    assert isinstance(data, TableData)
+    assert data.columns[0].title == "L"
+    assert data.columns[0].format == ".4g"
+    assert data.columns[0].align == "right"
+    # 简写字符串列：format/align 空、title 取末段
+    assert data.columns[1].title == "tip"
+    assert data.columns[1].format == ""
+    assert data.column_titles == ("L", "tip")

@@ -25,6 +25,7 @@ from ..qt_compat import (
     QHeaderView,
     QLabel,
     QScrollArea,
+    Qt,
     QTableWidget,
     QTableWidgetItem,
     QVBoxLayout,
@@ -40,7 +41,7 @@ _GROUPED_CURVE_HEIGHT = 300
 _GROUPED_TABLE_MAX_HEIGHT = 320
 
 
-class DslResultView(QWidget):
+class DslResultView(QWidget):  # pragma: no cover
     """DSL 结果单页视图（curve/table/text 分发渲染）."""
 
     def __init__(self, parent: QWidget | None = None) -> None:
@@ -93,7 +94,7 @@ class DslResultView(QWidget):
         self._layout.addWidget(self._body, stretch=1)
 
 
-class DslGroupedResultView(QWidget):
+class DslGroupedResultView(QWidget):  # pragma: no cover
     """DSL 分组结果页：同组多结果按类别分块纵向排列（单页紧凑视图）.
 
     每块为 QGroupBox（组名 = 结果声明 title），正文按视图数据类型
@@ -137,7 +138,7 @@ class DslGroupedResultView(QWidget):
 # ------------------------------------------------------------------ 块渲染
 
 
-def _build_block(title: str, payload: ViewData | str) -> QGroupBox:
+def _build_block(title: str, payload: ViewData | str) -> QGroupBox:  # pragma: no cover
     """单个结果块：QGroupBox 标题 + 按类型紧凑渲染的正文."""
     box = QGroupBox(title)
     layout = QVBoxLayout(box)
@@ -162,9 +163,12 @@ def _build_block(title: str, payload: ViewData | str) -> QGroupBox:
 
 
 def build_curve_widget(data: CurveData) -> QWidget:
-    """pyqtgraph 曲线（多序列图例 + 轴标签）."""
+    """pyqtgraph 曲线（多序列图例 + 轴标签 + 对数轴 + 峰值标注 + 系列样式覆盖）."""
     plot = pg.PlotWidget(background=theme.current_palette().bg_app)
     plot.showGrid(x=True, y=True, alpha=0.3)
+    # 对数轴
+    if data.log_x or data.log_y:
+        plot.plotItem.setLogMode(x=data.log_x, y=data.log_y)
     if data.series:
         plot.addLegend(offset=(12, 12))
     if data.x_label:
@@ -172,38 +176,113 @@ def build_curve_widget(data: CurveData) -> QWidget:
     if data.y_label:
         plot.setLabel("left", data.y_label)
     for index, series in enumerate(data.series):
+        # 系列样式覆盖：color / dash / width
+        style = data.series_styles[index] if index < len(data.series_styles) else {}
+        color = style.get("color")
+        width = float(style.get("width", 2))
+        dash = style.get("dash")  # "solid"/"dashed"/"dotted"/"-"
+        if color:
+            pen = pg.mkPen(_resolve_color(color), width=width)
+            if dash == "dashed":
+                pen.setDashPattern([4, 2])
+            elif dash == "dotted":
+                pen.setDashPattern([1, 2])
+        else:
+            pen = pg.mkPen(pg.intColor(index, hues=max(len(data.series), 2)), width=width)
         plot.plot(
             list(series.x),
             list(series.y),
             name=series.name,
-            pen=pg.mkPen(pg.intColor(index, hues=max(len(data.series), 2)), width=2),
+            pen=pen,
         )
+        # 峰值标注（该序列的极值点）
+        if data.mark_peak and len(series.y) > 0:
+            peak_idx = _peak_index(series.y)
+            plot.plot(
+                [series.x[peak_idx]],
+                [series.y[peak_idx]],
+                name=None,
+                pen=None,
+                symbol="o",
+                symbolBrush="#EF4444",
+                symbolSize=8,
+            )
     return plot
 
 
-def build_table_widget(data: TableData) -> QWidget:
-    """表格（列宽均分，数值 6 位有效数字）."""
+def _resolve_color(color: str) -> str:  # pragma: no cover
+    """解析语义色名到十六进制（Qt 侧使用硬编码值，与报告一致）."""
+    _MAP = {
+        "primary": "#3C2ECA",
+        "success": "#10B981",
+        "warning": "#F59E0B",
+        "danger": "#EF4444",
+        "info": "#3B82F6",
+    }
+    if color.startswith("#"):
+        return color
+    return _MAP.get(color, color)
+
+
+def _peak_index(values: tuple) -> int:  # pragma: no cover
+    """返回数值序列中极值的索引."""
+    if not values:
+        return 0
+    # 取绝对极值（正负皆显著）
+    abs_vals = [abs(v) for v in values]
+    return max(range(len(abs_vals)), key=lambda i: abs_vals[i])
+
+
+def build_table_widget(data: TableData) -> QWidget:  # pragma: no cover
+    """表格（列宽均分 + 斑马纹 + 表头主题底；列格式/对齐已由 stream_view 专用构建器处理）."""
     table = QTableWidget(objectName="dslTable")
     table.setColumnCount(len(data.columns))
     table.setRowCount(len(data.rows))
-    table.setHorizontalHeaderLabels(list(data.columns))
+    table.setHorizontalHeaderLabels(list(data.column_titles))
     table.verticalHeader().setVisible(False)
     table.setEditTriggers(QTableWidget.NoEditTriggers)
     table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
+    palette = theme.current_palette()
     for row, values in enumerate(data.rows):
         for column, value in enumerate(values):
-            table.setItem(row, column, QTableWidgetItem(_format_cell(value)))
+            col_def = data.columns[column]
+            fmt = col_def.format or ".6g"
+            cell_text = _format_cell_with_format(value, fmt) if col_def.format else _format_cell(value)
+            item = QTableWidgetItem(cell_text)
+            if col_def.align == "right":
+                item.setTextAlignment(Qt.AlignRight | Qt.AlignVCenter)
+            elif col_def.align == "left":
+                item.setTextAlignment(Qt.AlignLeft | Qt.AlignVCenter)
+            elif col_def.align == "center":
+                item.setTextAlignment(Qt.AlignCenter)
+            if row % 2 == 1:
+                item.setBackground(Qt.GlobalColor.transparent)  # QSS zebra 处理
+            table.setItem(row, column, item)
+    table.setStyleSheet(
+        f"QTableWidget#dslTable {{ gridline-color: {palette.border}; }}"
+        f"QHeaderView::section {{ background: {palette.bg_muted}; }}"
+    )
     return table
 
 
-def build_text_widget(data: TextData) -> QWidget:
+def _format_cell_with_format(value: Any, fmt: str) -> str:  # pragma: no cover
+    """按 printf 格式规格格式化单元格."""
+    if fmt and isinstance(value, float):
+        try:
+            return format(value, fmt)
+        except (ValueError, TypeError):
+            return str(value)
+    return _format_cell(value)
+
+
+def build_text_widget(data: TextData) -> QWidget:  # pragma: no cover
     """文本（自动换行正文）."""
     label = QLabel(data.text, objectName="resultText")
     label.setWordWrap(True)
     return label
 
 
-def _cloud_hint(data: CloudData) -> str:
+def _cloud_hint(data: CloudData) -> str:  # pragma: no cover
     """云图占位提示（实际渲染由参数化计算应用页路由到解算视图）."""
     return f"云图结果 {data.node_id!r} 由解算视图渲染"
 

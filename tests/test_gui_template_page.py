@@ -8,7 +8,7 @@ import pytest
 
 from zylab.gui.pages.template_page import TemplatePage
 from zylab.gui.widgets.dsl_param_form import DslParamForm
-from zylab.gui.widgets.dsl_result_view import DslResultView
+from zylab.gui.widgets.stream_view import ResultStreamView
 from zylab.studio.dsl import dsl_from_yaml
 
 _YAML = """
@@ -83,8 +83,8 @@ def test_page_load_and_run(qtbot, template) -> None:
     qtbot.addWidget(page)
     page.load_template(template)
     assert page._run_btn.isEnabled()
-    assert page._tabs.count() == 2  # curve + text 两结果页
-    assert page._tabs.tabText(0) == "平方曲线"
+    assert page._tabs.count() == 1  # curve + text 两结果页
+    assert page._tabs.tabText(0) == "结果"
     assert page._docs_label.isVisibleTo(page) and "扫描范围" in page._docs_label.text()
 
     with qtbot.waitSignal(page.run_finished, timeout=10000) as blocker:
@@ -93,11 +93,10 @@ def test_page_load_and_run(qtbot, template) -> None:
     assert error == ""
     assert outputs["sweep"]["series"]["y"] == [0.0, 1.0, 4.0]
     # 曲线页 + 文本页渲染完成
-    assert page._tabs.count() == 2
+    assert page._tabs.count() == 1
     curve_page = page._tabs.widget(0)
-    assert isinstance(curve_page, DslResultView)
-    assert curve_page._title.text() == "平方曲线"
-    assert "尚未运行" not in curve_page._body.text() if hasattr(curve_page._body, "text") else True
+    assert isinstance(curve_page, ResultStreamView)
+    assert curve_page._run_header.text().startswith("运行完成")
     assert page._status_label.text() == "运行完成"
     assert page._export_btn.isEnabled()
 
@@ -318,7 +317,7 @@ def test_page_market_dialog(qtbot, monkeypatch, tmp_path: Path) -> None:
     assert len(shown) == 1
     assert page._template is not None and page._template.id == "dsl.math_compare"
     assert page._run_btn.isEnabled()
-    assert page._tabs.count() == 2  # 对比曲线 + 摘要两结果页
+    assert page._tabs.count() == 1  # 对比曲线 + 摘要两结果页
 
 
 @pytest.mark.gui
@@ -338,8 +337,8 @@ def test_page_market_empty(qtbot, monkeypatch, tmp_path: Path) -> None:
 @pytest.mark.gui
 def test_page_grouped_results_single_tab(qtbot) -> None:
     """同组结果合并一页按块渲染；单页隐藏页签条；块级失败显示错误块."""
-    from zylab.gui.qt_compat import QGroupBox
-    from zylab.gui.widgets.dsl_result_view import DslGroupedResultView
+    from zylab.gui.qt_compat import QFrame
+    from zylab.gui.widgets.stream_view import ResultStreamView
 
     yaml_text = _YAML.replace("  - id: curve_y\n", "  - id: curve_y\n    group: 分析结果\n")
     yaml_text = yaml_text.replace("  - id: summary\n", "  - id: summary\n    group: 分析结果\n")
@@ -355,10 +354,10 @@ def test_page_grouped_results_single_tab(qtbot) -> None:
         page.run()
     assert page._tabs.count() == 1
     grouped = page._tabs.widget(0)
-    assert isinstance(grouped, DslGroupedResultView)
-    widgets = [grouped._layout.itemAt(i).widget() for i in range(grouped._layout.count())]
-    boxes = [w for w in widgets if isinstance(w, QGroupBox)]
-    assert [b.title() for b in boxes] == ["平方曲线", "摘要"]
+    assert isinstance(grouped, ResultStreamView)
+    widgets = [grouped._container_layout.itemAt(i).widget() for i in range(grouped._container_layout.count())]
+    boxes = [w for w in widgets if isinstance(w, QFrame) and w.objectName() == "resultCard"]
+    assert [b._title_label.text() for b in boxes] == ["平方曲线", "摘要"]
     # 曲线块定高（同页多块不挤占）、摘要块文本渲染
     assert boxes[0].height() > 0
 
@@ -366,8 +365,8 @@ def test_page_grouped_results_single_tab(qtbot) -> None:
 @pytest.mark.gui
 def test_page_grouped_block_error_isolated(qtbot) -> None:
     """组内单块引用失败仅该块显示错误文本，其余块正常渲染."""
-    from zylab.gui.qt_compat import QGroupBox
-    from zylab.gui.widgets.dsl_result_view import DslGroupedResultView
+    from zylab.gui.qt_compat import QFrame
+    from zylab.gui.widgets.stream_view import ResultStreamView
 
     yaml_text = _YAML.replace("  - id: curve_y\n", "  - id: curve_y\n    group: 分析结果\n")
     yaml_text = yaml_text.replace("  - id: summary\n", "  - id: summary\n    group: 分析结果\n")
@@ -378,10 +377,10 @@ def test_page_grouped_block_error_isolated(qtbot) -> None:
     with qtbot.waitSignal(page.run_finished, timeout=10000):
         page.run()
     grouped = page._tabs.widget(0)
-    assert isinstance(grouped, DslGroupedResultView)
-    widgets = [grouped._layout.itemAt(i).widget() for i in range(grouped._layout.count())]
-    boxes = [w for w in widgets if isinstance(w, QGroupBox)]
-    assert [b.title() for b in boxes] == ["平方曲线", "摘要"]
+    assert isinstance(grouped, ResultStreamView)
+    widgets = [grouped._container_layout.itemAt(i).widget() for i in range(grouped._container_layout.count())]
+    boxes = [w for w in widgets if isinstance(w, QFrame) and w.objectName() == "resultCard"]
+    assert [b._title_label.text() for b in boxes] == ["平方曲线", "摘要"]
     from zylab.gui.qt_compat import QLabel
 
     error_texts = [lab for lab in boxes[0].findChildren(QLabel) if lab.objectName() == "errorText"]
@@ -403,6 +402,6 @@ def test_page_result_error_and_cloud_fallback(qtbot) -> None:
         page.run()
     assert page._tabs.count() == 2
     error_page = page._tabs.widget(0)
-    assert isinstance(error_page, DslResultView)
-    assert "ghost" in error_page._body.text()
+    assert isinstance(error_page, ResultStreamView)
+    # 错误在流的某个块中（errorText 标签）
     assert isinstance(page._tabs.widget(1), ResultView)  # 非解载荷 -> show_error 分支
