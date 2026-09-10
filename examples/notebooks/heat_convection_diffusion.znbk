@@ -4,7 +4,7 @@
     "title": "传热学：热传导与对流",
     "description": "傅里叶热传导方程、一维/二维稳态温度分布、牛顿冷却定律与对流换热，含偏微分方程离散与温度场曲线。",
     "created": "2026-09-10T14:56:50",
-    "modified": "2026-09-10T14:56:50"
+    "modified": "2026-09-10T15:08:54"
   },
   "cells": [
     {
@@ -2025,6 +2025,12 @@
           ]
         }
       ]
+    },
+    {
+      "id": "2c683801968849f6bb9d56ffb787a695",
+      "source": "# 二维稳态热传导 — 解析解（拉普拉斯方程傅里叶级数展开）\n# 四边温度边界: 左 T=100, 其余三边 T=0\n# 解析解: T(x,y) = Σ 400/(nπ)·sin(nπy)·sinh(nπ(1-x))/sinh(nπ), n 为奇数\n# 与 cell 4 的数值解（有限差分）对比可验证收敛精度\nNX, NY = 200, 200\nLx, Ly = 1.0, 1.0\nx = linspace(0, Lx, NX)\ny = linspace(0, Ly, NY)\nT = zeros((NY, NX))\nn_terms = 50\nfor n in range(1, 2 * n_terms, 2):\n    coef = 400.0 / (n * pi)\n    T += coef * sin(n * pi * y) * np.sinh(n * pi * (Lx - x)) / np.sinh(n * pi)\n\n# 取 x=L/2 截面的温度分布曲线（与 cell 4 数值解的中线做对比）\nmid_x = NX // 2\nplot(y, T[:, mid_x], title=\"二维热传导解析解 — x=L/2 截面温度\", xlabel=\"y (m)\", ylabel=\"T (°C)\", label=f\"解析解, {n_terms} 项\")\nprint(f\"中心温度 T({Lx/2:.1f},{Ly/2:.1f}) = {T[NY//2, NX//2]:.2f}°C\")\n",
+      "execution_count": null,
+      "outputs": []
     }
   ]
 }

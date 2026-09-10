@@ -26,6 +26,7 @@ try:
         Qt,
         QTimer,
         QTranslator,
+        QUrl,
         Signal,
         Slot,
     )
@@ -33,6 +34,7 @@ try:
         QBrush,
         QColor,
         QContextMenuEvent,
+        QDesktopServices,
         QFont,
         QFontDatabase,
         QFontMetrics,
@@ -115,6 +117,7 @@ except ImportError:  # pragma: no cover（3.8 环境走此分支）
         Qt,
         QTimer,
         QTranslator,
+        QUrl,
         Signal,
         Slot,
     )
@@ -122,6 +125,7 @@ except ImportError:  # pragma: no cover（3.8 环境走此分支）
         QBrush,
         QColor,
         QContextMenuEvent,
+        QDesktopServices,
         QFont,
         QFontDatabase,
         QFontMetrics,  # type: ignore[missing-import]
@@ -198,6 +202,7 @@ __all__ = [
     "QColor",
     "QComboBox",
     "QContextMenuEvent",
+    "QDesktopServices",
     "QDialog",
     "QDialogButtonBox",
     "QDoubleSpinBox",

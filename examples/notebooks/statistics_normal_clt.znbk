@@ -4,7 +4,7 @@
     "title": "统计学：正态分布与中心极限定理",
     "description": "正态分布 PDF/CDF、中心极限定理与最小二乘线性回归，含公式推导与曲线对比。",
     "created": "2026-09-10T14:56:50",
-    "modified": "2026-09-10T14:56:50"
+    "modified": "2026-09-10T15:08:54"
   },
   "cells": [
     {
@@ -12265,6 +12265,18 @@
           ]
         }
       ]
+    },
+    {
+      "id": "3f2642fd81894224a46772de77961c0e",
+      "source": "# 蒙特卡洛估算 π — 收敛过程展示\n# 单位正方形内随机撒点，落于四分之一圆内的比例 → π/4\n# 估计值随样本数增加趋近 π（大数定律），收敛速度 O(1/√N)\nnp.random.seed(42)\nN = 20000\nx_rand = np.random.rand(N)\ny_rand = np.random.rand(N)\ninside = x_rand**2 + y_rand**2 <= 1.0\n\n# 累积估计值曲线\npi_est = 4.0 * np.cumsum(inside) / arange(1, N + 1)\n\n# 前 1000 点的收敛曲线（线性 x 轴）\nplot(arange(1, 1001), pi_est[:1000],\n     title=\"蒙特卡洛估算 π — 收敛过程（前1000样本）\",\n     xlabel=\"样本数 N\", ylabel=\"π 估计值\",\n     label=\"π̂(N)\")\n# π 真值参考线\nplot(array([1, 1000]), array([pi, pi]), label=\"π 真值\")\nprint(f\"N={N} 时 π 估计值 ≈ {pi_est[-1]:.5f}（真值误差 {abs(pi_est[-1]-pi):.2e}）\")\n",
+      "execution_count": null,
+      "outputs": []
+    },
+    {
+      "id": "0afb1253ede54169be847dd96b7b096c",
+      "source": "# 放射性衰变计数 — 泊松分布 + 正态近似\n# 固定时间间隔内衰变计数 k 服从 Poisson(λ)，λ 为平均计数\n# 当 λ 很大时，泊松分布趋近 N(λ, √λ)（中心极限定理）\nfrom scipy import stats\n\nnp.random.seed(42)\nlam = 25  # 平均计数 λ\nN_samples = 5000\ncounts = np.random.poisson(lam, N_samples)\n\n# 理论 PMF（离散点）\nk_vals = arange(10, 41)\npmf_vals = stats.poisson.pmf(k_vals, lam)\nplot(k_vals, pmf_vals, title=f\"泊松分布 PMF (λ={lam})\", xlabel=\"计数 k\", ylabel=\"P(k)\", label=\"Poisson PMF\")\n\n# 正态近似（连续曲线）\nnorm_x = linspace(10, 40, 200)\nnorm_pdf = stats.norm.pdf(norm_x, lam, sqrt(lam))\nplot(norm_x, norm_pdf, label=f\"正态近似 N({lam},{sqrt(lam):.1f})\")\n# 实测样本均值/方差验证\nprint(f\"样本均值={counts.mean():.1f}, 样本方差={counts.var():.1f}（泊松分布满足 Var=λ={lam}）\")\n",
+      "execution_count": null,
+      "outputs": []
     }
   ]
 }

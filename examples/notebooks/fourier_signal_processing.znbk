@@ -4,7 +4,7 @@
     "title": "信号处理：傅里叶变换与滤波",
     "description": "离散傅里叶变换（DFT/FFT）、频谱分析、叠加波形、窗函数与带通滤波，含公式与频域曲线图。",
     "created": "2026-09-10T14:56:50",
-    "modified": "2026-09-10T14:56:50"
+    "modified": "2026-09-10T15:10:00"
   },
   "cells": [
     {
@@ -3647,6 +3647,18 @@
           ]
         }
       ]
+    },
+    {
+      "id": "41ba442a6b324395b8ce78907ea47667",
+      "source": "# 方波傅里叶级数收敛 — 部分和对比（吉布斯过冲演示）\n# 方波 f(t)=sign(sin(t)) 的傅里叶级数: 4/π Σ sin((2k-1)t)/(2k-1)\n# 随着项数 N→∞，在间断点附近出现约 9% 的吉布斯过冲（不会消失）\nt = linspace(-pi, pi, 1000)\n\ndef square_wave(t):\n    return np.where(sin(t) >= 0, 1.0, -1.0)\n\ndef partial_sum(t, N):\n    s = np.zeros_like(t)\n    for k in range(1, N + 1):\n        n = 2 * k - 1\n        s += sin(n * t) / n\n    return 4.0 / pi * s\n\n# 方波目标曲线\nplot(t, square_wave(t), title=\"方波傅里叶部分和收敛\", xlabel=\"t\", ylabel=\"f(t)\", label=\"目标方波\")\n# 不同项数的部分和（叠加）\nplot(t, partial_sum(t, 1), label=\"N=1\")\nplot(t, partial_sum(t, 5), label=\"N=5\")\nplot(t, partial_sum(t, 20), label=\"N=20\")\nplot(t, partial_sum(t, 50), label=\"N=50\")\n",
+      "execution_count": null,
+      "outputs": []
+    },
+    {
+      "id": "3bce12103dff40e7a85b6ce8c0fd2b2b",
+      "source": "# 太阳黑子时间序列 + Welch 功率谱估计\n# 用含噪合成信号模拟 ~11 年太阳活动周期\n# Welch 法将长序列分段加窗求 PSD，平衡频率分辨率与方差\nfrom scipy import signal\n\nnp.random.seed(42)\nfs = 1.0  # 采样率：1次/年\nt = arange(0, 300, 1 / fs)  # 300 年\n# 11 年主周期 + 5.5 年谐波 + 高斯噪声\ndata = (50 + 30 * sin(2 * pi * t / 11.0)\n        + 10 * sin(2 * pi * t / 5.5)\n        + np.random.normal(0, 8, len(t)))\n\n# 时间序列（截取前 150 年展示）\nplot(t[:150], data[:150], title=\"太阳黑子数时间序列（模拟）\", xlabel=\"时间 (年)\", ylabel=\"黑子数\", label=\"前150年\")\n# Welch 功率谱：识别 ~11 年周期\nfreq, psd = signal.welch(data, fs=fs, nperseg=256)\nplot(freq[1:], log(psd[1:]), title=\"Welch 功率谱 — 周期检测\", xlabel=\"频率 (yr⁻¹)\", ylabel=\"log(PSD)\", label=\"功率谱\")\n# 在 1/11 ≈ 0.091 yr⁻¹ 处标记主峰\npeak_freq = freq[1:][psd[1:].argmax()]\nprint(f\"检测到主周期 ≈ {1/peak_freq:.1f} 年（频率 {peak_freq:.3f} yr⁻¹）\")\n",
+      "execution_count": null,
+      "outputs": []
     }
   ]
 }

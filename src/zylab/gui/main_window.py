@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import platform
+import sys
 
 from zylab import __version__
 from zylab.console import ReplKernel
@@ -16,9 +17,11 @@ from .pages.notebook_page import NotebookPage
 from .pages.studio_page import StudioPage
 from .pages.template_page import TemplatePage
 from .qt_compat import (
+    QDesktopServices,
     QEvent,
     QFileDialog,
     QFrame,
+    QGridLayout,
     QHBoxLayout,
     QKeySequence,
     QLabel,
@@ -27,11 +30,13 @@ from .qt_compat import (
     QListWidgetItem,
     QMainWindow,
     QPushButton,
+    QScrollArea,
     QShortcut,
     QSize,
     QSplitter,
     QStackedWidget,
     Qt,
+    QUrl,
     QVBoxLayout,
     QWidget,
 )
@@ -127,18 +132,23 @@ class MainWindow(QMainWindow):
         self._command_search.installEventFilter(self)
         layout.addWidget(self._command_search, stretch=1, alignment=Qt.AlignVCenter)
 
+        # headerGroup 内部元素统一高度，与 headerBar 整体高度配合
+        _ITEM_H = 26
+        _GROUP_MARGIN_V = 2  # 上/下 margin，配合 _ITEM_H 形成 30px 胶囊
+
         # 工作区分组：tag + 路径 label + 切换按钮（包进 headerGroup 容器）
         workspace_group = QFrame(objectName="headerGroup")
         ws_layout = QHBoxLayout(workspace_group)
-        ws_layout.setContentsMargins(theme.SPACING_XS, 2, theme.SPACING_XS, 2)
+        ws_layout.setContentsMargins(theme.SPACING_XS, _GROUP_MARGIN_V, theme.SPACING_XS, _GROUP_MARGIN_V)
         ws_layout.setSpacing(theme.SPACING_XS)
         ws_tag = QLabel("工作区", objectName="headerTag")
+        ws_tag.setFixedHeight(_ITEM_H)
         self._workspace_label = QLabel(objectName="workspaceLabel")
         self._workspace_label.setToolTip("当前工作区（MATLAB 风格 cwd）")
-        self._workspace_label.setFixedHeight(26)
+        self._workspace_label.setFixedHeight(_ITEM_H)
         self._workspace_btn = QPushButton(objectName="workspaceBtn")
         self._workspace_btn.setToolTip("切换工作区目录")
-        self._workspace_btn.setFixedSize(26, 26)
+        self._workspace_btn.setFixedSize(_ITEM_H, _ITEM_H)
         self._workspace_btn.setIconSize(QSize(14, 14))
         self._workspace_btn.clicked.connect(self._on_switch_workspace)
         ws_layout.addWidget(ws_tag)
@@ -146,19 +156,23 @@ class MainWindow(QMainWindow):
         ws_layout.addWidget(self._workspace_btn)
         layout.addWidget(workspace_group, alignment=Qt.AlignVCenter)
 
-        # 竖向分隔线（高度由 QSS min-height 统一控制）
+        # 竖向分隔线（与 headerGroup 同高：_ITEM_H + 上下 margin）
         separator = QLabel(objectName="headerSeparator")
         separator.setFixedWidth(1)
+        separator.setFixedHeight(_ITEM_H + _GROUP_MARGIN_V * 2)
         layout.addWidget(separator, alignment=Qt.AlignVCenter)
 
-        # 环境版本分组：tag + Python 版本 + 应用版本
+        # 环境版本分组：tag + Python 版本 + 应用版本（与工作区分组同高同 margin）
         env_group = QFrame(objectName="headerGroup")
         env_layout = QHBoxLayout(env_group)
-        env_layout.setContentsMargins(theme.SPACING_XS, 2, theme.SPACING_XS, 2)
+        env_layout.setContentsMargins(theme.SPACING_XS, _GROUP_MARGIN_V, theme.SPACING_XS, _GROUP_MARGIN_V)
         env_layout.setSpacing(theme.SPACING_XS)
         env_tag = QLabel("环境", objectName="headerTag")
+        env_tag.setFixedHeight(_ITEM_H)
         meta_py = QLabel(f"Python {platform.python_version()}", objectName="headerMeta")
+        meta_py.setFixedHeight(_ITEM_H)
         meta_ver = QLabel(f"v{__version__}", objectName="headerVersion")
+        meta_ver.setFixedHeight(_ITEM_H)
         env_layout.addWidget(env_tag)
         env_layout.addWidget(meta_py)
         env_layout.addWidget(meta_ver)

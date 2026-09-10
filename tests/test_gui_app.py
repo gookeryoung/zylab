@@ -41,7 +41,7 @@ def test_load_qt_translations_skips_non_chinese(qapp, monkeypatch) -> None:
     from PySide2.QtCore import QLocale, QTranslator
 
     # 先记录已有翻译器（pytest-qt qapp 可能已加载）
-    before = set(id(t) for t in qapp.findChildren(QTranslator))
+    before = {id(t) for t in qapp.findChildren(QTranslator)}
 
     monkeypatch.setattr(QLocale, "system", staticmethod(lambda: QLocale(QLocale.English, QLocale.UnitedStates)))
 
@@ -49,6 +49,19 @@ def test_load_qt_translations_skips_non_chinese(qapp, monkeypatch) -> None:
 
     _load_qt_translations(qapp)
 
-    after = set(id(t) for t in qapp.findChildren(QTranslator))
+    after = {id(t) for t in qapp.findChildren(QTranslator)}
     # 非中文环境不应新增任何翻译器
     assert after - before == set()
+
+
+@pytest.mark.gui
+def test_register_fonts_handles_add_failure(monkeypatch) -> None:
+    """字体注册失败时应返回空列表且不抛异常（覆盖 if font_id < 0 分支）."""
+    from zylab.gui.app import register_fonts
+    from zylab.gui.qt_compat import QFontDatabase
+
+    def _fail_add(_path):
+        return -1
+
+    monkeypatch.setattr(QFontDatabase, "addApplicationFont", _fail_add)
+    assert register_fonts() == []

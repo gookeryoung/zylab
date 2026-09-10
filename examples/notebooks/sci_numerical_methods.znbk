@@ -4,7 +4,7 @@
     "title": "科学计算：数值方法",
     "description": "傅里叶级数逼近、常微分方程数值解（欧拉/RK4）、牛顿法求根与梯形法则积分，含公式与收敛曲线。",
     "created": "2026-09-10T14:56:50",
-    "modified": "2026-09-10T14:56:50"
+    "modified": "2026-09-10T15:10:00"
   },
   "cells": [
     {
@@ -5558,6 +5558,30 @@
           ]
         }
       ]
+    },
+    {
+      "id": "4dcb3a6034a74d5fb1609585083ea079",
+      "source": "# 洛伦兹吸引子 — 混沌系统 ODE 数值解（RK45）\n# dx/dt = σ(y-x), dy/dt = x(ρ-z)-y, dz/dt = xy - βz\n# 对初值极度敏感（蝴蝶效应），相空间轨迹永不重复\nfrom scipy.integrate import solve_ivp\n\nsigma, rho, beta = 10.0, 28.0, 8.0 / 3.0\n\ndef lorenz(t, state):\n    x, y, z = state\n    return [sigma * (y - x), x * (rho - z) - y, x * y - beta * z]\n\nsol = solve_ivp(lorenz, (0, 40), [1.0, 1.0, 1.0],\n                t_eval=linspace(0, 40, 8000), method=\"RK45\")\n\n# x(t) 时间序列（展现非周期性振荡）\nplot(sol.t, sol.y[0], title=\"洛伦兹吸引子 — x 分量时间演化\", xlabel=\"t\", ylabel=\"x(t)\", label=\"x(t)\")\n# y-x 相平面投影（2D 视角看蝴蝶翅膀）\nplot(sol.y[0], sol.y[1], title=\"洛伦兹吸引子 — y-x 相平面投影\", xlabel=\"x\", ylabel=\"y\", label=\"轨迹\")\nprint(f\"求解 {sol.y.shape[1]} 个时间点，耗时约 0.1s\")\n",
+      "execution_count": null,
+      "outputs": []
+    },
+    {
+      "id": "ef67b7b2d9c746778b5e3ba40d7658e5",
+      "source": "# 二维波动方程传播 — 有限差分法（中心高斯脉冲初值）\n# ∂²u/∂t² = c²(∂²u/∂x² + ∂²u/∂y²)，满足 CFL: dt ≤ dx/c\n# 展示不同时刻的中线 u(x) 剖面（从中心向外传播的圆形波前）\nnx, ny = 120, 120\nLx, Ly = 2.0, 2.0\ndx = Lx / (nx - 1)\ndy = Ly / (ny - 1)\nc = 1.0\ndt = 0.4 * dx / c  # CFL 稳定条件\n\nX, Y = np.meshgrid(linspace(0, Lx, nx), linspace(0, Ly, ny))\n# 初始条件：中心高斯脉冲 + 静止初速度\nu0 = exp(-((X - Lx / 2)**2 + (Y - Ly / 2)**2) / 0.02)\nu_prev = u0.copy()\nu = u0.copy()\n\n# 预计算 4 个关键时刻的快照\nsnapshots = []\ntarget_times = [0, 0.3, 0.6, 1.0]\nnext_ti = 0\nfor step in range(5000):\n    t_now = step * dt\n    if next_ti < len(target_times) and t_now >= target_times[next_ti]:\n        mid = ny // 2\n        snapshots.append((t_now, u[mid, :].copy()))\n        next_ti += 1\n    u_next = (2 * u - u_prev\n              + (c * dt / dx)**2 * (np.roll(u, -1, 0) - 2 * u + np.roll(u, 1, 0))\n              + (c * dt / dy)**2 * (np.roll(u, -1, 1) - 2 * u + np.roll(u, 1, 1)))\n    u_next[0, :] = u_next[-1, :] = u_next[:, 0] = u_next[:, -1] = 0  # 狄利克雷边界\n    u_prev, u = u, u_next\n\n# 不同时刻中线剖面叠加（看圆形波前向外扩散）\nfor t_val, snap in snapshots:\n    plot(linspace(0, Lx, nx), snap,\n         title=\"二维波动方程 — 不同时刻中线 u(x) 剖面\",\n         xlabel=\"x\", ylabel=\"u(x,y=L/2,t)\",\n         label=f\"t={t_val:.2f}\")\n",
+      "execution_count": null,
+      "outputs": []
+    },
+    {
+      "id": "44f6a0a6627c40e5a10c4d9d4336c72b",
+      "source": "# 带电粒子在匀强磁场中的螺旋运动（洛伦兹力）\n# F = q(v × B)，垂直磁场平面内做匀速圆周运动，轴向匀速 → 螺旋线\n# 轨迹在 x-y 平面的投影为圆（回旋半径 r = mv/(qB)），z 方向匀速上升\nfrom scipy.integrate import solve_ivp\n\nq, m = 1.0, 1.0\nB = array([0.0, 0.0, 1.0])\n\ndef lorentz_force(t, state):\n    x, y, z, vx, vy, vz = state\n    v = array([vx, vy, vz])\n    F = q * np.cross(v, B)\n    return [vx, vy, vz, F[0] / m, F[1] / m, F[2] / m]\n\nsol = solve_ivp(lorentz_force, (0, 20), [0, -1, 0, 1, 0, 0.3],\n                t_eval=linspace(0, 20, 2000), method=\"RK45\")\n\n# x-y 平面投影（看回旋运动）\nplot(sol.y[0], sol.y[1], title=\"带电粒子 — x-y 平面投影（回旋运动）\", xlabel=\"x\", ylabel=\"y\", label=\"轨迹\")\n# z-t 曲线（看匀速上升）\nplot(sol.t, sol.y[2], title=\"带电粒子 — z 方向匀速上升\", xlabel=\"t\", ylabel=\"z(t)\", label=\"z(t)\")\nprint(f\"回旋周期 T = 2πm/(qB) = {2*pi*m/(q*1.0):.2f}，轨迹 {sol.y.shape[1]} 点\")\n",
+      "execution_count": null,
+      "outputs": []
+    },
+    {
+      "id": "0e87eba936a44b1b9851e8becc0eac4a",
+      "source": "# 三维 sinc 型衰减振荡函数（复杂曲面的截面分析）\n# z = sin(r)/r · cos(2x)，r = √(x² + y²)\n# 展示固定 x 和固定 y 处的截面曲线，可观察径向衰减 + 角向振荡的组合\nx = linspace(-5, 5, 200)\ny = linspace(-5, 5, 200)\nX, Y = np.meshgrid(x, y)\nr = sqrt(X**2 + Y**2)\nr[r < 1e-9] = 1e-9\nZ = sin(r) / r * cos(2 * X)\n\n# 固定 y=0: z(x,0) = sin(|x|)/x · cos(2x)\nmid_y = Z.shape[0] // 2\nplot(x, Z[mid_y, :], title=\"三维曲面截面 — y=0\", xlabel=\"x\", ylabel=\"z(x,0)\", label=\"y=0\")\n# 固定 x=0: z(0,y) = sin(|y|)/|y|\nmid_x = Z.shape[1] // 2\nplot(y, Z[:, mid_x], title=\"三维曲面截面 — x=0\", xlabel=\"y\", ylabel=\"z(0,y)\", label=\"x=0\")\n",
+      "execution_count": null,
+      "outputs": []
     }
   ]
 }

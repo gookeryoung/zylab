@@ -1,0 +1,35 @@
+{
+  "format": "zylab.notebook.v1",
+  "metadata": {
+    "title": "机器学习：SVM 非线性分类",
+    "description": "RBF 核 SVM 对半月形数据的非线性分类，含决策边界、支撑向量与参数 γ 对比。",
+    "created": "2026-09-10T15:08:54",
+    "modified": "2026-09-10T15:10:22"
+  },
+  "cells": [
+    {
+      "id": "87d8b60c5f9b4a978daa98f72987ad8e",
+      "source": "# 生成 Two Moons 数据集 + 可视化\n# sklearn 的 make_moons 生成两簇交错的半月形散点\n# 这类数据线性不可分，需要非线性核 SVM 才能正确分类\nfrom sklearn.datasets import make_moons\n\nnp.random.seed(42)\nX, y = make_moons(n_samples=300, noise=0.2, random_state=42)\nprint(f\"数据集: {X.shape[0]} 样本, {X.shape[1]} 特征, 类别数={len(np.unique(y))}\")\nprint(f\"类别 0: {sum(y==0)} 个, 类别 1: {sum(y==1)} 个\")\n\n# 两类数据 x1 坐标分布叠加（看分离度）\nplot(linspace(0, 1, (y==0).sum()), X[y==0, 0], title=\"Two Moons — 类别 0 x₁ 分布\", xlabel=\"样本序号\", ylabel=\"x₁\", label=\"类别 0\")\nplot(linspace(0, 1, (y==1).sum()), X[y==1, 0], title=\"Two Moons — 类别 1 x₁ 分布\", xlabel=\"样本序号\", ylabel=\"x₁\", label=\"类别 1\")\n",
+      "execution_count": null,
+      "outputs": []
+    },
+    {
+      "id": "822db01866954b13bb8d1583443122cd",
+      "source": "# RBF 核 SVM 训练 — 决策边界计算\n# RBF 核: K(x,x') = exp(-γ‖x-x'‖²)，γ 控制单个样本影响范围\n# C 控制间隔最大化与误分类惩罚的权衡\nfrom sklearn.svm import SVC\n\nclf = SVC(kernel=\"rbf\", C=1.0, gamma=1.0, random_state=42)\nclf.fit(X, y)\nprint(f\"训练完成，支撑向量数: {len(clf.support_vectors_)}\")\nprint(f\"训练集准确率: {clf.score(X, y):.3f}\")\n\n# 网格决策函数：Z(x,y) > 0 → 类别 1, Z < 0 → 类别 0\nxx, yy = np.meshgrid(linspace(-2, 3, 200), linspace(-1.5, 2, 200))\nZ = clf.decision_function(np.c_[xx.ravel(), yy.ravel()]).reshape(xx.shape)\n\n# 决策边界曲线 Z=0 用 x 切片展示（y 固定处）\nmid_y_idx = xx.shape[0] // 2\nplot(xx[mid_y_idx, :], Z[mid_y_idx, :],\n     title=\"SVM 决策函数切片（固定 y 截面）\",\n     xlabel=\"x₁\", ylabel=\"decision_function\",\n     label=f\"y={yy[mid_y_idx,0]:.1f}\")\n# Z=0 基准线（分类边界）\nplot(array([-2, 3]), array([0, 0]), label=\"决策边界 Z=0\")\n",
+      "execution_count": null,
+      "outputs": []
+    },
+    {
+      "id": "c8e433c8cff24d1997d28d17681f26bd",
+      "source": "# 支撑向量分析\n# 支撑向量是距超平面最近、被错误分类或落在间隔内的样本点\n# SVM 解仅依赖支撑向量（其他点移走不改变决策边界）\nsv = clf.support_vectors_\nsv_labels = y[clf.support_]\nprint(f\"总样本: {len(X)}, 支撑向量: {len(sv)} ({100*len(sv)/len(X):.1f}%)\")\nprint(f\"支撑向量中类别 0: {sum(sv_labels==0)}, 类别 1: {sum(sv_labels==1)}\")\n\n# 支撑向量的 x₁ 分布 vs 全体样本（看边界附近的密度）\nplot(arange(len(X)), np.sort(X[:, 0]), title=\"全体样本 x₁ 排序分布\", xlabel=\"排序序号\", ylabel=\"x₁\", label=\"全体样本\")\nplot(arange(len(sv)), np.sort(sv[:, 0]), title=\"支撑向量 x₁ 排序分布\", xlabel=\"排序序号\", ylabel=\"x₁\", label=\"支撑向量\")\n",
+      "execution_count": null,
+      "outputs": []
+    },
+    {
+      "id": "70bbb17a0f5041cfb6241d68b861f98a",
+      "source": "# 不同 γ 参数的 SVM 决策边界对比\n# γ 小 → 决策边界平滑（欠拟合风险）\n# γ 大 → 决策边界复杂、紧贴样本（过拟合风险）\ngammas = [0.1, 1.0, 10.0]\nxx, yy = np.meshgrid(linspace(-2, 3, 100), linspace(-1.5, 2, 100))\n\nfor g in gammas:\n    clf_g = SVC(kernel=\"rbf\", C=1.0, gamma=g, random_state=42).fit(X, y)\n    Z_g = clf_g.decision_function(np.c_[xx.ravel(), yy.ravel()]).reshape(xx.shape)\n    # 取 y=0 截面展示决策函数形状\n    mid_idx = xx.shape[0] // 2\n    plot(xx[mid_idx, :], Z_g[mid_idx, :],\n         title=f\"不同 γ 的决策函数（y=0 截面）\",\n         xlabel=\"x₁\", ylabel=\"decision_function\",\n         label=f\"γ={g}, sv={len(clf_g.support_vectors_)}\")\n\nplot(array([-2, 3]), array([0, 0]), label=\"决策边界 Z=0\")\n",
+      "execution_count": null,
+      "outputs": []
+    }
+  ]
+}
