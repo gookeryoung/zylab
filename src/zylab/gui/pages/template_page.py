@@ -1,11 +1,10 @@
-"""参数化计算应用页：加载 DSL 参数化计算 -> 定制化计算界面 -> 运行 -> 结果/报告.
+"""参数化计算应用页：加载 DSL 参数化计算 -> 定制化计算界面 -> 运行 -> 结果/报告导出.
 
 布局（左右分栏 + 底部运行条）：
 
 - 左：参数化计算说明（docs 声明）+ DSL 参数表单（:class:`DslParamForm`）；
-- 右：结果多 TAB（每条 ``results`` 声明一页；curve/table/text 由
-  :class:`DslResultView` 渲染，cloud 路由到既有解算视图
-  :class:`~zylab.gui.widgets.result_view.ResultView`）；
+- 右：结果多 TAB（普通结果默认合并「结果」流页；显式 ``group`` 为单独页签；
+  cloud 路由到既有解算视图 :class:`~zylab.gui.widgets.result_view.ResultView`）；
 - 底：加载参数化计算 / 运行（主色）/ 导出报告（按 ``report.exports`` 声明
   写 Markdown/HTML）。
 
@@ -48,14 +47,17 @@ from ..qt_compat import (
     exec_dialog,
 )
 from ..widgets.dsl_param_form import DslParamForm
-from ..widgets.dsl_result_view import DslGroupedResultView, DslResultView
 from ..widgets.result_view import ResultView
+from ..widgets.stream_view import ResultStreamView
 from ..widgets.template_dialog import TemplateDialog
 
 __all__ = ["TemplatePage"]
 
 #: 参数化计算文件过滤器（YAML/JSON 双载体）
 _TEMPLATE_FILTER = "DSL 参数化计算 (*.yaml *.yml *.json);;所有文件 (*)"
+
+#: 默认无分组普通结果的页签名
+_DEFAULT_GROUP = "结果"
 
 
 def _builtin_dsl_templates() -> list[DslTemplate]:
@@ -247,26 +249,34 @@ class TemplatePage(QWidget):
 
     # ------------------------------------------------------------------ 结果渲染
 
-    def _result_pages(self) -> list[tuple[str, list[Any]]]:
+    def _result_pages(self) -> list[tuple[str, list[Any], bool]]:
         """按 ``group`` 声明聚合结果为页序列.
 
-        同组（非空 group 且非 cloud）结果合并为一页，页名为组名；
-        未声明组或云图结果保持独立页（页名 = 结果标题）。组按首次
-        出现顺序聚合（非相邻同组声明并入同一页）。
+        返回 ``(页签名, 结果列表, 是否 cloud 独立页)`` 三元组。
+
+        - 未声明 group 且非 cloud 的结果 → 默认「结果」流页；
+        - 显式 ``group`` 且非 cloud → 按组名聚合为一页；
+        - cloud 结果 → 独立页签（整页解算视图，不参与流）。
+
+        无 results 声明时返回空列表（调用方回退占位页）。
         """
         if self._template is None:
             return []
-        pages: list[tuple[str, list[Any]]] = []
-        index_by_group: dict[str, int] = {}
+        # 先聚合普通结果（按 group 或默认），cloud 独立
+        stream_groups: dict[str, list[Any]] = {}
+        cloud_results: list[Any] = []
         for result in self._template.dsl_results:
-            if result.group and result.kind != "cloud":
-                if result.group in index_by_group:
-                    pages[index_by_group[result.group]][1].append(result)
-                    continue
-                index_by_group[result.group] = len(pages)
-                pages.append((result.group, [result]))
+            if result.kind == "cloud":
+                cloud_results.append(result)
+            elif result.group:
+                stream_groups.setdefault(result.group, []).append(result)
             else:
-                pages.append((result.title, [result]))
+                stream_groups.setdefault(_DEFAULT_GROUP, []).append(result)
+        pages: list[tuple[str, list[Any], bool]] = []
+        for name, results in stream_groups.items():
+            pages.append((name, results, False))
+        for cloud in cloud_results:
+            pages.append((cloud.title, [cloud], True))
         return pages
 
     def _rebuild_tabs(self) -> None:
@@ -276,42 +286,45 @@ class TemplatePage(QWidget):
         if not pages:
             self._tabs.addTab(self._placeholder, "结果")
         else:
-            for title, results in pages:
-                page = DslGroupedResultView() if len(results) > 1 else DslResultView()
+            for title, _results, _is_cloud in pages:
+                page = ResultStreamView()
                 self._tabs.addTab(page, title)
         self._tabs.tabBar().setVisible(self._tabs.count() > 1)
 
     def _render_results(self) -> None:
-        """按输出载荷渲染各结果页（组页分块，cloud 路由到解算视图）."""
+        """按输出载荷渲染各结果页（流页分块，cloud 路由到解算视图）."""
         if self._template is None:
             return
         self._tabs.clear()
-        for title, results in self._result_pages():
-            if len(results) > 1:  # 组页：逐块渲染，块级失败显示错误文本块
-                blocks: list[tuple[str, Any]] = []
-                for result in results:
-                    try:
-                        blocks.append((result.title, build_result(result, self._outputs)))
-                    except TemplateError as exc:
-                        blocks.append((result.title, str(exc)))
-                page = DslGroupedResultView()
-                page.set_data(blocks)
-                self._tabs.addTab(page, title)
+        for title, results, is_cloud in self._result_pages():
+            if is_cloud:
+                # cloud 页：路由到解算视图
+                result = results[0]
+                try:
+                    data = build_result(result, self._outputs)
+                except TemplateError as exc:
+                    page = ResultStreamView()
+                    page.set_error(str(exc))
+                    self._tabs.addTab(page, title)
+                    continue
+                if isinstance(data, CloudData):
+                    self._tabs.addTab(self._build_cloud_page(data), title)
+                else:
+                    # build_result 未产生 CloudData：用流页显示非 cloud 载荷错误
+                    page = ResultStreamView()
+                    page.set_error(f"节点 {getattr(result, 'node_id', '?')!r} 输出暂不支持云图渲染")
+                    self._tabs.addTab(page, title)
                 continue
-            result = results[0]
-            try:
-                data = build_result(result, self._outputs)
-            except TemplateError as exc:
-                page = DslResultView()
-                page.set_error(str(exc))
-                self._tabs.addTab(page, title)
-                continue
-            if isinstance(data, CloudData):
-                self._tabs.addTab(self._build_cloud_page(data), title)
-            else:
-                page = DslResultView()
-                page.set_data(data)
-                self._tabs.addTab(page, title)
+            # 流页：逐块渲染，块级失败显示错误文本
+            blocks: list[tuple[str, Any, str]] = []
+            for result in results:
+                try:
+                    blocks.append((result.title, build_result(result, self._outputs), ""))
+                except TemplateError as exc:
+                    blocks.append((result.title, str(exc), "danger"))
+            page = ResultStreamView()
+            page.set_blocks(blocks)
+            self._tabs.addTab(page, title)
         if self._tabs.count() == 0:  # 无 results 声明：保持占位页
             self._tabs.addTab(self._placeholder, "结果")
         self._tabs.tabBar().setVisible(self._tabs.count() > 1)
