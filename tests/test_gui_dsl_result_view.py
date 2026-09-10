@@ -95,3 +95,24 @@ def test_render_cloud_placeholder(qtbot) -> None:
     view.set_data(CloudData(title="云图", node_id="solve"))
     assert view._title.text() == "云图"
     assert "solve" in view._body.text()
+
+
+def test_build_curve_widget_log_and_peak(qtbot) -> None:
+    """build_curve_widget 覆盖对数轴、mark_peak 极值标注分支."""
+    from zylab.gui.widgets.dsl_result_view import build_curve_widget
+    from zylab.studio.results import CurveData, CurveSeries
+
+    curve = CurveData(
+        title="对数峰值",
+        x_label="ω",
+        y_label="|H|",
+        log_x=True,
+        log_y=True,
+        mark_peak=True,
+        series=(CurveSeries("S1", (1.0, 2.0, 3.0), (0.1, 1.0, 0.5)),),
+        series_styles=({"color": "primary", "dash": "dashed", "width": 3},),
+    )
+    w = build_curve_widget(curve)
+    qtbot.addWidget(w)
+    w.show()
+    assert w.isVisible()

@@ -17,6 +17,20 @@ def _select_template(page: StudioPage, template_id: str) -> None:
     page._template_combo.setCurrentIndex(index)
 
 
+def _capture_status(page: StudioPage) -> list[str]:
+    """连接 status_message signal 到收集列表，返回列表引用（测试后直接检查）."""
+    msgs: list[str] = []
+    page.status_message.connect(msgs.append)
+    return msgs
+
+
+def _capture_run_status(page: StudioPage) -> list[tuple[str, str]]:
+    """连接 run_status_changed signal 到收集列表."""
+    states: list[tuple[str, str]] = []
+    page.run_status_changed.connect(lambda s, d: states.append((s, d)))
+    return states
+
+
 @pytest.mark.gui
 def test_page_builds_with_first_template(qtbot) -> None:
     """页面装配：模板下拉 + 画布单元 + 参数表单 + 源节点模型预览."""
@@ -84,9 +98,10 @@ def test_param_edit_marks_dirty(qtbot) -> None:
     page = StudioPage()
     qtbot.addWidget(page)
     _select_template(page, "structural.cantilever_static")
+    msgs = _capture_status(page)
     page._on_param_edited("model", "nx", 20)
     assert page._graph.node("model").state is NodeState.READY
-    assert "需重新运行" in page._status_label.text()
+    assert any("需重新运行" in m for m in msgs)
     page._preview_timer.stop()  # 阻断防抖预览（本测试只验证失效语义）
     page.shutdown()
 
@@ -101,10 +116,11 @@ def test_param_edit_refreshes_preview_async(qtbot) -> None:
     page._on_param_edited("model", "nx", 24)
     assert page._preview_timer.isActive()  # 源节点参数变化触发防抖
     page._preview_timer.stop()
+    msgs = _capture_status(page)
     page._refresh_preview_async()
     assert page._graph.node("model").state is NodeState.RUNNING  # 画布转圈态
-    assert "更新模型中" in page._status_label.text()
-    qtbot.waitUntil(lambda: "模型已更新" in page._status_label.text(), timeout=5000)
+    assert any("更新模型中" in m for m in msgs)
+    qtbot.waitUntil(lambda: any("模型已更新" in m for m in msgs), timeout=5000)
     node = page._graph.node("model")
     assert node.state is NodeState.UP_TO_DATE
     assert node.result is not old_result  # 模型已按新参数重建
@@ -202,9 +218,10 @@ def test_run_node_up_to_date_no_hang(qtbot) -> None:
     page = StudioPage()
     qtbot.addWidget(page)
     # model 源节点实例化时已进程内预览（UP_TO_DATE），运行到它队列恒空
+    msgs = _capture_status(page)
     page._run_node("model")
     assert not page._cancel_button.isEnabled()
-    assert "无需运行" in page._status_label.text()
+    assert any("无需运行" in m for m in msgs)
     assert "模型预览" in page._result_view.current_view()._summary.text()  # 直接呈现既有结果
     page.shutdown()
 
@@ -217,9 +234,10 @@ def test_run_all_when_all_up_to_date(qtbot) -> None:
     _select_template(page, "structural.cantilever_static")
     page._on_run_all()
     qtbot.waitUntil(lambda: not page._cancel_button.isEnabled(), timeout=60000)
+    msgs = _capture_status(page)
     page._on_run_all()  # 二次运行全部：全部已最新
     assert not page._cancel_button.isEnabled()
-    assert "所有节点已是最新" in page._status_label.text()
+    assert any("所有节点已是最新" in m for m in msgs)
     page.shutdown()
 
 
@@ -232,9 +250,10 @@ def test_cancel_running(qtbot) -> None:
     page._param_form._fields[("solve", "n_freq")].setValue(200)  # 拉长运行时间确保可取消
     page._on_run_all()
     qtbot.waitUntil(page._cancel_button.isEnabled, timeout=10000)
+    states = _capture_run_status(page)
     page._on_cancel()
     assert not page._cancel_button.isEnabled()
-    assert "已取消" in page._status_label.text()
+    assert any(s == "idle" and "运行已取消" in d for s, d in states)
     page.shutdown()
 
 
@@ -407,9 +426,10 @@ def test_node_failed_shows_error(qtbot) -> None:
     """节点失败事件：结果视图错误着色 + 状态标签."""
     page = StudioPage()
     qtbot.addWidget(page)
+    states = _capture_run_status(page)
     page._on_node_failed("solve", "SolverError: 矩阵奇异")
     assert page._result_view.current_view()._summary.objectName() == "errorText"
-    assert "失败" in page._status_label.text()
+    assert any(s == "error" for s, _d in states)
     page.shutdown()
 
 
@@ -458,10 +478,11 @@ def test_project_save_and_load(qtbot, tmp_path) -> None:
     # 新页面打开工程：内嵌模板注册并实例化，参数还原
     page2 = StudioPage(data_dir=tmp_path / "other")
     qtbot.addWidget(page2)
+    msgs2 = _capture_status(page2)
     page2._load_project(path)
     assert page2._graph.template.id == "structural.truss_nonlinear"
     assert page2._graph.node("model").params["rise"] == 0.8
-    assert "已打开" in page2._status_label.text()
+    assert any("已打开" in m for m in msgs2)
     page.shutdown()
     page2.shutdown()
 
@@ -473,6 +494,7 @@ def test_load_project_bad_file(qtbot, tmp_path) -> None:
     qtbot.addWidget(page)
     bad = tmp_path / "bad.zprj"
     bad.write_text("not a hdf5", encoding="utf-8")
+    msgs = _capture_status(page)
     page._load_project(bad)
-    assert "打开失败" in page._status_label.text()
+    assert any("打开失败" in m for m in msgs)
     page.shutdown()

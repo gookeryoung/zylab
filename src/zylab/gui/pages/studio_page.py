@@ -112,6 +112,8 @@ class StudioPage(QWidget):
 
     #: 运行整体状态变更通知主窗口更新右下 indicator
     run_status_changed = Signal(str, str)  # (state, detail)
+    #: 操作反馈（加载模板/保存工程等） → 主窗口 QStatusBar 临时消息
+    status_message = Signal(str)
 
     def __init__(self, parent: QWidget | None = None, data_dir: Path | None = None) -> None:
         """初始化工作台页：参数化计算注册表（内置 + 用户目录 + 插件）+ Workbench 布局."""
@@ -122,6 +124,7 @@ class StudioPage(QWidget):
         self._registry.load_entry_points()
         self._graph: WorkflowGraph | None = None
         self._runner: WorkflowRunner | None = None
+        self._run_has_failed = False  # 本次运行是否有节点失败
         self._active_row = -1
         self._bridge = _StudioBridge()
         self._preview_bridge = _PreviewBridge()
@@ -205,14 +208,12 @@ class StudioPage(QWidget):
         return bar
 
     def _build_bottom_bar(self) -> QWidget:
-        """底部状态栏：状态文本 + 进度条 + 取消按钮（进度条右侧）."""
+        """底部运行面板：进度条 + 取消按钮（状态文本统一进主窗口右下 indicator）."""
         bar = QFrame(objectName="bottomBar")
         layout = QHBoxLayout(bar)
         layout.setContentsMargins(theme.SPACING_MD, theme.SPACING_XS, theme.SPACING_MD, theme.SPACING_XS)
         layout.setSpacing(theme.SPACING_SM)
-        self._status_label = QLabel("就绪", objectName="secondaryText")
-        self._status_label.setWordWrap(True)
-        layout.addWidget(self._status_label, stretch=1)
+        layout.addStretch(1)
         self._progress = QProgressBar()
         self._progress.setRange(0, 100)
         self._progress.setValue(0)
@@ -323,7 +324,7 @@ class StudioPage(QWidget):
     def _on_open_template_dialog(self) -> None:
         """打开参数化计算选择对话框（分组树 + 搜索 + 详情）并实例化所选参数化计算."""
         if self._runner is not None and self._runner.running:
-            self._status_label.setText("运行中，无法切换参数化计算")
+            self.status_message.emit("运行中，无法切换参数化计算")
             return
         dialog = TemplateDialog(self._classic_templates(), self)
         if exec_dialog(dialog) and dialog.selected_id is not None:
@@ -340,7 +341,7 @@ class StudioPage(QWidget):
         self._canvas.set_graph(self._graph)
         self._param_form.set_graph(self._graph, template.param_groups)
         self._result_view.clear("尚未求解 —— 右键画布选择「运行全部」开始")
-        self._status_label.setText(template.description or template.name)
+        self.status_message.emit(template.description or template.name)
         self._progress.setValue(0)
         self._preview_sources()
 
@@ -405,18 +406,18 @@ class StudioPage(QWidget):
         """保存工程：参数化计算（含当前参数）内嵌 .zprj（人类可读 JSON，自包含不依赖参数化计算库）."""
         template = self._template_with_current_params()
         save_workflow(path, template)
-        self._status_label.setText(f"工程已保存: {path.name}")
+        self.status_message.emit(f"工程已保存: {path.name}")
 
     def _load_project(self, path: Path) -> None:
         """打开工程（JSON 现行格式 / 旧版 HDF5 自动识别）：内嵌参数化计算注册并实例化."""
         try:
             template = load_workflow(path)
         except ProjectIOError as exc:
-            self._status_label.setText(f"工程打开失败: {exc}")
+            self.status_message.emit(f"工程打开失败: {exc}")
             return
         self._registry.register(template, replace=True)
         self._reload_template_list(select_id=template.id)
-        self._status_label.setText(f"工程已打开: {path.name}")
+        self.status_message.emit(f"工程已打开: {path.name}")
 
     def _on_save_template_as(self) -> None:
         """对话框：另存为参数化计算."""
@@ -434,7 +435,7 @@ class StudioPage(QWidget):
             return
         template = self._save_template_as(dialog.textValue())
         if template is not None:
-            self._status_label.setText(f"参数化计算已保存: {template.name}")
+            self.status_message.emit(f"参数化计算已保存: {template.name}")
 
     def _on_save_project(self) -> None:
         """对话框：保存工程."""
@@ -462,7 +463,7 @@ class StudioPage(QWidget):
             return
         if not any(node.needs_run for node in self._graph.nodes()):
             # 全部最新：无事件派发，直接返回（否则运行态 UI 无恢复触发点）
-            self._status_label.setText("所有节点已是最新")
+            self.status_message.emit("所有节点已是最新")
             return
         self._runner = WorkflowRunner(self._graph)  # 每次运行自建，避免执行器复用状态
         self._set_running_ui(True)
@@ -473,7 +474,6 @@ class StudioPage(QWidget):
         if self._runner is not None:
             self._runner.cancel()
         self._set_running_ui(False)
-        self._status_label.setText("已取消")
         self.run_status_changed.emit("idle", "运行已取消")
         self._canvas.refresh_states()
 
@@ -485,7 +485,7 @@ class StudioPage(QWidget):
         if not any(self._graph.node(nid).needs_run for nid in targets):
             # 目标及其上游全部最新：runner 队列为空不派发事件，运行态 UI 将
             # 无恢复触发点（取消按钮卡激活），须在此直接返回并呈现既有结果
-            self._status_label.setText("节点已是最新，无需运行")
+            self.status_message.emit("节点已是最新，无需运行")
             self._show_node_result(node_id)
             return
         self._runner = WorkflowRunner(self._graph)
@@ -498,7 +498,7 @@ class StudioPage(QWidget):
         self._template_combo.setEnabled(not running)
         self._param_form.set_fields_enabled(not running)
         if running:
-            self._status_label.setText("运行中…")
+            self._run_has_failed = False
             self._bridge.finished_with_state.emit("running", "")
             self.run_status_changed.emit("running", "")
 
@@ -508,12 +508,12 @@ class StudioPage(QWidget):
         """节点开始执行：刷新画布状态与动画."""
         self._canvas.refresh_states()
 
-    def _on_node_progress(self, node_id: str, progress: float, message: str) -> None:
-        """更新进度条与状态标签."""
+    def _on_node_progress(self, _node_id: str, progress: float, _message: str) -> None:
+        """更新进度条（运行进度文本已统一进主窗口右下 indicator）."""
         if self._graph is None:
             return
         self._progress.setValue(int(progress * 100))
-        self._status_label.setText(f"{self._graph.node(node_id).name}: {message}")
+        # 运行进度文本已统一进主窗口右下 indicator
 
     def _on_node_result(self, node_id: str, _result: object) -> None:
         """节点完成：刷新画布，结果节点自动呈现，队列排空后恢复 UI."""
@@ -527,7 +527,7 @@ class StudioPage(QWidget):
         self._canvas.refresh_states()
         if self._graph is not None:
             self._result_view.show_error(node_id, self._graph.node(node_id).name, message)
-        self._status_label.setText("运行失败")
+        self._run_has_failed = True
         self._bridge.finished_with_state.emit("error", message)
         self.run_status_changed.emit("error", message)
         QTimer.singleShot(0, self._sync_idle_ui)
@@ -536,8 +536,7 @@ class StudioPage(QWidget):
         """队列排空后恢复运行控件（事件先于 handle 清空，延迟到事件循环下一轮判定）."""
         if self._runner is not None and not self._runner.running:
             self._set_running_ui(False)
-            if "失败" not in self._status_label.text():
-                self._status_label.setText("运行完成")
+            if not self._run_has_failed:
                 self._bridge.finished_with_state.emit("success", "")
                 self.run_status_changed.emit("success", "")
 
@@ -640,7 +639,7 @@ class StudioPage(QWidget):
         self._canvas.refresh_states()
         if not self._graph.node(node_id).spec.inputs:
             self._preview_timer.start()  # 模型几何/网格参数变化 -> 云图预览联动
-        self._status_label.setText("参数已修改，需重新运行")
+        self.status_message.emit("参数已修改，需重新运行")
 
     def _refresh_preview_async(self) -> None:
         """后台线程重建过期源节点的模型预览（画布转圈 + 状态提示，不阻塞 UI）."""
@@ -654,7 +653,7 @@ class StudioPage(QWidget):
         for node in sources:
             self._graph.mark_running(node.id)  # 画布单元转圈动画
         self._canvas.refresh_states()
-        self._status_label.setText("更新模型中…")
+        self.status_message.emit("更新模型中…")
         # 任务快照（线程内只读，不触碰 Qt 与图状态）
         jobs = {n.id: (n.spec.target, dict(n.params)) for n in sources}
 
@@ -683,7 +682,7 @@ class StudioPage(QWidget):
             self._graph.mark_failed(node_id, message)
             self._result_view.view_for(node_id, node.name, activate=False).show_error(message)
         self._canvas.refresh_states()
-        self._status_label.setText("模型已更新，需重新运行" if results else "模型更新失败")
+        self.status_message.emit("模型已更新，需重新运行" if results else "模型更新失败")
 
     # ------------------------------------------------------------------ 生命周期
 

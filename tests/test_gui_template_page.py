@@ -165,6 +165,55 @@ def test_page_theme_requested(qtbot) -> None:
     assert blocker.args == ["light"]
 
 
+@pytest.mark.gui
+def test_page_load_template_file_syntax_error(qtbot, tmp_path: Path, monkeypatch) -> None:
+    """DSL YAML 语法错误：加载失败走 TemplateError 分支并提示."""
+    path = tmp_path / "broken.yaml"
+    path.write_text("meta: {id: t.bad}", encoding="utf-8")  # 有效 YAML 但缺 pipeline
+    from zylab.gui.qt_compat import QFileDialog
+
+    monkeypatch.setattr(QFileDialog, "getOpenFileName", staticmethod(lambda *_a, **_k: (str(path), "")))
+    # load_dsl 会因 DSL 验证失败抛 TemplateError（缺 pipeline 声明）
+    # 我们 monkeypatch load_dsl 让它硬抛异常覆盖行 178-180
+    import zylab.gui.pages.template_page as mod
+    from zylab.studio.errors import TemplateError
+
+    monkeypatch.setattr(mod, "load_dsl", lambda _p: (_ for _ in ()).throw(TemplateError("YAML 语法错误")))
+    page = TemplatePage()
+    qtbot.addWidget(page)
+    messages: list[str] = []
+    page.status_message.connect(messages.append)
+    page.load_template_file()
+    assert any("加载失败" in m for m in messages)
+    assert page._template is None
+
+
+@pytest.mark.gui
+def test_page_export_report_io_error(qtbot, template, monkeypatch, tmp_path) -> None:
+    """报告导出 OSError：Path.write_text 异常被捕获并提示状态消息."""
+    from zylab.gui.qt_compat import QFileDialog
+
+    page = TemplatePage()
+    qtbot.addWidget(page)
+    page.load_template(template)
+    with qtbot.waitSignal(page.run_finished, timeout=10000):
+        page.run()
+    assert page._export_btn.isEnabled()
+    target = tmp_path / "报告.html"
+    monkeypatch.setattr(
+        QFileDialog, "getSaveFileName", staticmethod(lambda *_a, **_k: (str(target), "HTML 报告 (*.html)"))
+    )
+
+    def boom(*_a, **_kw):
+        raise OSError("磁盘已满")
+
+    monkeypatch.setattr(type(target), "write_text", boom)
+    messages: list[str] = []
+    page.status_message.connect(messages.append)
+    page.export_report()
+    assert any("报告导出失败" in m for m in messages)
+
+
 # ------------------------------------------------ 边界与兜底
 
 

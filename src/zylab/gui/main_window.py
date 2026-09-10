@@ -311,6 +311,7 @@ class MainWindow(QMainWindow):
         # 笔记本/参数化计算页状态提示统一进主窗口状态栏；参数化计算声明的主题按预览语义应用
         self._notebook_page.status_message.connect(self.statusBar().showMessage)
         self._template_page.status_message.connect(self.statusBar().showMessage)
+        self._studio_page.status_message.connect(self.statusBar().showMessage)
         self._template_page.theme_requested.connect(lambda name: self._set_theme(name, persist=False))
         # 参数化计算运行生命周期 → 主窗口右下 indicator（加载/运行/完成/失败统一承载）
         self._template_page.run_state_changed.connect(self.set_run_status)
