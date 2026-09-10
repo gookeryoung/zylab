@@ -28,6 +28,7 @@ from .qt_compat import (
     QPushButton,
     QShortcut,
     QSize,
+    QSizePolicy,
     QSplitter,
     QStackedWidget,
     Qt,
@@ -90,12 +91,14 @@ class MainWindow(QMainWindow):
         root.setSpacing(0)
         root.addWidget(self._build_header())
 
-        splitter = QSplitter(Qt.Horizontal)
+        self._splitter = QSplitter(Qt.Horizontal)
         self._sidebar = QListWidget(objectName="sidebar")
         for label in _NAV_LABELS:
             QListWidgetItem(label, self._sidebar)
         self._sidebar.setIconSize(_NAV_ICON_SIZE)
         self._sidebar.setFixedWidth(theme.SIDEBAR_WIDTH)
+        # QListWidget 默认垂直 Expanding 会强制填充整个容器，导致 item 下方大片空白
+        self._sidebar.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Preferred)
 
         # 侧边栏折叠手柄（包在容器底部）
         from .qt_compat import QPushButton as _QPB
@@ -111,6 +114,7 @@ class MainWindow(QMainWindow):
         _sb_layout.setContentsMargins(0, 0, 0, 0)
         _sb_layout.setSpacing(0)
         _sb_layout.addWidget(self._sidebar)
+        _sb_layout.addStretch()  # 弹簧填充导航项与手柄之间的空白
         _sb_layout.addWidget(self._sidebar_handle)
         self._sidebar.setCurrentRow(_PAGE_CONSOLE)
         self._refresh_sidebar_icons()
@@ -123,12 +127,12 @@ class MainWindow(QMainWindow):
         self._stack.addWidget(self._studio_page)
         self._stack.addWidget(self._template_page)
 
-        splitter.addWidget(self._sidebar_container)
-        splitter.addWidget(self._stack)
-        splitter.setStretchFactor(0, 0)
-        splitter.setStretchFactor(1, 1)
-        splitter.setSizes([theme.SIDEBAR_WIDTH, 1080])
-        root.addWidget(splitter, stretch=1)
+        self._splitter.addWidget(self._sidebar_container)
+        self._splitter.addWidget(self._stack)
+        self._splitter.setStretchFactor(0, 0)
+        self._splitter.setStretchFactor(1, 1)
+        self._splitter.setSizes([theme.SIDEBAR_WIDTH, 1080])
+        root.addWidget(self._splitter, stretch=1)
         self.setCentralWidget(central)
 
     def _build_header(self) -> QFrame:
@@ -492,6 +496,8 @@ class MainWindow(QMainWindow):
                 item = self._sidebar.item(row)
                 item.setText("")
                 item.setToolTip(item.toolTip() if item.toolTip() else _NAV_LABELS[row])
+            self._refresh_sidebar_icons()
+            self._splitter.setSizes([48, max(0, self._splitter.width() - 48 - self._splitter.handleWidth())])
         else:
             self._sidebar.setFixedWidth(theme.SIDEBAR_WIDTH)
             self._sidebar_container.setFixedWidth(theme.SIDEBAR_WIDTH)
@@ -500,7 +506,13 @@ class MainWindow(QMainWindow):
                 item = self._sidebar.item(row)
                 item.setText(labels[row])
                 item.setToolTip("")
-        self._refresh_sidebar_icons()
+            self._refresh_sidebar_icons()
+            self._splitter.setSizes(
+                [
+                    theme.SIDEBAR_WIDTH,
+                    max(0, self._splitter.width() - theme.SIDEBAR_WIDTH - self._splitter.handleWidth()),
+                ]
+            )
 
     def _load_gui_state(self) -> None:
         """加载 gui_state.json（侧边栏折叠、窗口几何等）."""

@@ -82,6 +82,7 @@ try:
         QPushButton,
         QScrollArea,
         QShortcut,
+        QSizePolicy,
         QSlider,
         QSpinBox,
         QSplitter,
@@ -174,6 +175,7 @@ except ImportError:  # pragma: no cover（3.8 环境走此分支）
         QPushButton,
         QScrollArea,
         QShortcut,
+        QSizePolicy,  # noqa: F401  # re-export from compat layer
         QSlider,
         QSpinBox,
         QSplitter,
