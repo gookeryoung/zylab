@@ -26,6 +26,7 @@ dependencies = [
     "tomli>=2.0; python_version < '3.11'",
     # DSL 模板载体（YAML 是 JSON 超集，两类模板共用同一解析管线）
     "PyYAML>=6.0",
+    "matplotlib>=3.7.5",
 ]
 description = "通用科学计算仿真分析平台。"
 license = "MIT"
@@ -56,6 +57,10 @@ requires = ["hatchling"]
 [project.scripts]
 zylab = "zylab.gui.__main__:main"
 
+[[tool.uv.index]]
+default = true
+url = "https://mirrors.aliyun.com/pypi/simple/"
+
 [tool.hatch.build.targets.wheel]
 packages = ["src/zylab"]
 
@@ -64,10 +69,6 @@ packages = ["src/zylab"]
 
 [tool.uv]
 required-version = ">=0.5.0"
-
-[[tool.uv.index]]
-default = true
-url = "https://mirrors.aliyun.com/pypi/simple/"
 
 
 [dependency-groups]
