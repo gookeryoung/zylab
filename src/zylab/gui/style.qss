@@ -104,7 +104,7 @@ QLabel#workspaceLabel {
     border: none;
     padding: 0;
 }
-QPushButton#workspaceHistoryBtn,
+QToolButton#workspaceHistoryBtn,
 QPushButton#workspaceOpenBtn {
     background: transparent;
     color: ${QSS_NAV_TEXT};
@@ -117,13 +117,13 @@ QPushButton#workspaceOpenBtn {
     min-width: 0px;
     max-width: 22px;
 }
-QPushButton#workspaceHistoryBtn:hover,
+QToolButton#workspaceHistoryBtn:hover,
 QPushButton#workspaceOpenBtn:hover {
     background-color: ${QSS_NAV_BG_SELECTED};
     border-color: ${QSS_NAV_ACCENT};
     color: ${QSS_NAV_ACCENT};
 }
-QPushButton#workspaceHistoryBtn:pressed,
+QToolButton#workspaceHistoryBtn:pressed,
 QPushButton#workspaceOpenBtn:pressed {
     background-color: ${QSS_SELECTION_BG};
 }

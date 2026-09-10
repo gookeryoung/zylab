@@ -35,6 +35,7 @@ from .qt_compat import (
     QSplitter,
     QStackedWidget,
     Qt,
+    QToolButton,
     QVBoxLayout,
     QWidget,
 )
@@ -132,6 +133,7 @@ class MainWindow(QMainWindow):
 
         # 标签：【工作区】
         ws_tag = QLabel("工作区", objectName="workspaceTag")
+        ws_tag.setFixedWidth(40)
 
         # 竖向分隔线
         ws_sep = QLabel(objectName="workspaceSeparator")
@@ -148,13 +150,13 @@ class MainWindow(QMainWindow):
         ws_layout.addWidget(self._workspace_label, stretch=1)
 
         # 操作按钮组（右侧）：下拉历史 + 打开新工作区
-        self._workspace_history_btn = QPushButton(objectName="workspaceHistoryBtn")
+        self._workspace_history_btn = QToolButton(objectName="workspaceHistoryBtn")
         self._workspace_history_btn.setToolTip("切换到最近的工作区")
         self._workspace_history_btn.setFixedSize(24, 22)
         self._workspace_history_btn.setIconSize(QSize(10, 10))
         self._workspace_history_menu = QMenu(self)
         self._workspace_history_btn.setMenu(self._workspace_history_menu)
-        self._workspace_history_btn.clicked.connect(self._refresh_and_show_workspace_menu)
+        self._workspace_history_btn.setPopupMode(QToolButton.InstantPopup)
 
         self._workspace_open_btn = QPushButton(objectName="workspaceOpenBtn")
         self._workspace_open_btn.setToolTip("打开新工作区目录")
