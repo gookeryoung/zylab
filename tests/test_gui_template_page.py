@@ -356,7 +356,7 @@ def test_page_grouped_results_single_tab(qtbot) -> None:
     grouped = page._tabs.widget(0)
     assert isinstance(grouped, ResultStreamView)
     widgets = [grouped._container_layout.itemAt(i).widget() for i in range(grouped._container_layout.count())]
-    boxes = [w for w in widgets if isinstance(w, QFrame) and w.objectName() == "resultCard"]
+    boxes = [w for w in widgets if isinstance(w, QFrame) and w.objectName() == "resultCell"]
     assert [b._title_label.text() for b in boxes] == ["平方曲线", "摘要"]
     # 曲线块定高（同页多块不挤占）、摘要块文本渲染
     assert boxes[0].height() > 0
@@ -379,7 +379,7 @@ def test_page_grouped_block_error_isolated(qtbot) -> None:
     grouped = page._tabs.widget(0)
     assert isinstance(grouped, ResultStreamView)
     widgets = [grouped._container_layout.itemAt(i).widget() for i in range(grouped._container_layout.count())]
-    boxes = [w for w in widgets if isinstance(w, QFrame) and w.objectName() == "resultCard"]
+    boxes = [w for w in widgets if isinstance(w, QFrame) and w.objectName() == "resultCell"]
     assert [b._title_label.text() for b in boxes] == ["平方曲线", "摘要"]
     from zylab.gui.qt_compat import QLabel
 

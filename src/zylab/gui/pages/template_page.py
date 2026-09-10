@@ -117,7 +117,7 @@ class TemplatePage(QWidget):
         self._param_scroll.setMinimumWidth(280)
         splitter.addWidget(self._param_scroll)
 
-        self._tabs = QTabWidget()
+        self._tabs = QTabWidget(objectName="resultTabs")
         self._placeholder = QLabel("加载后此处显示定制化计算界面", objectName="secondaryText")
         self._placeholder.setWordWrap(True)
         self._placeholder.setAlignment(Qt.AlignCenter)

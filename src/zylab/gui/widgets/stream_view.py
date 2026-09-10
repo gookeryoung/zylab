@@ -1,12 +1,9 @@
-"""ResultStreamView — Jupyter 式参数化计算结果输出流（分块卡片容器）.
+"""ResultStreamView — Jupyter 式参数化计算结果输出流（分块容器）.
 
-与既有 :mod:`~zylab.gui.widgets.dsl_result_view` 中 :class:`DslResultView` /
-:class:`DslGroupedResultView` 的区别：
-
-- 单页展示多个结果块（纵向堆叠滚动区），块间不互相挤占；
-- 块标题栏支持语义色竖条（info/success/warning/error）与折叠交互；
-- 文本块支持 ``markdown`` 格式（通过 :mod:`studio.richtext` 转换为 HTML，
-  由 QTextBrowser 渲染，只读可复制）。
+对齐 :class:`~zylab.gui.pages.notebook_page.CellWidget` 的设计语言：
+默认透明背景、hover 微背景提示、语义色左边框（由 QSS 属性选择器
+渲染），无重卡片边框。每块为 :class:`ResultBlockCard`（标题栏 +
+可折叠正文），块间纵向堆叠，整页置于 QScrollArea 滚动查看。
 
 消费方（:class:`~zylab.gui.pages.template_page.TemplatePage`）按 DSL
 ``results`` 声明聚合：
@@ -15,8 +12,8 @@
 - 显式 ``group`` → 单独页签，页内仍为流渲染；
 - cloud 结果 → 独立页签（整页解算视图，不参与流）。
 
-本模块仅负责块容器与块渲染；具体的 curve / table / text 正文渲染仍委托
-``dsl_result_view.build_*_widget`` 系列辅助函数（保持复用）。
+正文 curve / table / text 渲染委托 :mod:`dsl_result_view` 的
+``build_*_widget`` 系列辅助函数（保持复用）。
 """
 
 from __future__ import annotations
@@ -51,7 +48,7 @@ _STREAM_CURVE_HEIGHT = 300
 #: 分组页内表格块高度上限（px，超出内部滚动）.
 _STREAM_TABLE_MAX_HEIGHT = 320
 
-#: 语义色竖条颜色映射.
+#: 语义色到 QSS 属性选择器颜色的映射（与 style.qss resultCell[semantic="*"] 规则配套）.
 _SEMANTIC_BAR_COLORS: dict[str, str] = {
     "info": "#3B82F6",
     "success": "#10B981",
@@ -60,7 +57,7 @@ _SEMANTIC_BAR_COLORS: dict[str, str] = {
 }
 
 
-# ------------------------------------------------------------------ 辅助函数（先于块类定义，避免前向引用）
+# ------------------------------------------------------------------ 辅助函数
 
 
 def _kind_badge(payload: ViewData | str) -> str:
@@ -99,22 +96,23 @@ def _build_table_widget(data: TableData) -> QTableWidget:
 
 
 def _build_text_body(data: TextData) -> QWidget:
-    """文本正文：markdown 用 QTextBrowser.setHtml，plain 用 QLabel."""
+    """文本正文：markdown 用 QTextBrowser.setHtml，plain 用 QLabel.
+
+    样式全由 style.qss 的 resultPlainText / resultMarkdownBody 规则控制，
+    零内联 padding。
+    """
     if data.format == "markdown":
         html_out = markdown_to_html(data.text)
-        browser = QTextBrowser()
+        browser = QTextBrowser(objectName="resultMarkdownBody")
         browser.setHtml(html_out)
         browser.setOpenExternalLinks(False)
         palette = theme.current_palette()
-        browser.setStyleSheet(
-            f"border: none; background: transparent; padding: 8px 16px;color: {palette.text_primary};"
-        )
+        browser.setStyleSheet(f"border: none; background: transparent; color: {palette.text_primary};")
         browser.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
         return browser
 
     label = QLabel(data.text, objectName="resultText")
     label.setWordWrap(True)
-    label.setStyleSheet("padding: 8px 16px;")
     return label
 
 
@@ -143,10 +141,15 @@ def _col_alignment(col_def: TableColumn) -> int:
 
 
 class ResultBlockCard(QFrame):
-    """单个结果块卡片（标题栏 + 可折叠正文）.
+    """单个结果块卡片（标题栏 + 可折叠正文）——Jupyter 式轻盈风格.
 
-    标题栏：语义色竖条（3px）+ 标题文本 + 类型徽标 + 折叠箭头。
-    点击标题栏切换折叠状态；正文渲染为 curve / table / text / error 四型。
+    对齐 :class:`~zylab.gui.pages.notebook_page.CellWidget`：
+    默认透明背景、hover 微背景提示、语义色左边框（3px，由 QSS 属性
+    选择器 ``resultCell[semantic="*"]`` 渲染，替代 CellWidget 的聚焦
+    主色左边框），无重卡片边框。
+
+    标题栏：标题文本 + 类型徽标 + 折叠箭头；点击切换正文折叠。
+    样式完全由 style.qss 的 QFrame#resultCell 系列规则驱动，零内联样式。
     """
 
     def __init__(
@@ -156,58 +159,37 @@ class ResultBlockCard(QFrame):
         style: str = "",
         parent: QWidget | None = None,
     ) -> None:
-        super().__init__(parent, objectName="resultCard")
+        super().__init__(parent, objectName="resultCell")
         self._collapsed = False
 
-        palette = theme.current_palette()
-        self.setStyleSheet(
-            f"QFrame#resultCard {{ background: {palette.bg_muted}; "
-            f"border: 1px solid {palette.border}; border-radius: 10px; }}"
-        )
+        # 语义色作为 QSS 动态属性，供属性选择器渲染左边框
+        self.setProperty("semantic", style if style else "default")
 
         root = QVBoxLayout(self)
-        root.setContentsMargins(0, 0, 0, 0)
-        root.setSpacing(0)
+        root.setContentsMargins(theme.SPACING_MD, theme.SPACING_SM, theme.SPACING_MD, theme.SPACING_SM)
+        root.setSpacing(theme.SPACING_XS)
 
         # ---- 标题栏 ----
-        header = QFrame(objectName="resultCardHeader")
-        header.setStyleSheet(
-            f"QFrame#resultCardHeader {{ background: {palette.bg_muted}; "
-            f"border-top-left-radius: 10px; border-top-right-radius: 10px; }}"
-        )
+        header = QFrame(objectName="resultCellHeader")
+        header.setCursor(Qt.PointingHandCursor)
         header_layout = QHBoxLayout(header)
-        header_layout.setContentsMargins(theme.SPACING_MD, theme.SPACING_SM, theme.SPACING_MD, theme.SPACING_SM)
+        header_layout.setContentsMargins(0, 0, 0, 0)
         header_layout.setSpacing(theme.SPACING_SM)
-
-        # 语义色竖条
-        bar_color = _SEMANTIC_BAR_COLORS.get(style, palette.border)
-        self._bar = QFrame()
-        self._bar.setFixedWidth(3)
-        self._bar.setFixedHeight(16)
-        self._bar.setStyleSheet(f"background: {bar_color}; border-radius: 2px;")
-        header_layout.addWidget(self._bar)
 
         # 标题
         self._title_label = QLabel(title, objectName="resultTitle")
         header_layout.addWidget(self._title_label)
 
-        # 类型徽标
+        # 类型徽标（胶囊样式由 QSS resultKindBadge 控制）
         kind_name = _kind_badge(payload)
-        self._badge = QLabel(kind_name)
-        self._badge.setObjectName("secondaryText")
-        self._badge.setStyleSheet(
-            f"background: {palette.bg_app}; border: 1px solid {palette.border}; "
-            f"border-radius: 10px; padding: 1px 8px; font-size: 11px;"
-        )
+        self._badge = QLabel(kind_name, objectName="resultKindBadge")
         header_layout.addWidget(self._badge)
 
-        # 拉伸 + 折叠箭头
+        # 拉伸 + 折叠箭头（jupyter 式 ▾/▸）
         header_layout.addStretch()
-        self._caret = QLabel("▾")
-        self._caret.setObjectName("secondaryText")
+        self._caret = QLabel("▾", objectName="resultCellCaret")
         header_layout.addWidget(self._caret)
 
-        header.setCursor(Qt.PointingHandCursor)
         header.mousePressEvent = self._toggle  # type: ignore[assignment]
         root.addWidget(header)
 
@@ -216,25 +198,23 @@ class ResultBlockCard(QFrame):
         root.addWidget(self._body)
 
     def _toggle(self, _event: Any = None) -> None:
-        """切换折叠状态."""
+        """切换折叠状态（jupyter 式箭头联动）."""
         self._collapsed = not self._collapsed
         self._body.setVisible(not self._collapsed)
         self._caret.setText("▸" if self._collapsed else "▾")
 
     def _build_body(self, payload: ViewData | str) -> QWidget:
-        """按 payload 类型构建正文控件."""
+        """按 payload 类型构建正文控件（零内联样式，QSS 驱动）."""
         # 错误消息（str）
         if isinstance(payload, str):
             label = QLabel(payload, objectName="errorText")
             label.setWordWrap(True)
-            label.setStyleSheet("padding: 12px 16px;")
             return label
 
         # CloudData 占位
         if isinstance(payload, CloudData):
             label = QLabel(f"云图结果 {payload.node_id!r} 由解算视图渲染", objectName="secondaryText")
             label.setWordWrap(True)
-            label.setStyleSheet("padding: 12px 16px;")
             return label
 
         # 曲线
@@ -276,7 +256,6 @@ class ResultStreamView(QWidget):
         ])
 
     - ``set_blocks`` 接受 ``(标题, 视图数据或错误消息, 语义色)`` 序列；
-    - 流头部显示运行状态（占位时为「尚未运行」）；
     - 空序列时显示占位提示。
     """
 
@@ -286,11 +265,8 @@ class ResultStreamView(QWidget):
         root.setContentsMargins(0, 0, 0, 0)
         root.setSpacing(0)
 
-        palette = theme.current_palette()
-
-        # 运行状态头
+        # 运行状态头（极简，兼容既有测试；jupyter 无状态头但保留此 API）
         self._run_header = QLabel("尚未运行", objectName="secondaryText")
-        self._run_header.setStyleSheet(f"padding: 8px 16px; border-bottom: 1px solid {palette.border};")
         root.addWidget(self._run_header)
 
         # 滚动区 + 容器
@@ -302,7 +278,9 @@ class ResultStreamView(QWidget):
         self._container_layout.setContentsMargins(
             theme.SPACING_MD, theme.SPACING_MD, theme.SPACING_MD, theme.SPACING_MD
         )
-        self._container_layout.setSpacing(theme.SPACING_MD)
+        # 块间距与 notebook cell 流一致（SPACING_MD），但 ResultBlockCard 内
+        # 已有内边距，所以间距稍密避免重复空隙
+        self._container_layout.setSpacing(theme.SPACING_SM)
         self._container_layout.addStretch()
         self._scroll.setWidget(self._container)
         root.addWidget(self._scroll)
@@ -335,5 +313,5 @@ class ResultStreamView(QWidget):
         self._container_layout.addStretch()
 
     def set_error(self, message: str) -> None:
-        """流整体运行失败：错误卡置顶 + 状态头改红."""
+        """流整体运行失败：错误卡置顶."""
         self.set_blocks([("运行失败", message, "danger")])

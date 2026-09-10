@@ -340,6 +340,51 @@ QPushButton#notebookVarToggle:checked {
     border: 1px solid ${QSS_NAV_ACCENT};
 }
 
+
+/* ------------------------------------------------ 结果分块卡片（Jupyter 式轻盈，与 notebookCell 风格对齐） */
+/* 默认：透明嵌入；hover 微背景；语义色左边框由属性选择器渲染（替代 CellWidget 的聚焦主色边框） */
+QFrame#resultCell {
+    background-color: transparent;
+    border: 1px solid transparent;
+    border-left: 3px solid transparent;
+    border-radius: ${RADIUS_SM};
+}
+QFrame#resultCell:hover {
+    background-color: ${QSS_BG_MUTED};
+}
+/* 语义色左边框（info=蓝 / success=绿 / warning=橙 / danger=红 / default=主色） */
+QFrame#resultCell[semantic="default"]  { border-left: 3px solid ${QSS_PRIMARY}; }
+QFrame#resultCell[semantic="info"]     { border-left: 3px solid #3B82F6; }
+QFrame#resultCell[semantic="success"]  { border-left: 3px solid #10B981; }
+QFrame#resultCell[semantic="warning"]  { border-left: 3px solid #F59E0B; }
+QFrame#resultCell[semantic="danger"]   { border-left: 3px solid ${QSS_DANGER_TEXT}; }
+
+/* 标题栏（透明背景，由父级 resultCell hover 联动） */
+QFrame#resultCellHeader {
+    background-color: transparent;
+}
+
+/* 类型徽标胶囊（轻盈，不抢标题视觉焦点） */
+QLabel#resultKindBadge {
+    background-color: ${QSS_BG_MUTED};
+    color: ${QSS_TEXT_SECONDARY};
+    border: 1px solid ${QSS_BORDER};
+    border-radius: 10px;
+    padding: 1px 8px;
+    font-size: ${FONT_CAPTION};
+}
+
+/* 折叠箭头（与类型徽标同色系） */
+QLabel#resultCellCaret {
+    color: ${QSS_TEXT_SECONDARY};
+    font-size: ${FONT_BODY};
+}
+
+/* 结果块运行状态头（极简，位于 ResultStreamView 顶部） */
+QLabel#streamRunHeader {
+    padding: 4px 16px;
+}
+
 /* ------------------------------------------------ 模板选择对话框 */
 QTreeWidget#templateTree {
     background-color: ${QSS_BG_APP};
