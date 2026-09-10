@@ -1,14 +1,14 @@
 """工作台页：Workbench 风格三区整合（工具栏 + 系统画布/结果 + 参数表单 + 底部状态栏）.
 
 交互模型（对标 ANSYS Workbench）：
-- 顶部工具栏：模板下拉选择 + 模板/工程操作图标按钮；
-- 中央系统画布：整个模板为一个组合框（标题栏点击或 Ctrl+A 全选），
+- 顶部工具栏：参数化计算下拉选择 + 参数化计算/工程操作图标按钮；
+- 中央系统画布：整个参数化计算为一个组合框（标题栏点击或 Ctrl+A 全选），
   环节单元单击显示其参数与结果，双击运行到该节点，右键菜单求解
   （单元：运行到此 / 强制重跑 / 查看结果；空白：运行全部）；
 - 右侧参数表单：单击环节只显示该环节参数，全选显示全部参数；
 - 底部状态栏：状态文本 + 进度条 + 取消按钮（进度条右侧）；
-- 模板另存（用户模板按学科存 data_dir/templates/<学科>/*.json）、
-  工程保存/打开（.zprj 人类可读 JSON 内嵌模板+参数，兼容旧 HDF5）。
+- 参数化计算另存（用户参数化计算按学科存 data_dir/templates/<学科>/*.json）、
+  工程保存/打开（.zprj 人类可读 JSON 内嵌参数化计算+参数，兼容旧 HDF5）。
 """
 
 from __future__ import annotations
@@ -106,10 +106,10 @@ class _PreviewBridge(QObject):
 
 
 class StudioPage(QWidget):
-    """分析工作台页（模板配置化多学科计算工具）."""
+    """分析工作台页（参数化计算配置化多学科计算工具）."""
 
     def __init__(self, parent: QWidget | None = None, data_dir: Path | None = None) -> None:
-        """初始化工作台页：模板注册表（内置 + 用户目录 + 插件）+ Workbench 布局."""
+        """初始化工作台页：参数化计算注册表（内置 + 用户目录 + 插件）+ Workbench 布局."""
         super().__init__(parent)
         self._data_dir = Path(data_dir) if data_dir is not None else default_data_dir()
         self._registry = TemplateRegistry.with_builtin()
@@ -129,7 +129,7 @@ class StudioPage(QWidget):
         self._build_ui()
         self._connect()
         # QComboBox 首项在 blockSignals 填充期间已置 currentIndex=0，
-        # 再 setCurrentIndex(0) 同值不发射信号，须显式实例化首个模板
+        # 再 setCurrentIndex(0) 同值不发射信号，须显式实例化首个参数化计算
         self._on_template_selected(0)
 
     # ------------------------------------------------------------------ UI
@@ -170,12 +170,12 @@ class StudioPage(QWidget):
         root.addWidget(self._build_bottom_bar())
 
     def _build_toolbar(self) -> QWidget:
-        """顶部工具栏：模板下拉 + 模板/工程操作图标按钮."""
+        """顶部工具栏：参数化计算下拉 + 参数化计算/工程操作图标按钮."""
         bar = QFrame(objectName="toolBar")
         layout = QHBoxLayout(bar)
         layout.setContentsMargins(theme.SPACING_MD, theme.SPACING_SM, theme.SPACING_MD, theme.SPACING_SM)
         layout.setSpacing(theme.SPACING_SM)
-        layout.addWidget(QLabel("模板"))
+        layout.addWidget(QLabel("参数化计算"))
         self._template_combo = QComboBox(objectName="templateCombo")
         self._template_combo.setMinimumWidth(240)
         self._template_combo.setSizeAdjustPolicy(QComboBox.AdjustToContents)
@@ -184,8 +184,8 @@ class StudioPage(QWidget):
         layout.addStretch()
 
         icon_size = QSize(16, 16)
-        self._new_template_button = self._tool_button("新建分析（浏览模板库）")
-        self._save_template_button = self._tool_button("另存为模板")
+        self._new_template_button = self._tool_button("新建分析（浏览参数化计算库）")
+        self._save_template_button = self._tool_button("另存为参数化计算")
         self._save_project_button = self._tool_button("保存工程 (.zprj)")
         self._open_project_button = self._tool_button("打开工程 (.zprj)")
         self._refresh_tool_icons()
@@ -257,11 +257,11 @@ class StudioPage(QWidget):
         self._preview_bridge.done.connect(self._on_preview_done)
 
     def _classic_templates(self) -> list[Template]:
-        """经典节点图模板（DSL 模板由模板应用页承载，工作台不重复展示）."""
+        """经典节点节点图参数化计算（DSL 参数化计算由参数化计算应用页承载，工作台不重复展示）."""
         return [t for t in self._registry.list() if not isinstance(t, DslTemplate)]
 
     def _reload_template_list(self, select_id: str | None = None) -> None:
-        """重建模板下拉（按学科分组，组头为不可选分隔项）；select_id 非空时选中并触发实例化."""
+        """重建参数化计算下拉（按学科分组，组头为不可选分隔项）；select_id 非空时选中并触发实例化."""
         self._template_combo.blockSignals(True)
         self._template_combo.clear()
         grouped: dict[str, list[Template]] = {}
@@ -284,17 +284,17 @@ class StudioPage(QWidget):
                 self._template_combo.blockSignals(False)
                 self._on_template_selected(index)
 
-    # ------------------------------------------------------------------ 模板实例化
+    # ------------------------------------------------------------------ 参数化计算实例化
 
     def _on_template_selected(self, row: int) -> None:
-        """模板选择入口（组头分隔项与运行中回退选择）."""
+        """参数化计算选择入口（组头分隔项与运行中回退选择）."""
         if row < 0:
             return
         if self._template_combo.itemData(row) is None:
             self._skip_group_header(row)
             return
         if self._runner is not None and self._runner.running:
-            # 运行中禁止切换模板：回退下拉选择
+            # 运行中禁止切换参数化计算：回退下拉选择
             self._template_combo.blockSignals(True)
             self._template_combo.setCurrentIndex(self._active_row)
             self._template_combo.blockSignals(False)
@@ -304,7 +304,7 @@ class StudioPage(QWidget):
         self._instantiate(template)
 
     def _skip_group_header(self, row: int) -> None:
-        """组头分隔项不可选：跳到组内首个模板（无模板则回退当前选择）."""
+        """组头分隔项不可选：跳到组内首个参数化计算（无参数化计算则回退当前选择）."""
         count = self._template_combo.count()
         for candidate in range(row + 1, count):
             if self._template_combo.itemData(candidate) is not None:
@@ -315,9 +315,9 @@ class StudioPage(QWidget):
         self._template_combo.blockSignals(False)
 
     def _on_open_template_dialog(self) -> None:
-        """打开模板选择对话框（分组树 + 搜索 + 详情）并实例化所选模板."""
+        """打开参数化计算选择对话框（分组树 + 搜索 + 详情）并实例化所选参数化计算."""
         if self._runner is not None and self._runner.running:
-            self._status_label.setText("运行中，无法切换模板")
+            self._status_label.setText("运行中，无法切换参数化计算")
             return
         dialog = TemplateDialog(self._classic_templates(), self)
         if exec_dialog(dialog) and dialog.selected_id is not None:
@@ -326,9 +326,9 @@ class StudioPage(QWidget):
                 self._template_combo.setCurrentIndex(index)  # 触发实例化
 
     def _instantiate(self, template: Template) -> None:
-        """实例化模板：建图 + 画布/表单装配 + 源节点进程内建模预览."""
+        """实例化参数化计算：建图 + 画布/表单装配 + 源节点进程内建模预览."""
         self._shutdown_runner()
-        self._preview_timer.stop()  # 丢弃上一模板的待刷新预览
+        self._preview_timer.stop()  # 丢弃上一参数化计算的待刷新预览
         self._preview_seq += 1  # 在途预览线程结果作废
         self._graph = WorkflowGraph(template)
         self._canvas.set_graph(self._graph)
@@ -359,15 +359,15 @@ class StudioPage(QWidget):
             first = False
         self._canvas.refresh_states()
 
-    # ------------------------------------------------------------------ 模板与工程
+    # ------------------------------------------------------------------ 参数化计算与工程
 
     def _template_with_current_params(self) -> Template:
-        """当前模板叠加图内最新参数."""
+        """当前参数化计算叠加图内最新参数."""
         assert self._graph is not None  # 调用方保证
         return self._graph.template.with_params({n.id: dict(n.params) for n in self._graph.nodes()})
 
     def _save_template_as(self, name: str) -> Template | None:
-        """将当前图（含参数）另存为用户模板并注册；空名或空图返回 None."""
+        """将当前图（含参数）另存为用户参数化计算并注册；空名或空图返回 None."""
         name = name.strip()
         if not name or self._graph is None:
             return None
@@ -389,20 +389,20 @@ class StudioPage(QWidget):
             param_groups=current.param_groups,
             results=current.results,
         )
-        # 用户模板按学科子目录归类（与 assets/templates 布局一致），save_template 自动建目录
+        # 用户参数化计算按学科子目录归类（与 assets/templates 布局一致），save_template 自动建目录
         save_template(template, self._data_dir / "templates" / template.discipline / f"{candidate}.json")
         self._registry.register(template)
         self._reload_template_list(select_id=template.id)
         return template
 
     def _save_project(self, path: Path) -> None:
-        """保存工程：模板（含当前参数）内嵌 .zprj（人类可读 JSON，自包含不依赖模板库）."""
+        """保存工程：参数化计算（含当前参数）内嵌 .zprj（人类可读 JSON，自包含不依赖参数化计算库）."""
         template = self._template_with_current_params()
         save_workflow(path, template)
         self._status_label.setText(f"工程已保存: {path.name}")
 
     def _load_project(self, path: Path) -> None:
-        """打开工程（JSON 现行格式 / 旧版 HDF5 自动识别）：内嵌模板注册并实例化."""
+        """打开工程（JSON 现行格式 / 旧版 HDF5 自动识别）：内嵌参数化计算注册并实例化."""
         try:
             template = load_workflow(path)
         except ProjectIOError as exc:
@@ -413,14 +413,14 @@ class StudioPage(QWidget):
         self._status_label.setText(f"工程已打开: {path.name}")
 
     def _on_save_template_as(self) -> None:
-        """对话框：另存为模板."""
+        """对话框：另存为参数化计算."""
         if self._graph is None:
             return
         from ..qt_compat import QInputDialog
 
         dialog = QInputDialog(self)
-        dialog.setWindowTitle("另存为模板")
-        dialog.setLabelText("模板名称:")
+        dialog.setWindowTitle("另存为参数化计算")
+        dialog.setLabelText("参数化计算名称:")
         dialog.setTextValue(f"{self._graph.template.name} 副本")
         dialog.setOkButtonText("确定")
         dialog.setCancelButtonText("取消")
@@ -428,7 +428,7 @@ class StudioPage(QWidget):
             return
         template = self._save_template_as(dialog.textValue())
         if template is not None:
-            self._status_label.setText(f"模板已保存: {template.name}")
+            self._status_label.setText(f"参数化计算已保存: {template.name}")
 
     def _on_save_project(self) -> None:
         """对话框：保存工程."""
@@ -486,7 +486,7 @@ class StudioPage(QWidget):
         self._runner.run_node(node_id, self._bridge.dispatch)
 
     def _set_running_ui(self, running: bool) -> None:
-        """运行态 UI 切换（取消按钮/模板下拉/表单禁用）."""
+        """运行态 UI 切换（取消按钮/参数化计算下拉/表单禁用）."""
         self._cancel_button.setEnabled(running)
         self._template_combo.setEnabled(not running)
         self._param_form.set_fields_enabled(not running)
@@ -660,7 +660,7 @@ class StudioPage(QWidget):
     def _on_preview_done(self, seq: int, results: dict, errors: dict) -> None:
         """预览线程完成：过期序号丢弃；结果写回图并刷新模型预览页."""
         if seq != self._preview_seq or self._graph is None:
-            return  # 已有更新的参数编辑（或模板已切换），本轮结果作废
+            return  # 已有更新的参数编辑（或参数化计算已切换），本轮结果作废
         for node_id, result in results.items():
             node = self._graph.node(node_id)
             self._graph.mark_result(node_id, result, 0.0)
@@ -681,7 +681,7 @@ class StudioPage(QWidget):
         self._result_view.refresh_theme()
 
     def _shutdown_runner(self) -> None:
-        """关闭现有 runner（模板切换时）."""
+        """关闭现有 runner（参数化计算切换时）."""
         if self._runner is not None:
             self._runner.shutdown()
             self._runner = None

@@ -239,7 +239,7 @@ def test_build_result_from_dsl_yaml() -> None:
     from zylab.studio.dsl import dsl_from_yaml
 
     yaml_text = """
-meta: {id: t.curve, name: 曲线模板}
+meta: {id: t.curve, name: 曲线参数化计算}
 params:
   sweep:
     items:

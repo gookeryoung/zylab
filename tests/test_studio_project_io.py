@@ -105,12 +105,12 @@ class TestLoadErrors:
         bad = tmp_path / "badTpl.zprj"
         payload = json.dumps({"format": "zylab.workflow.v1", "template": {"id": "x"}})
         bad.write_text(payload, encoding="utf-8")
-        with pytest.raises(ProjectIOError, match="内嵌模板非法"):
+        with pytest.raises(ProjectIOError, match="内嵌参数化计算非法"):
             load_workflow(bad)
 
     def test_legacy_hdf5_corrupt_template(self, tmp_path: Path) -> None:
-        """旧版工程内嵌模板非法."""
+        """旧版工程内嵌参数化计算非法."""
         with Project.create(tmp_path / "legacy.zprj", name="坏工程") as proj:
             proj.write_json("model", "workflow", {"id": "x"})
-        with pytest.raises(ProjectIOError, match="内嵌模板非法"):
+        with pytest.raises(ProjectIOError, match="内嵌参数化计算非法"):
             load_workflow(tmp_path / "legacy.zprj")

@@ -176,7 +176,7 @@ def test_compute_sweep_body_validation() -> None:
 
 
 _SWEEP_YAML = """
-meta: {id: t.sweep, name: 扫参模板}
+meta: {id: t.sweep, name: 扫参参数化计算}
 params:
   sweep:
     items:

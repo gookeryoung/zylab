@@ -1,16 +1,16 @@
-"""模板应用页：加载 DSL 模板 -> 定制化计算界面 -> 运行 -> 结果/报告.
+"""参数化计算应用页：加载 DSL 参数化计算 -> 定制化计算界面 -> 运行 -> 结果/报告.
 
 布局（左右分栏 + 底部运行条）：
 
-- 左：模板说明（docs 声明）+ DSL 参数表单（:class:`DslParamForm`）；
+- 左：参数化计算说明（docs 声明）+ DSL 参数表单（:class:`DslParamForm`）；
 - 右：结果多 TAB（每条 ``results`` 声明一页；curve/table/text 由
   :class:`DslResultView` 渲染，cloud 路由到既有解算视图
   :class:`~zylab.gui.widgets.result_view.ResultView`）；
-- 底：加载模板 / 运行（主色）/ 导出报告（按 ``report.exports`` 声明
+- 底：加载参数化计算 / 运行（主色）/ 导出报告（按 ``report.exports`` 声明
   写 Markdown/HTML）。
 
 运行在线程中执行（``bind_params`` -> ``run_workflow`` 进程内拓扑序），
-结果经 Qt 信号队列回主线程渲染；模板声明的主题经 ``theme_requested``
+结果经 Qt 信号队列回主线程渲染；参数化计算声明的主题经 ``theme_requested``
 信号由主窗口应用（预览语义，不落盘）。
 """
 
@@ -54,12 +54,12 @@ from ..widgets.template_dialog import TemplateDialog
 
 __all__ = ["TemplatePage"]
 
-#: 模板文件过滤器（YAML/JSON 双载体）
-_TEMPLATE_FILTER = "DSL 模板 (*.yaml *.yml *.json);;所有文件 (*)"
+#: 参数化计算文件过滤器（YAML/JSON 双载体）
+_TEMPLATE_FILTER = "DSL 参数化计算 (*.yaml *.yml *.json);;所有文件 (*)"
 
 
 def _builtin_dsl_templates() -> list[DslTemplate]:
-    """注册表中的 DSL 模板（内置资产 + 用户目录，供下拉快捷加载）."""
+    """注册表中的 DSL 参数化计算（内置资产 + 用户目录，供下拉快捷加载）."""
     from zylab.core.config import default_data_dir
     from zylab.studio.registry import TemplateRegistry
 
@@ -69,17 +69,17 @@ def _builtin_dsl_templates() -> list[DslTemplate]:
 
 
 class TemplatePage(QWidget):
-    """DSL 模板应用页（加载/参数化/运行/结果/报告导出）."""
+    """DSL 参数化计算应用页（加载/参数化/运行/结果/报告导出）."""
 
     #: 状态栏提示（主窗口转发）
     status_message = Signal(str)
-    #: 模板声明主题请求（主窗口以预览语义应用）
+    #: 参数化计算声明主题请求（主窗口以预览语义应用）
     theme_requested = Signal(str)
     #: 后台运行完成（outputs 载荷表, 首个错误串）
     run_finished = Signal(object, str)
 
     def __init__(self, parent: QWidget | None = None) -> None:
-        """初始化：占位界面（加载模板后重建）."""
+        """初始化：占位界面（加载参数化计算后重建）."""
         super().__init__(parent)
         self._template: DslTemplate | None = None
         self._outputs: dict[str, Any] = {}
@@ -116,7 +116,7 @@ class TemplatePage(QWidget):
         splitter.addWidget(self._param_scroll)
 
         self._tabs = QTabWidget()
-        self._placeholder = QLabel("加载模板后此处显示定制化计算界面", objectName="secondaryText")
+        self._placeholder = QLabel("加载后此处显示定制化计算界面", objectName="secondaryText")
         self._placeholder.setWordWrap(True)
         self._placeholder.setAlignment(Qt.AlignCenter)
         self._tabs.addTab(self._placeholder, "结果")
@@ -127,13 +127,13 @@ class TemplatePage(QWidget):
         return splitter
 
     def _build_run_bar(self) -> QWidget:
-        """底部运行条：模板市场/加载/运行/导报告 + 状态提示."""
+        """底部运行条：参数化计算市场/加载/运行/导报告 + 状态提示."""
         bar = QWidget(objectName="runBar")
         layout = QHBoxLayout(bar)
         layout.setContentsMargins(theme.SPACING_MD, theme.SPACING_SM, theme.SPACING_MD, theme.SPACING_SM)
-        self._market_btn = QPushButton("模板市场")
+        self._market_btn = QPushButton("参数化计算市场")
         self._market_btn.clicked.connect(self.open_market)
-        self._load_btn = QPushButton("加载模板")
+        self._load_btn = QPushButton("加载参数化计算")
         self._load_btn.clicked.connect(self.load_template_file)
         self._run_btn = QPushButton("运行")
         self._run_btn.setIcon(nav_icon("play", theme.current_palette().text_on_primary))
@@ -142,7 +142,7 @@ class TemplatePage(QWidget):
         self._export_btn = QPushButton("导出报告", objectName="flatBtn")
         self._export_btn.clicked.connect(self.export_report)
         self._export_btn.setEnabled(False)
-        self._status_label = QLabel("未加载模板", objectName="secondaryText")
+        self._status_label = QLabel("未加载参数化计算", objectName="secondaryText")
         layout.addWidget(self._market_btn)
         layout.addWidget(self._load_btn)
         layout.addWidget(self._run_btn)
@@ -152,34 +152,34 @@ class TemplatePage(QWidget):
         return bar
 
     def open_market(self) -> None:
-        """打开模板市场对话框（分组/搜索/详情），确认后加载选中 DSL 模板."""
+        """打开参数化计算市场对话框（分组/搜索/详情），确认后加载选中 DSL 参数化计算."""
         templates = _builtin_dsl_templates()
         if not templates:
-            self.status_message.emit("模板市场为空：未发现 DSL 模板")
+            self.status_message.emit("参数化计算市场为空：未发现 DSL 参数化计算")
             return
         dialog = TemplateDialog(templates, self)
-        dialog.setWindowTitle("模板市场")
+        dialog.setWindowTitle("参数化计算市场")
         if exec_dialog(dialog) and dialog.selected_id is not None:
             template = next((t for t in templates if t.id == dialog.selected_id), None)
             if template is not None:
                 self.load_template(template)
 
-    # ------------------------------------------------------------------ 模板加载
+    # ------------------------------------------------------------------ 参数化计算加载
 
     def load_template_file(self) -> None:
-        """文件对话框选择 YAML/JSON 模板并加载."""
-        path, _selected = QFileDialog.getOpenFileName(self, "加载 DSL 模板", "", _TEMPLATE_FILTER)
+        """文件对话框选择 YAML/JSON 参数化计算并加载."""
+        path, _selected = QFileDialog.getOpenFileName(self, "加载 DSL 参数化计算", "", _TEMPLATE_FILTER)
         if not path:
             return
         try:
             template = load_dsl(Path(path))
         except TemplateError as exc:
-            self.status_message.emit(f"模板加载失败: {exc}")
+            self.status_message.emit(f"加载失败: {exc}")
             return
         self.load_template(template)
 
     def load_template(self, template: DslTemplate) -> None:
-        """应用模板：重建参数表单与结果页（运行前置就绪）."""
+        """应用参数化计算：重建参数表单与结果页（运行前置就绪）."""
         self._template = template
         self._outputs = {}
         if template.docs is not None and template.docs.text:
@@ -194,12 +194,12 @@ class TemplatePage(QWidget):
         self._status_label.setText(f"已加载: {template.name}")
         if template.theme:
             self.theme_requested.emit(template.theme)
-        self.status_message.emit(f"模板已加载: {template.name}")
+        self.status_message.emit(f"已加载: {template.name}")
 
     # ------------------------------------------------------------------ 运行
 
     def run(self) -> None:
-        """后台线程运行模板（参数代入 + 拓扑序执行）；防重入."""
+        """后台线程运行参数化计算（参数代入 + 拓扑序执行）；防重入."""
         if self._template is None or self._running:
             return
         try:
@@ -243,7 +243,7 @@ class TemplatePage(QWidget):
         self._render_results()
         self._export_btn.setEnabled(True)
         self._status_label.setText("运行完成")
-        self.status_message.emit("模板运行完成")
+        self.status_message.emit("运行完成")
 
     # ------------------------------------------------------------------ 结果渲染
 
@@ -332,7 +332,7 @@ class TemplatePage(QWidget):
     # ------------------------------------------------------------------ 报告导出
 
     def export_report(self) -> None:
-        """按模板 report.exports 声明导出报告文件（md/html 多选保存）."""
+        """按参数化计算 report.exports 声明导出报告文件（md/html 多选保存）."""
         if self._template is None or not self._outputs:
             return
         exports = self._template.report.exports if self._template.report is not None else ("html",)

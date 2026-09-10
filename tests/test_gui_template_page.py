@@ -12,7 +12,7 @@ from zylab.gui.widgets.dsl_result_view import DslResultView
 from zylab.studio.dsl import dsl_from_yaml
 
 _YAML = """
-meta: {id: t.page, name: 页面模板}
+meta: {id: t.page, name: 页面参数化计算}
 theme: ""
 params:
   几何:
@@ -152,7 +152,7 @@ def test_page_export_report(qtbot, template, tmp_path: Path, monkeypatch) -> Non
     )
     page.export_report()
     text = target.read_text(encoding="utf-8")
-    assert "# 页面模板" in text
+    assert "# 页面参数化计算" in text
     assert "## 参数" in text  # 参数概览表
     assert "![平方曲线](data:image/svg+xml;base64," in text
     assert "最大值" not in text  # 声明 report 时未引用的 text 结果不渲染
@@ -173,7 +173,7 @@ def test_page_theme_requested(qtbot) -> None:
 
 
 _MINIMAL_YAML = """
-meta: {id: t.min, name: 极简模板}
+meta: {id: t.min, name: 极简参数化计算}
 pipeline:
   - id: calc
     type: compute.expr
@@ -181,7 +181,7 @@ pipeline:
 """
 
 _FORM_YAML = """
-meta: {id: t.form, name: 表单模板}
+meta: {id: t.form, name: 表单参数化计算}
 params:
   输入:
     items:
@@ -194,7 +194,7 @@ pipeline:
 """
 
 _CLOUD_YAML = """
-meta: {id: t.cloud, name: 云图模板}
+meta: {id: t.cloud, name: 云图参数化计算}
 pipeline:
   - id: calc
     type: compute.expr
@@ -252,7 +252,7 @@ def test_page_minimal_placeholder_and_html_export(qtbot, tmp_path: Path, monkeyp
     )
     page.export_report()
     html = target.read_text(encoding="utf-8")
-    assert "<h1>极简模板</h1>" in html
+    assert "<h1>极简参数化计算</h1>" in html
 
 
 @pytest.mark.gui
@@ -331,7 +331,7 @@ def test_page_market_empty(qtbot, monkeypatch, tmp_path: Path) -> None:
     messages: list[str] = []
     page.status_message.connect(messages.append)
     page.open_market()
-    assert any("模板市场为空" in m for m in messages)
+    assert any("参数化计算市场为空" in m for m in messages)
     assert page._template is None
 
 

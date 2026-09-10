@@ -1,4 +1,4 @@
-"""工作流图：模板实例化 + 节点状态机 + 级联脏传播 + 拓扑执行计划.
+"""工作流图：参数化计算实例化 + 节点状态机 + 级联脏传播 + 拓扑执行计划.
 
 状态机（ANSYS 单元格状态简化版）::
 
@@ -85,7 +85,7 @@ class WorkflowGraph:
     """工作流图：节点状态机 + 参数/连接变更的级联脏传播 + 拓扑执行计划."""
 
     def __init__(self, template: Template) -> None:
-        """由模板实例化图（参数按模块 schema 校验收敛）."""
+        """由参数化计算实例化图（参数按模块 schema 校验收敛）."""
         self._template = template
         self._nodes: dict[str, NodeInstance] = {}
         for tn in template.nodes:
@@ -99,13 +99,13 @@ class WorkflowGraph:
 
     @property
     def template(self) -> Template:
-        """来源模板."""
+        """来源参数化计算."""
         return self._template
 
     # ------------------------------------------------------------------ 查询
 
     def nodes(self) -> tuple[NodeInstance, ...]:
-        """全部节点（模板定义序）."""
+        """全部节点（参数化计算定义序）."""
         return tuple(self._nodes.values())
 
     def node(self, node_id: str) -> NodeInstance:
@@ -149,7 +149,7 @@ class WorkflowGraph:
         return frozenset(result)
 
     def execution_order(self) -> tuple[str, ...]:
-        """Kahn 拓扑序（同层按模板定义序，保证执行确定性）."""
+        """Kahn 拓扑序（同层按参数化计算定义序，保证执行确定性）."""
         ids = [n.id for n in self._nodes.values()]
         indegree = {nid: len(self.upstream_ids(nid)) for nid in ids}
         ready = [nid for nid in ids if indegree[nid] == 0]

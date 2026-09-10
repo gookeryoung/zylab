@@ -1,6 +1,6 @@
-"""工程文件持久化（Qt-free）：workflow 模板以人类可读 JSON 存 ``.zprj``.
+"""工程文件持久化（Qt-free）：workflow 参数化计算以人类可读 JSON 存 ``.zprj``.
 
-v1 工程内嵌当前模板（含图内参数），数据量 KB 级 —— JSON 文本可直接
+v1 工程内嵌当前参数化计算（含图内参数），数据量 KB 级 —— JSON 文本可直接
 阅读、diff 与版本管理，性能与二进制容器无差别（HDF5 当初是为将来的
 大规模结果数组预留，当前工程并无此类负载）。旧版 HDF5 容器工程在
 打开时按文件魔数自动识别并回读。将来内嵌大数组时再演进为
@@ -35,10 +35,10 @@ class ProjectIOError(StudioError):
 
 
 def save_workflow(path: Path, template: Template) -> Path:
-    """将 workflow 模板保存为人类可读 JSON 工程（原子写）.
+    """将 workflow 参数化计算保存为人类可读 JSON 工程（原子写）.
 
     :param path: 目标路径（建议 ``.zprj`` 后缀）。
-    :param template: 含当前参数的模板。
+    :param template: 含当前参数的参数化计算。
     :return: 保存路径。
     :raises ProjectIOError: 写入失败时抛出。
     """
@@ -61,12 +61,12 @@ def save_workflow(path: Path, template: Template) -> Path:
 
 
 def load_workflow(path: Path) -> Template:
-    """打开工程并解析内嵌 workflow 模板.
+    """打开工程并解析内嵌 workflow 参数化计算.
 
     JSON 工程（现行）与 HDF5 容器工程（旧版）按文件魔数自动判别。
 
     :param path: 工程文件路径。
-    :return: 内嵌模板。
+    :return: 内嵌参数化计算。
     :raises ProjectIOError: 文件不存在、格式非法或解析失败时抛出。
     """
     path = Path(path)
@@ -94,7 +94,7 @@ def load_workflow(path: Path) -> Template:
     try:
         return template_from_json(json.dumps(template_data, ensure_ascii=False))
     except TemplateError as exc:
-        raise ProjectIOError(f"工程内嵌模板非法: {exc}") from exc
+        raise ProjectIOError(f"工程内嵌参数化计算非法: {exc}") from exc
 
 
 def _load_legacy_hdf5(path: Path) -> Template:
@@ -107,4 +107,4 @@ def _load_legacy_hdf5(path: Path) -> Template:
     try:
         return Template.from_dict(data)
     except TemplateError as exc:
-        raise ProjectIOError(f"工程内嵌模板非法: {exc}") from exc
+        raise ProjectIOError(f"工程内嵌参数化计算非法: {exc}") from exc

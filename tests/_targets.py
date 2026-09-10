@@ -11,7 +11,7 @@ __all__ = ["SAMPLE_TEMPLATE", "add", "crash", "echo_report", "failing", "long_ru
 #: 模板插件 entry point 测试用示例（工厂解析为字典）
 SAMPLE_TEMPLATE = {
     "id": "plugin.sample",
-    "name": "插件示例模板",
+    "name": "插件示例参数化计算",
     "nodes": [
         {"id": "model", "type": "example.truss2_two_bar"},
         {"id": "solve", "type": "analysis.static", "inputs": {"model": "model.model"}},

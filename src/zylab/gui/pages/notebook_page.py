@@ -45,6 +45,7 @@ from ..qt_compat import (
     QKeyEvent,
     QKeySequence,
     QLabel,
+    QMenu,
     QMessageBox,
     QPlainTextEdit,
     QPoint,
@@ -60,6 +61,7 @@ from ..qt_compat import (
     QWidget,
     Signal,
     exec_dialog,
+    exec_menu,
 )
 from .var_browser import VarDetailDialog, VarTableModel, VarTagDelegate, mono_font
 
@@ -195,6 +197,31 @@ class CellEditor(QPlainTextEdit):
             self.insertPlainText("    ")
             return
         super().keyPressEvent(event)
+
+    def contextMenuEvent(self, event) -> None:  # Qt 命名约定
+        """右键菜单：手动构建中文菜单项（撤销/重做/剪切/复制/粘贴/全选），
+
+        Qt 默认菜单依赖 qtbase_zh_CN.qm 翻译文件，部分 PySide 发行缺该文件
+        导致菜单回退英文；这里显式构建中文菜单并根据状态启用/禁用各选项.
+        """
+        menu = QMenu(self)
+        _act_undo = menu.addAction("撤销", self.undo)
+        _act_redo = menu.addAction("重做", self.redo)
+        menu.addSeparator()
+        _act_cut = menu.addAction("剪切", self.cut)
+        _act_copy = menu.addAction("复制", self.copy)
+        _act_paste = menu.addAction("粘贴", self.paste)
+        menu.addSeparator()
+        menu.addAction("全选", self.selectAll)
+        # 按状态启用/禁用
+        _act_undo.setEnabled(self.document().isUndoAvailable())
+        _act_redo.setEnabled(self.document().isRedoAvailable())
+        _has_sel = self.textCursor().hasSelection()
+        _act_cut.setEnabled(_has_sel)
+        _act_copy.setEnabled(_has_sel)
+        _cb = QApplication.clipboard()
+        _act_paste.setEnabled(bool(_cb.text()) or bool(_cb.pixmap()))
+        exec_menu(menu, event.globalPos())
 
 
 class CellWidget(QFrame):
@@ -448,6 +475,13 @@ class CellWidget(QFrame):
             plot.setLabel("bottom", out.xlabel)
         if out.ylabel:
             plot.setLabel("left", out.ylabel)
+        # 替换 pyqtgraph 默认英文右键菜单为精简中文菜单（同 result_view 模式）
+        _plot_item = plot.getPlotItem()
+        _plot_item.setMenuEnabled(False, enableViewBoxMenu=None)
+        plot.scene().contextMenu = []
+        _menu = QMenu(plot)
+        _menu.addAction("恢复默认视角", _plot_item.autoRange)
+        _plot_item.vb.menu = _menu
         self._output_layout.addWidget(plot)
 
 

@@ -56,7 +56,7 @@ class TestRegisterQuery:
 
 
 class TestLoadDir:
-    """用户模板目录加载."""
+    """用户参数化计算目录加载."""
 
     def _write(self, directory: Path, name: str, data: dict) -> None:
         """写模板 JSON 文件."""
@@ -66,7 +66,7 @@ class TestLoadDir:
         """目录加载：合法文件注册，非法文件跳过（数量只计成功）."""
         valid = {
             "id": "user.custom",
-            "name": "用户模板",
+            "name": "用户参数化计算",
             "nodes": [
                 {"id": "model", "type": "example.truss2_two_bar"},
                 {"id": "solve", "type": "analysis.static", "inputs": {"model": "model.model"}},
@@ -77,18 +77,18 @@ class TestLoadDir:
         (tmp_path / "notes.txt").write_text("非 json 忽略", encoding="utf-8")
         registry = TemplateRegistry()
         assert registry.load_dir(tmp_path) == 1
-        assert registry.get("user.custom").name == "用户模板"
+        assert registry.get("user.custom").name == "用户参数化计算"
 
     def test_load_dir_recursive_discipline_subdirs(self, tmp_path: Path) -> None:
         """按学科子目录归类与顶层平铺布局并存时全部加载."""
         flat = {
             "id": "user.legacy",
-            "name": "平铺模板",
+            "name": "平铺参数化计算",
             "nodes": [{"id": "model", "type": "example.truss2_two_bar"}],
         }
         nested = {
             "id": "user.nested",
-            "name": "归类模板",
+            "name": "归类参数化计算",
             "discipline": "thermal",
             "nodes": [{"id": "model", "type": "example.joule_plate_2d"}],
         }
@@ -97,7 +97,7 @@ class TestLoadDir:
         self._write(tmp_path / "thermal", "nested.json", nested)
         registry = TemplateRegistry()
         assert registry.load_dir(tmp_path) == 2
-        assert registry.get("user.legacy").name == "平铺模板"
+        assert registry.get("user.legacy").name == "平铺参数化计算"
         assert registry.get("user.nested").discipline == "thermal"
 
     def test_builtin_templates_loaded_from_assets(self) -> None:
@@ -140,7 +140,7 @@ class TestLoadEntryPoints:
         )
         registry = TemplateRegistry()
         assert registry.load_entry_points(plugins) == 1
-        assert registry.get("plugin.sample").name == "插件示例模板"
+        assert registry.get("plugin.sample").name == "插件示例参数化计算"
 
     def test_template_instance_factory(self) -> None:
         """Template 实例工厂直接注册."""
@@ -169,4 +169,4 @@ class TestLoadEntryPoints:
         )
         registry = TemplateRegistry()
         assert registry.load_entry_points(plugins) == 1
-        assert registry.get("plugin.sample").name == "插件示例模板"
+        assert registry.get("plugin.sample").name == "插件示例参数化计算"

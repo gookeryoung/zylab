@@ -82,7 +82,7 @@ def test_dsl_param_form_dispatch_and_step_sync(qtbot) -> None:
     form.set_template(template)
     record_edit = form._record_edits["records"]
     assert isinstance(record_edit, TrialRecordEdit)
-    # 模板默认值（Excel 24 发记录）载入并可收集
+    # 参数化计算默认值（Excel 24 发记录）载入并可收集
     assert record_edit._table.rowCount() == 24
     assert form.values()["records"].startswith("3.2 O")
     assert form.values()["step"] == 0.05

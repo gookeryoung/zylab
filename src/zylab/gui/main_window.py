@@ -43,7 +43,7 @@ __all__ = ["MainWindow"]
 _PAGE_CONSOLE = 0
 _PAGE_FEA = 1
 _PAGE_TEMPLATE = 2
-_NAV_LABELS = ("笔记本", "工作台", "计算模板")
+_NAV_LABELS = ("笔记本", "工作台", "参数化计算")
 
 #: 侧边栏图标显示尺寸（像素）
 _NAV_ICON_SIZE = QSize(14, 14)
@@ -307,7 +307,7 @@ class MainWindow(QMainWindow):
         """连接导航与跨页信号；订阅工作区变更事件同步 UI；状态栏常驻工作区路径."""
         self._sidebar.currentRowChanged.connect(self._stack.setCurrentIndex)
         self._sidebar.currentRowChanged.connect(lambda _row: self._refresh_sidebar_icons())
-        # 笔记本/模板页状态提示统一进主窗口状态栏；模板声明的主题按预览语义应用
+        # 笔记本/参数化计算页状态提示统一进主窗口状态栏；参数化计算声明的主题按预览语义应用
         self._notebook_page.status_message.connect(self.statusBar().showMessage)
         self._template_page.status_message.connect(self.statusBar().showMessage)
         self._template_page.theme_requested.connect(lambda name: self._set_theme(name, persist=False))
@@ -394,16 +394,16 @@ class MainWindow(QMainWindow):
 
         - 笔记本页：run_all()（顺序执行全部单元）
         - 工作台页：暂不支持直接运行
-        - 模板页：run()（运行当前 DSL 模板）
+        - 参数化计算页：run()（运行当前 DSL 参数化计算）
         """
         row = self._sidebar.currentRow()
         if row == _PAGE_CONSOLE:
             self.statusBar().showMessage("笔记本：运行全部单元（F5）…")
             self._notebook_page.run_all()
         elif row == _PAGE_FEA:
-            self.statusBar().showMessage("工作台：请通过模板或笔记本 F5 触发运行")
+            self.statusBar().showMessage("工作台：请通过参数化计算或笔记本 F5 触发运行")
         elif row == _PAGE_TEMPLATE:
-            self.statusBar().showMessage("计算模板：运行当前 DSL（F5）…")
+            self.statusBar().showMessage("参数化计算：运行当前 DSL（F5）…")
             self._template_page.run()
 
     def _register_commands(self) -> None:
@@ -429,12 +429,14 @@ class MainWindow(QMainWindow):
         register(
             Command(
                 "go.template",
-                "转到：计算模板",
+                "转到：参数化计算",
                 lambda: self._sidebar.setCurrentRow(_PAGE_TEMPLATE),
                 keywords="goto template dsl",
             )
         )
-        register(Command("template.load", "加载 DSL 模板", self._open_template_page, keywords="load template dsl yaml"))
+        register(
+            Command("template.load", "加载 DSL 参数化计算", self._open_template_page, keywords="load template dsl yaml")
+        )
         register(Command("go.about", "关于 zylab", self._open_about_dialog, keywords="goto about help"))
         register(Command("notebook.new", "新建笔记本", page.new_notebook, keywords="new notebook", shortcut="Ctrl+N"))
         register(
@@ -470,7 +472,7 @@ class MainWindow(QMainWindow):
         )
 
     def _open_template_page(self) -> None:
-        """跳转模板页并直接弹出模板文件选择（命令面板一键加载）."""
+        """跳转参数化计算页并直接弹出参数化计算文件选择（命令面板一键加载）."""
         self._sidebar.setCurrentRow(_PAGE_TEMPLATE)
         self._template_page.load_template_file()
 

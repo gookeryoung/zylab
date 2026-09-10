@@ -2,8 +2,8 @@
 
 与 :class:`~zylab.gui.widgets.result_view.ResultView`（解对象 -> 云图/
 振型等类型化渲染）互补：本视图消费 DSL ``results`` 声明解析出的
-:data:`~zylab.studio.results.ViewData`（曲线/表格/文本），供模板应用页
-（P6）按结果页签组装；云图声明（CloudData）由模板应用页路由到既有
+:data:`~zylab.studio.results.ViewData`（曲线/表格/文本），供参数化计算应用页
+（P6）按结果页签组装；云图声明（CloudData）由参数化计算应用页路由到既有
 ResultView，本视图仅显示占位说明。
 
 同组多结果（DSL ``group`` 声明）由 :class:`DslGroupedResultView` 合并
@@ -154,7 +154,7 @@ def _build_block(title: str, payload: ViewData | str) -> QGroupBox:
         body.setMaximumHeight(_GROUPED_TABLE_MAX_HEIGHT)
     elif isinstance(payload, TextData):
         body = build_text_widget(payload)
-    else:  # CloudData 不参与分组（模板应用页路由到解算视图）
+    else:  # CloudData 不参与分组（参数化计算应用页路由到解算视图）
         body = QLabel(_cloud_hint(payload), objectName="secondaryText")
         body.setWordWrap(True)
     layout.addWidget(body)
@@ -204,7 +204,7 @@ def build_text_widget(data: TextData) -> QWidget:
 
 
 def _cloud_hint(data: CloudData) -> str:
-    """云图占位提示（实际渲染由模板应用页路由到解算视图）."""
+    """云图占位提示（实际渲染由参数化计算应用页路由到解算视图）."""
     return f"云图结果 {data.node_id!r} 由解算视图渲染"
 
 

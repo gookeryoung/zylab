@@ -1,6 +1,6 @@
-"""分析模板 DSL：YAML 声明式模板的解析、校验与既有模板体系归一化.
+"""参数化计算 DSL：YAML 声明式参数化计算的解析、校验与既有参数化计算体系归一化.
 
-DSL 模板是「定制化计算工具」的完整声明载体，在既有节点图模板
+DSL 参数化计算是「定制化计算工具」的完整声明载体，在既有节点图参数化计算
 （:class:`~zylab.studio.template.Template`）之上扩展六类信息：
 
 1. ``params``：参数化变量（声明式 schema，含单位/范围/表达式派生）；
@@ -94,7 +94,7 @@ class DslParamGroup:
 class DslResult:
     """DSL 结果声明（kind 决定渲染器与 spec 结构）.
 
-    :param id: 结果项 id（模板内唯一）。
+    :param id: 结果项 id（参数化计算内唯一）。
     :param kind: 视图种类（curve/table/text/cloud）。
     :param title: 结果页签标题（分组时为组内块标题）。
     :param spec: 种类相关配置（curve 的 x/y、table 的 columns、cloud 的 ref/field）。
@@ -128,7 +128,7 @@ class DslReport:
 
 @dataclass(frozen=True)
 class DslDocs:
-    """图文说明（模板应用页的引导面板）."""
+    """图文说明（参数化计算应用页的引导面板）."""
 
     text: str = ""
     image: str = ""
@@ -136,9 +136,9 @@ class DslDocs:
 
 @dataclass(frozen=True)
 class DslTemplate(Template):
-    """DSL 分析模板（节点图模板 + 参数/结果/报告/文档/主题扩展）.
+    """DSL 参数化计算（节点图参数化计算 + 参数/结果/报告/文档/主题扩展）.
 
-    继承 :class:`Template` 使既有注册表、执行器对 DSL 模板零成本复用；
+    继承 :class:`Template` 使既有注册表、执行器对 DSL 参数化计算零成本复用；
     新增字段承载 DSL 扩展信息，``pipeline`` 中的 ``$name`` 参数引用在
     构造时以声明默认值代入（校验期即合法）。
     """
@@ -189,7 +189,7 @@ class DslTemplate(Template):
         return merged
 
     def bind_params(self, values: Mapping[str, Any]) -> Template:
-        """以用户参数值代入 ``$`` 引用生成可执行模板（节点参数整体重写）.
+        """以用户参数值代入 ``$`` 引用生成可执行参数化计算（节点参数整体重写）.
 
         以 :attr:`raw_params` 保留的原始引用为源重新代入（派生参数先经
         :meth:`evaluate` 求值，``$派生量`` 引用同样可绑定）；未声明 ``$``
@@ -223,15 +223,15 @@ class DslTemplate(Template):
 
     @classmethod
     def from_mapping(cls, data: Mapping[str, Any]) -> DslTemplate:
-        """由字典构造并校验 DSL 模板；定义非法抛 :class:`TemplateError`."""
+        """由字典构造并校验 DSL 参数化计算；定义非法抛 :class:`TemplateError`."""
         try:
             template = cls._build(data)
         except KeyError as exc:
-            raise TemplateError(f"DSL 模板定义缺字段: {exc}") from exc
+            raise TemplateError(f"DSL 参数化计算定义缺字段: {exc}") from exc
         except TypeError as exc:
-            raise TemplateError(f"DSL 模板定义类型错误: {exc}") from exc
+            raise TemplateError(f"DSL 参数化计算定义类型错误: {exc}") from exc
         except ParamError as exc:
-            raise TemplateError(f"DSL 模板派生参数非法: {exc}") from exc
+            raise TemplateError(f"DSL 参数化计算派生参数非法: {exc}") from exc
         template.validate()
         return template
 
@@ -252,7 +252,7 @@ class DslTemplate(Template):
         defaults.update(resolved)
         pipeline = data.get("pipeline", data.get("nodes"))
         if pipeline is None:
-            raise TemplateError("DSL 模板应含 'pipeline' 计算过程声明")
+            raise TemplateError("DSL 参数化计算应含 'pipeline' 计算过程声明")
         pipeline_list = _expect_list(pipeline, "pipeline", "<root>")
         # 原始参数表先留存（$ 引用），再以默认值代入构造可校验节点
         raw_params = tuple((str(raw["id"]), dict(raw.get("params", {}))) for raw in pipeline_list)
@@ -314,7 +314,7 @@ def _parse_param(raw: Mapping[str, Any], name: str) -> DslParam:
     """解析单个参数声明（数值字段须为数值，min<=max）.
 
     YAML 1.1 规范下无符号指数（``1.0e4``）解析为字符串，此处对可转数值的
-    字符串做宽容转换（``float`` 成功即接受），降低模板作者书写负担。
+    字符串做宽容转换（``float`` 成功即接受），降低参数化计算作者书写负担。
     """
     value = _coerce_value(raw.get("value"))
     lo, hi = _bound(raw.get("min"), name, "min"), _bound(raw.get("max"), name, "max")
@@ -444,7 +444,7 @@ def _substitute_node_params(
     body 中的 ``$var``（var 为扫描变量名）指向扫描变量（运行期由节点
     函数逐值代入），构造期与绑定期均保留原样，否则会销毁扫描语义；
     body 中的其余 ``$name`` 引用按 DSL 参数命名空间正常代入（绑定期
-    随用户输入更新），扫参子图由此共享模板参数。
+    随用户输入更新），扫参子图由此共享参数化计算参数。
     """
     if type_id == "compute.sweep":
         head = {key: value for key, value in params.items() if key != "body"}
@@ -467,7 +467,7 @@ def _substitute_body(
     :param body: body 声明（映射/列表递归，字符串按 ``$`` 引用处理）。
     :param values: DSL 参数命名空间（构造期为默认值，绑定期为用户输入）。
     :param var: 扫描变量名（其 ``$var`` 引用保留给运行期逐值代入）。
-    :param template_id: 模板 id（错误消息用）。
+    :param template_id: 参数化计算 id（错误消息用）。
     """
     if isinstance(body, str) and body.startswith("$"):
         name = body[1:]
@@ -475,7 +475,7 @@ def _substitute_body(
             return body
         if name in values:
             return values[name]
-        raise TemplateError(f"模板 {template_id!r} 引用未声明的参数 {name!r}")
+        raise TemplateError(f"参数化计算 {template_id!r} 引用未声明的参数 {name!r}")
     if isinstance(body, Mapping):
         return {key: _substitute_body(value, values, var, template_id) for key, value in body.items()}
     if isinstance(body, list):
@@ -497,7 +497,7 @@ def _substitute_value(value: Any, values: Mapping[str, Any], template_id: str) -
     if isinstance(value, str) and value.startswith("$"):
         name = value[1:]
         if name not in values:
-            raise TemplateError(f"模板 {template_id!r} 引用未声明的参数 {name!r}")
+            raise TemplateError(f"参数化计算 {template_id!r} 引用未声明的参数 {name!r}")
         return values[name]
     if isinstance(value, Mapping):
         return {key: _substitute_value(item, values, template_id) for key, item in value.items()}
@@ -560,32 +560,32 @@ def _expect_list(data: Any, key: str, where: str) -> list[Any]:
 
 
 def dsl_from_yaml(text: str) -> DslTemplate:
-    """由 YAML 文本解析 DSL 模板（YAML 是 JSON 超集，两类文本均可）."""
+    """由 YAML 文本解析 DSL 参数化计算（YAML 是 JSON 超集，两类文本均可）."""
     try:
         data = yaml.safe_load(text)
     except yaml.YAMLError as exc:
-        raise TemplateError(f"DSL 模板 YAML 解析失败: {exc}") from exc
+        raise TemplateError(f"DSL 参数化计算 YAML 解析失败: {exc}") from exc
     if not isinstance(data, Mapping):
-        raise TemplateError("DSL 模板顶层应为对象")
+        raise TemplateError("DSL 参数化计算顶层应为对象")
     return DslTemplate.from_mapping(data)
 
 
 def load_dsl(path: Path) -> DslTemplate:
-    """由文件加载 DSL 模板（按扩展名分派 YAML/JSON 解析）."""
+    """由文件加载 DSL 参数化计算（按扩展名分派 YAML/JSON 解析）."""
     path = Path(path)
     try:
         text = path.read_text(encoding="utf-8")
     except OSError as exc:
-        raise TemplateError(f"DSL 模板文件读取失败 {path}: {exc}") from exc
+        raise TemplateError(f"DSL 参数化计算文件读取失败 {path}: {exc}") from exc
     if path.suffix.lower() == ".json":
         try:
             data = json.loads(text)
         except json.JSONDecodeError as exc:
-            raise TemplateError(f"DSL 模板 JSON 解析失败: {exc}") from exc
+            raise TemplateError(f"DSL 参数化计算 JSON 解析失败: {exc}") from exc
         if not isinstance(data, Mapping):
-            raise TemplateError("DSL 模板顶层应为对象")
+            raise TemplateError("DSL 参数化计算顶层应为对象")
         return DslTemplate.from_mapping(data)
     try:
         return dsl_from_yaml(text)
     except TemplateError as exc:
-        raise TemplateError(f"DSL 模板文件 {path.name} 非法: {exc}") from exc
+        raise TemplateError(f"DSL 参数化计算文件 {path.name} 非法: {exc}") from exc

@@ -1,4 +1,4 @@
-"""zylab.gui.pages - 主窗口内容页（笔记本/工作台/模板应用）."""
+"""zylab.gui.pages - 主窗口内容页（笔记本/工作台/参数化计算应用）."""
 
 from __future__ import annotations
 

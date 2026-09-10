@@ -1,6 +1,6 @@
 """工作流模块类型系统：端口类型、参数规格、模块规格与内置模块表.
 
-模块类型（:class:`ModuleSpec`）是模板节点的「型」：声明输入/输出端口（类型化）、
+模块类型（:class:`ModuleSpec`）是参数化计算节点的「型」：声明输入/输出端口（类型化）、
 参数 schema（:class:`ParamSpec`，驱动 GUI 表单自动生成与取值校验）以及进程执行
 目标（``target`` 为 ``"module:func"`` 全限定名，与 core.executor.TaskSpec 对齐）。
 """
@@ -70,7 +70,7 @@ class ModuleCategory(Enum):
 class ParamSpec:
     """单个参数的 UI 呈现与校验规格.
 
-    :param key: 参数键（节点函数 params 字典的键，模板中以 ``"node_id.key"`` 引用）。
+    :param key: 参数键（节点函数 params 字典的键，参数化计算中以 ``"node_id.key"`` 引用）。
     :param label: 中文显示名（GUI 表单行标签）。
     :param param_type: 控件类型（浮点/整数输入框）。
     :param default: 默认值。
@@ -133,7 +133,7 @@ class ParamSpec:
 class PortSpec:
     """端口规格.
 
-    :param name: 端口名（模板 inputs 中以 ``"node_id.port_name"`` 引用）。
+    :param name: 端口名（参数化计算 inputs 中以 ``"node_id.port_name"`` 引用）。
     :param port_type: 载荷类型。
     :param label: 中文显示名。
     :param required: 是否必须连接（可选端口如屈曲的预应力参考，缺省不连即可运行）。
@@ -147,7 +147,7 @@ class PortSpec:
 
 @dataclass(frozen=True)
 class ModuleSpec:
-    """模块类型描述（模板经 ``type_id`` 引用本规格）.
+    """模块类型描述（参数化计算经 ``type_id`` 引用本规格）.
 
     :param type_id: 全局唯一类型 id（如 ``"example.cantilever_q4"``）。
     :param name: 中文显示名。
@@ -599,7 +599,7 @@ BUILTIN_MODULES: tuple[ModuleSpec, ...] = (
                 doc="受限命名空间安全求值；变量来自输入数据合并与 vars 绑定（支持数组逐元素运算）",
             ),
             ParamSpec(
-                "vars", "变量绑定", ParamType.MAP, {}, doc="变量名 -> 字面值/数组（DSL 层可经 $名 引用模板参数）"
+                "vars", "变量绑定", ParamType.MAP, {}, doc="变量名 -> 字面值/数组（DSL 层可经 $名 引用参数化计算参数）"
             ),
         ),
     ),

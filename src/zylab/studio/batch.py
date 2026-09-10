@@ -1,4 +1,4 @@
-"""批处理执行：模板进程内拓扑序求解 + 参数覆盖/扫描 + 结果摘要.
+"""批处理执行：参数化计算进程内拓扑序求解 + 参数覆盖/扫描 + 结果摘要.
 
 与 :class:`~zylab.studio.runner.WorkflowRunner`（GUI 进程隔离编排）互补：
 批处理场景（CLI、参数扫描）无交互，进程内直调节点函数省去子进程 pickle
@@ -73,7 +73,7 @@ class NodeOutcome:
 class RunOutcome:
     """单次工作流运行结果（拓扑序全部节点）.
 
-    :param outcomes: 节点结果表（模板定义序）。
+    :param outcomes: 节点结果表（参数化计算定义序）。
     """
 
     outcomes: tuple[NodeOutcome, ...]
@@ -103,9 +103,9 @@ def run_workflow(
     overrides: Mapping[str, Mapping[str, Any]] | None = None,
     report: ReportFn | None = None,
 ) -> RunOutcome:
-    """进程内按拓扑序执行模板全部节点（失败即中止）.
+    """进程内按拓扑序执行参数化计算全部节点（失败即中止）.
 
-    :param template: 分析模板。
+    :param template: 参数化计算。
     :param overrides: 节点参数覆盖表（节点 id -> 参数表，整体替换该节点 params）。
     :param report: 进度回调（透传给节点函数，``(progress, message)``）。
     """
@@ -159,11 +159,11 @@ def run_scan(
 
 
 def _node_params(template: Template, node_id: str) -> dict[str, Any]:
-    """取模板节点原始参数表（不存在抛 :class:`ValueError`）."""
+    """取参数化计算节点原始参数表（不存在抛 :class:`ValueError`）."""
     try:
         return dict(template.node(node_id).params)
     except StudioError as exc:
-        raise ValueError(f"模板 {template.id!r} 无节点 {node_id!r}: {exc}") from exc
+        raise ValueError(f"参数化计算 {template.id!r} 无节点 {node_id!r}: {exc}") from exc
 
 
 def summarize(outcome: RunOutcome) -> str:

@@ -11,7 +11,7 @@
 :func:`response_points` 由参数估计给出任意响应概率 p 下的刺激量估计
 （0.999/0.9999 等响应点）及 delta 法区间；:func:`run_sensitivity_test`
 总装「设计 → 蒙特卡洛模拟 → 分析」全流程，给定真值参数 ``(μ, σ)``
-模拟感度试验并给出统计估计，供 DSL 模板以固定种子做示例验证。
+模拟感度试验并给出统计估计，供 DSL 参数化计算以固定种子做示例验证。
 """
 
 from __future__ import annotations

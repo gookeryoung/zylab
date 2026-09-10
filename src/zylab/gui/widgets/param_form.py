@@ -1,6 +1,6 @@
 """参数表单生成器：按 ParamSpec 自动构建输入控件（QDoubleSpinBox/QSpinBox）.
 
-模板 ``ui.param_groups`` 声明暴露给用户的参数分组（``"node_id.param_key"`` 引用）；
+参数化计算 ``ui.param_groups`` 声明暴露给用户的参数分组（``"node_id.param_key"`` 引用）；
 表单按组渲染 QGroupBox + QFormLayout，取值变化经 ``param_edited`` 信号上报
 （由工作台页写入 WorkflowGraph.set_param，级联失效由图负责）。
 """
@@ -26,7 +26,7 @@ _NUMERIC_TYPES = (ParamType.FLOAT, ParamType.INT)
 
 
 class ParamForm(QWidget):
-    """schema 驱动的参数表单（按工作流图 + 模板分组自动生成）."""
+    """schema 驱动的参数表单（按工作流图 + 参数化计算分组自动生成）."""
 
     #: 参数被编辑（node_id, param_key, 新值）
     param_edited = Signal(str, str, object)
@@ -54,7 +54,7 @@ class ParamForm(QWidget):
             if widget is not None:
                 widget.deleteLater()
 
-        if not groups:  # 模板未声明分组时平铺全部数值参数
+        if not groups:  # 参数化计算未声明分组时平铺全部数值参数
             groups = tuple(
                 ParamGroup(
                     title=node.name,

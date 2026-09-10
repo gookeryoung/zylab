@@ -23,7 +23,7 @@ __all__ = []
 #: 最小合法模板（源 -> 静力）
 _MINIMAL = {
     "id": "test.minimal",
-    "name": "最小模板",
+    "name": "最小参数化计算",
     "nodes": [
         {"id": "model", "type": "example.truss2_two_bar"},
         {"id": "solve", "type": "analysis.static", "inputs": {"model": "model.model"}},
@@ -35,7 +35,7 @@ class TestFromDict:
     """字典构造与默认值."""
 
     def test_minimal_template(self) -> None:
-        """最小模板取默认值（学科/描述/分组/结果）."""
+        """最小参数化计算取默认值（学科/描述/分组/结果）."""
         template = Template.from_dict(_MINIMAL)
         assert template.id == "test.minimal"
         assert template.discipline == "structural"

@@ -184,7 +184,7 @@ def test_section_table_kind_mismatch_rejected() -> None:
 def test_minimal_template_without_params_and_description() -> None:
     """无参数/无 description 模板：省略参数段，标题后直接结果章节."""
     yaml_text = """
-meta: {id: t.min, name: 极简模板}
+meta: {id: t.min, name: 极简参数化计算}
 pipeline:
   - id: calc
     type: compute.expr
@@ -251,7 +251,7 @@ def _static_outputs() -> dict:
 
 
 _CLOUD_YAML = """
-meta: {id: t.cloud, name: 云图模板}
+meta: {id: t.cloud, name: 云图参数化计算}
 pipeline:
   - id: model
     type: example.cantilever_q4
@@ -322,7 +322,7 @@ def _modal_outputs() -> dict:
 
 
 _MODE_YAML = """
-meta: {id: t.mode, name: 振型模板}
+meta: {id: t.mode, name: 振型参数化计算}
 pipeline:
   - id: model
     type: example.cantilever_q4

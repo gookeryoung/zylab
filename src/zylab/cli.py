@@ -1,12 +1,12 @@
 """zylab 命令行入口：无子命令启动 GUI；``run``/``templates`` 子命令提供无界面求解.
 
 子命令：
-- ``zylab run <模板id|模板文件|工程.zprj>``：进程内运行工作流并打印结果摘要；
-  目标为 DSL 模板（``*.yaml``/``*.yml`` 或 DSL 模板 id）时 ``-p 参数名=值``
+- ``zylab run <参数化计算id|参数化计算文件|工程.zprj>``：进程内运行工作流并打印结果摘要；
+  目标为 DSL 参数化计算（``*.yaml``/``*.yml`` 或 DSL 参数化计算 id）时 ``-p 参数名=值``
   覆盖 DSL 参数，``--report 路径`` 导出 Markdown/HTML 报告；
-  经典模板 ``-p 节点.参数=值`` 覆盖参数（可多次），``--scan 节点.参数=取值``
+  经典参数化计算 ``-p 节点.参数=值`` 覆盖参数（可多次），``--scan 节点.参数=取值``
   参数化扫描；
-- ``zylab templates``：列出可用模板（内置 + 用户目录 + entry points 插件）。
+- ``zylab templates``：列出可用参数化计算（内置 + 用户目录 + entry points 插件）。
 
 退出码：0 成功 / 2 参数或目标非法 / 1 求解失败。
 """
@@ -35,20 +35,20 @@ def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="zylab", description="zylab 通用科学计算与有限元分析平台")
     sub = parser.add_subparsers(dest="command")
 
-    run = sub.add_parser("run", help="无界面运行模板或工程并打印结果摘要")
-    run.add_argument("target", help="模板 id、模板文件（JSON 经典 / YAML DSL）或 .zprj 工程文件路径")
+    run = sub.add_parser("run", help="无界面运行参数化计算或工程并打印结果摘要")
+    run.add_argument("target", help="参数化计算 id、参数化计算文件（JSON 经典 / YAML DSL）或 .zprj 工程文件路径")
     run.add_argument(
         "-p",
         "--param",
         action="append",
         default=[],
         metavar="参数=值",
-        help="参数覆盖（可多次）；DSL 模板为 '参数名=值'，经典模板为 '节点.参数=值'",
+        help="参数覆盖（可多次）；DSL 参数化计算为 '参数名=值'，经典参数化计算为 '节点.参数=值'",
     )
     run.add_argument(
         "--scan",
         metavar="节点.参数=取值",
-        help="参数化扫描（仅经典模板）；取值为逗号分隔列表（v1,v2,…）或起点:终点:点数（含端点线性插值）",
+        help="参数化扫描（仅经典参数化计算）；取值为逗号分隔列表（v1,v2,…）或起点:终点:点数（含端点线性插值）",
     )
     run.add_argument(
         "--export",
@@ -58,10 +58,10 @@ def build_parser() -> argparse.ArgumentParser:
     run.add_argument(
         "--report",
         metavar="路径",
-        help="DSL 模板报告导出路径（.md/.html 按后缀选择载体）",
+        help="DSL 参数化计算报告导出路径（.md/.html 按后缀选择载体）",
     )
 
-    sub.add_parser("templates", help="列出可用模板")
+    sub.add_parser("templates", help="列出可用参数化计算")
     return parser
 
 
@@ -87,7 +87,7 @@ def _cmd_run(target: str, params: list[str], scan: str | None, export: str | Non
     if isinstance(template, DslTemplate):
         return _run_dsl(template, params, report)
     if report is not None:
-        print("--report 仅支持 DSL 模板（*.yaml / *.yml），已忽略", file=sys.stderr)
+        print("--report 仅支持 DSL 参数化计算（*.yaml / *.yml），已忽略", file=sys.stderr)
     try:
         overrides = _parse_params(params)
     except ValueError as exc:
@@ -116,7 +116,7 @@ def _cmd_run(target: str, params: list[str], scan: str | None, export: str | Non
 
 
 def _run_dsl(template: DslTemplate, params: list[str], report: str | None) -> int:
-    """DSL 模板无头运行：参数覆盖 → 绑定执行 → 摘要 + 可选报告导出."""
+    """DSL 参数化计算无头运行：参数覆盖 → 绑定执行 → 摘要 + 可选报告导出."""
     try:
         values = _parse_dsl_params(params)
         executable = template.bind_params(template.evaluate(values))
@@ -182,7 +182,7 @@ def _export_outcomes(outcome: RunOutcome, directory: str, suffix: str = "") -> N
 
 
 def _cmd_templates() -> int:
-    """``templates`` 子命令：列出注册表全部模板."""
+    """``templates`` 子命令：列出注册表全部参数化计算."""
     for template in _registry().list():
         description = f" —— {template.description}" if template.description else ""
         print(f"{template.id}\t{template.name}{description}")
@@ -197,7 +197,7 @@ def _launch_gui() -> int:  # pragma: no cover
 
 
 def _registry() -> TemplateRegistry:
-    """构造模板注册表：内置 + 用户目录 + entry points 插件."""
+    """构造参数化计算注册表：内置 + 用户目录 + entry points 插件."""
     from zylab.core.config import default_data_dir
 
     registry = TemplateRegistry.with_builtin()
@@ -207,7 +207,7 @@ def _registry() -> TemplateRegistry:
 
 
 def _load_target(target: str) -> Template:
-    """解析运行目标：文件路径（.zprj 工程 / .yaml DSL / .json 模板）或注册表模板 id."""
+    """解析运行目标：文件路径（.zprj 工程 / .yaml DSL / .json 参数化计算）或注册表参数化计算 id."""
     path = Path(target)
     if path.exists():
         if path.suffix == ".zprj":

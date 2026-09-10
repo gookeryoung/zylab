@@ -1,9 +1,9 @@
-"""模板选择对话框：Workbench 风格分组树 + 搜索过滤 + 详情面板.
+"""参数化计算选择对话框：Workbench 风格分组树 + 搜索过滤 + 详情面板.
 
-- 左侧学科分组树（学科 → 模板两级，模板数量随注册表）；
+- 左侧学科分组树（学科 → 参数化计算两级，数量随注册表）；
 - 顶部搜索框按名称/标签/描述即时过滤（跨组匹配）；
-- 右侧详情面板：选中模板的名称、学科、标签、描述与节点数；
-- 双击模板或「确定」确认选择，返回模板 id（取消返回 None）。
+- 右侧详情面板：选中参数化计算的名称、学科、标签、描述与节点数；
+- 双击参数化计算或「确定」确认选择，返回参数化计算 id（取消返回 None）。
 """
 
 from __future__ import annotations
@@ -47,17 +47,17 @@ def discipline_label(discipline: str) -> str:
 
 
 class TemplateDialog(QDialog):
-    """模板选择对话框（分组树 + 搜索 + 详情面板，Workbench Analysis Systems 风格）."""
+    """参数化计算选择对话框（分组树 + 搜索 + 详情面板，Workbench Analysis Systems 风格）."""
 
     def __init__(self, templates: Sequence[Template], parent: QWidget | None = None) -> None:
         """初始化对话框.
 
         Args:
-            templates: 可选模板表（按注册表顺序；分组在内部完成，接受 DSL 模板子类表）。
+            templates: 可选参数化计算表（按注册表顺序；分组在内部完成，接受 DSL 参数化计算子类表）。
             parent: 父窗口。
         """
         super().__init__(parent)
-        self.setWindowTitle("选择分析模板")
+        self.setWindowTitle("选择参数化计算")
         self.resize(720, 480)
         self._templates: Sequence[Template] = templates
         self._selected_id: str | None = None
@@ -110,20 +110,20 @@ class TemplateDialog(QDialog):
 
     @property
     def selected_id(self) -> str | None:
-        """确认选择的模板 id（未选择或取消为 None）."""
+        """确认选择的参数化计算 id（未选择或取消为 None）."""
         return self._selected_id
 
     # ------------------------------------------------------------------ 内部
 
     def _matches(self, template: Template, keyword: str) -> bool:
-        """模板是否匹配搜索关键字（名称/标签/描述，大小写不敏感）."""
+        """参数化计算是否匹配搜索关键字（名称/标签/描述，大小写不敏感）."""
         if not keyword:
             return True
         haystack = " ".join((template.name, *template.tags, template.description)).lower()
         return keyword.lower() in haystack
 
     def _rebuild_tree(self, keyword: str) -> None:
-        """按关键字过滤重建分组树（模板项携带模板 id）."""
+        """按关键字过滤重建分组树（参数化计算项携带参数化计算 id）."""
         self._tree.clear()
         grouped: dict[str, list[Template]] = {}
         for template in self._templates:
@@ -138,7 +138,7 @@ class TemplateDialog(QDialog):
         self._tree.expandAll()
 
     def _current_template(self) -> Template | None:
-        """当前选中模板（组头未选中任何模板时为 None）."""
+        """当前选中参数化计算（组头未选中任何参数化计算时为 None）."""
         item = self._tree.currentItem()
         if item is None or item.parent() is None:
             return None
@@ -160,7 +160,7 @@ class TemplateDialog(QDialog):
         self._show_detail()
 
     def _show_detail(self) -> None:
-        """详情面板：选中模板的名称/学科/标签/描述/节点数."""
+        """详情面板：选中参数化计算的名称/学科/标签/描述/节点数."""
         template = self._current_template()
         if template is None:
             self._detail_title.setText("")
@@ -175,12 +175,12 @@ class TemplateDialog(QDialog):
         self._detail_desc.setText(template.description or "（无描述）")
 
     def _on_tree_double_clicked(self, item: QTreeWidgetItem, _column: int) -> None:
-        """双击模板项：直接确认选择（双击组头无效）."""
+        """双击参数化计算项：直接确认选择（双击组头无效）."""
         if item.parent() is not None:
             self._on_accept()
 
     def _on_accept(self) -> None:
-        """确定：记录选中模板 id 并接受对话框（未选中时忽略）."""
+        """确定：记录选中参数化计算 id 并接受对话框（未选中时忽略）."""
         template = self._current_template()
         if template is None:
             return

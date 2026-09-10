@@ -25,11 +25,11 @@ class ParamError(StudioError):
 
 
 class TemplateError(StudioError):
-    """模板定义非法（结构/引用/连接/环）或模板文件解析失败."""
+    """参数化计算定义非法（结构/引用/连接/环）或参数化计算文件解析失败."""
 
 
 class TemplateNotFoundError(StudioError):
-    """模板 id 未注册."""
+    """参数化计算 id 未注册."""
 
 
 class LinkError(StudioError):

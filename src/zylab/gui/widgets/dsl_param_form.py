@@ -6,7 +6,7 @@
   ``response_sequence`` 为逐发试验记录输入，
   :class:`~.trial_record_edit.TrialRecordEdit`）；
 - 派生参数（``expr`` 非空）：只读行，值随其它输入实时重算
-  （:meth:`DslTemplate.evaluate`），模板应用页据此展示派生量。
+  （:meth:`DslTemplate.evaluate`），参数化计算应用页据此展示派生量。
 
 与 :class:`~zylab.gui.widgets.param_form.ParamForm`（工作流图节点参数
 表单）互补：本表单消费 DSL 声明的扁平参数命名空间，非节点参数引用。

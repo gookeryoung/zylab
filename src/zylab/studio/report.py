@@ -1,4 +1,4 @@
-"""DSL 报告生成器：模板 + 节点输出 -> Markdown/HTML 报告（Qt-free）.
+"""DSL 报告生成器：参数化计算 + 节点输出 -> Markdown/HTML 报告（Qt-free）.
 
 复用 :func:`zylab.studio.results.build_result` 把 ``results`` 声明解析为
 标准化视图数据，再按报告载体拼装：
@@ -46,7 +46,7 @@ _SVG_PAD_B = 48  # 底边距（横轴标签 + 刻度）
 def build_markdown(template: DslTemplate, outputs: Mapping[str, Any], values: Mapping[str, Any] | None = None) -> str:
     """生成 Markdown 报告.
 
-    :param template: DSL 模板（meta/params/report 声明）。
+    :param template: DSL 参数化计算（meta/params/report 声明）。
     :param outputs: 节点 id -> 输出载荷（运行结果）。
     :param values: 用户输入参数（缺省用声明默认值）。
     :raises TemplateError: results 引用无法解析或章节引用缺失。
@@ -110,7 +110,7 @@ _CSS = (
 
 
 def _render_views(template: DslTemplate, outputs: Mapping[str, Any]) -> dict[str, ViewData]:
-    """把模板 results 声明整体解析为视图数据（id -> ViewData）."""
+    """把参数化计算 results 声明整体解析为视图数据（id -> ViewData）."""
     return {result.id: build_result(result, outputs) for result in template.dsl_results}
 
 
@@ -139,7 +139,7 @@ def _resolve_section_view(
     if not ref:
         return None
     if ref not in views:
-        raise TemplateError(f"模板 {template.id!r} 报告章节 {section.title!r} 引用未声明的结果 {ref!r}")
+        raise TemplateError(f"参数化计算 {template.id!r} 报告章节 {section.title!r} 引用未声明的结果 {ref!r}")
     view = views[ref]
     if section.figure and not isinstance(view, (CurveData, CloudData)):
         raise TemplateError(f"报告章节 {section.title!r} 的 figure 引用 {ref!r} 应为曲线或云图结果")

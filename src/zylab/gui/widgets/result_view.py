@@ -1,7 +1,7 @@
 """结果视图：多 TAB 容器 + 摘要/控制条/绘图区（Workbench 风格）.
 
 - :class:`ResultTabs`：每个环节节点的结果独立一页（页名 = 节点名），
-  可单独关闭，全部关闭/模板切换回到占位页（紧凑多结果同屏对比）；
+  可单独关闭，全部关闭/参数化计算切换回到占位页（紧凑多结果同屏对比）；
 - :class:`ResultView`：单页结果视图，按结果类型分发渲染（静力/非线性
   变形云图、模态/屈曲振型、谐响应频响曲线、瞬态末帧云图与位移时程、
   模型网格预览），从原 FeaPage 移植并组件化。
@@ -421,7 +421,7 @@ class ResultView(QWidget):
         self._set_error(True)
 
     def clear(self, message: str = "尚未求解") -> None:
-        """清空结果（模板切换时）."""
+        """清空结果（参数化计算切换时）."""
         self._reset_controls()
         self._plot.clear()
         self._summary.setText(message)
@@ -1109,7 +1109,7 @@ class ResultTabs(QWidget):
     """多 TAB 结果容器（Workbench 风格）：每个环节节点的结果独立一页.
 
     - 页名 = 节点名；结果到达即建页并激活，节点重跑刷新原页（node_id 索引）；
-    - 页可单独关闭；全部关闭或模板切换（clear）回到占位页；
+    - 页可单独关闭；全部关闭或参数化计算切换（clear）回到占位页；
     - 占位页不可关闭（提示运行入口）。
     """
 
@@ -1154,7 +1154,7 @@ class ResultTabs(QWidget):
         self.view_for(node_id, title).show_error(message)
 
     def clear(self, message: str = "尚未求解") -> None:
-        """清空全部结果页并回到占位页（模板切换时）."""
+        """清空全部结果页并回到占位页（参数化计算切换时）."""
         self._views.clear()
         while self._tab.count():
             widget = self._tab.widget(0)

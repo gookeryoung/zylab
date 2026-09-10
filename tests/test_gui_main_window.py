@@ -312,4 +312,4 @@ def test_main_window_f5_global_run_dispatches(qtbot, isolated_data_dir: Path, mo
     win._global_run()
     assert calls["nb"] == 0
     assert calls["tp"] == 1
-    assert any("模板" in m for m in calls["msg"])
+    assert any("参数化计算" in m for m in calls["msg"])
