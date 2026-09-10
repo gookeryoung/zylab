@@ -162,6 +162,50 @@ class TestWorkspaceManager:
         monkeypatch.setattr(Path, "write_text", _fail_write)
         assert wm.save() is None
 
+    def test_history_records_prev_cwd_capped_at_10(self, tmp_path: Path) -> None:
+        """切换后旧 cwd 并入历史：最新在前、去重、上限 10 条、不含当前."""
+        os.chdir(tmp_path)
+        wm = WorkspaceManager(data_dir=tmp_path / "state")
+        dirs: list[Path] = []
+        for i in range(12):
+            d = tmp_path / f"d{i}"
+            d.mkdir()
+            dirs.append(d.resolve())
+            wm.set_workspace(d)
+        # 12 次切换后历史为最近 10 个旧 cwd：d10..d1（当前 d11 不在列）
+        assert wm.recent_workspaces() == [dirs[i] for i in range(10, 0, -1)]
+        assert wm.cwd not in wm.recent_workspaces()
+        # limit 参数生效
+        assert len(wm.recent_workspaces(limit=3)) == 3
+
+    def test_load_filters_invalid_history_entries(self, tmp_path: Path) -> None:
+        """load 恢复历史时剔除非字符串/空串/非法路径/不存在目录/重复项."""
+        import json
+
+        data_dir = tmp_path / "state"
+        data_dir.mkdir()
+        valid = tmp_path / "valid"
+        valid.mkdir()
+        payload = json.dumps(
+            {
+                "path": str(tmp_path / "ghost"),  # 当前路径不存在 → load 返回 None
+                "history": [
+                    str(valid),  # 有效保留
+                    str(tmp_path / "ghost2"),  # 不存在目录 → 剔除
+                    123,  # 非字符串 → 剔除
+                    "   ",  # 空串 → 剔除
+                    "\x00",  # resolve 抛 ValueError → 剔除
+                    str(valid),  # 重复项 → 剔除
+                ],
+            },
+            ensure_ascii=False,
+        )
+        (data_dir / CURRENT_WORKSPACE_FILE).write_text(payload, encoding="utf-8")
+        wm = WorkspaceManager(data_dir=data_dir)
+        # 当前路径无效时 load 仍返回 None，但历史中的有效项已恢复
+        assert wm.load() is None
+        assert wm.recent_workspaces() == [valid.resolve()]
+
 
 class TestKernelCwd:
     """ReplKernel 注入 cwd / cd 命令 + 工作区事件响应."""

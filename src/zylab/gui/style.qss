@@ -86,7 +86,7 @@ QLabel#workspaceTag {
     font-weight: bold;
     background: transparent;
     border: none;
-    padding: 0 2px;
+    padding: 0;
 }
 QLabel#workspaceSeparator {
     background-color: ${QSS_NAV_ACCENT};
@@ -111,6 +111,11 @@ QPushButton#workspaceOpenBtn {
     border: 1px solid transparent;
     border-radius: ${RADIUS_SM};
     padding: 0;
+    /* 重置全局 QPushButton 的 min-height/padding，避免按钮被撑高导致图标偏下 */
+    min-height: 0px;
+    max-height: 22px;
+    min-width: 0px;
+    max-width: 22px;
 }
 QPushButton#workspaceHistoryBtn:hover,
 QPushButton#workspaceOpenBtn:hover {

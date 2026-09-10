@@ -30,9 +30,13 @@ def test_main_window_builds(qtbot, isolated_data_dir: Path) -> None:
 @pytest.mark.gui
 def test_main_window_plot_renders_in_notebook(qtbot, isolated_data_dir: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """笔记本页运行绘图单元应内嵌渲染，不离开当前页."""
-    from zylab.gui.qt_compat import QMessageBox
-
-    monkeypatch.setattr(QMessageBox, "question", staticmethod(lambda *_args, **_kw: QMessageBox.Discard))
+    # 运行单元后笔记本变脏，teardown 关窗会触发 maybe_save 的模态确认框
+    # （_confirm 自定义按钮，不走 QMessageBox.question）；patch 底层 _confirm
+    # 返回“放弃”，避免测试环境弹模态框导致 worker 崩溃。
+    monkeypatch.setattr(
+        "zylab.gui.pages.notebook_page._confirm",
+        lambda *_args, **_kwargs: "放弃",
+    )
     win = MainWindow()
     qtbot.addWidget(win)
     editor = win._notebook_page._widgets[0].editor
