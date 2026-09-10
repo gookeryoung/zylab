@@ -2,38 +2,38 @@
   "format": "zylab.notebook.v1",
   "metadata": {
     "created": "2026-09-10T11:01:29",
-    "modified": "2026-09-10T13:02:12"
+    "modified": "2026-09-10T13:06:19"
   },
   "cells": [
     {
       "id": "a1001000000000000000000000000001",
       "source": "import numpy as np\nimport matplotlib.pyplot as plt\nimport pandas as pd\nfrom matplotlib.patches import Patch\n\n# 从 CSV 读取能量密度数据，补全 Color 字段的 # 前缀\ndf = pd.read_csv(cwd / \"data\" / \"energy_density.csv\")\ndf[\"Color\"] = \"#\" + df[\"Color\"].str.strip()\ndf",
-      "execution_count": 27,
+      "execution_count": 1,
       "outputs": [
         {
           "kind": "result",
-          "repr_text": "     Category Subcategory  EnergyDensity_J_per_m3    Color\n0       可再生能源          风能            1.000000e+05  #4CAF50\n1       可再生能源         太阳能            1.000000e+04  #66BB6A\n2       可再生能源          水能            1.000000e+06  #81C784\n3   机械与智能材料驱动        电机驱动            1.000000e+06  #26C6DA\n4   机械与智能材料驱动      记忆合金变形            1.000000e+08  #00ACC1\n5        含能材料        氢氧燃烧            1.300000e+07  #FF7043\n6        含能材料         黑火药            3.000000e+06  #EF5350\n7        含能材料         烟火剂            1.000000e+07  #F44336\n8        含能材料         猛炸药            6.700000e+09  #D32F2F\n9        化石燃料         天然气            3.500000e+10  #8D6E63\n10       化石燃料           煤            2.400000e+10  #795548\n11       化石燃料          石油            3.700000e+10  #5D4037\n12         核能      核裂变（铀）            5.500000e+15  #FF9800\n13         核能        氘氚聚变            6.000000e+16  #E65100\n14       理论极限        完全湮灭           -9.223372e+18  #7E57C2",
+          "repr_text": "     Category   Subcategory  ...                  State                             Source\n0       可再生能源            风能  ...         100m水头(功率密度类比)                     Smil(2008)对比研究\n1       可再生能源           太阳能  ...           地表辐照(功率密度类比)                     Smil(2008)对比研究\n2       可再生能源            水能  ...               100m水头势能                Engineering Toolbox\n3   机械与智能材料驱动          电机驱动  ...              电磁场储能(典型)                              数量级估算\n4   机械与智能材料驱动        记忆合金变形  ...    NiTi合金应变能(约10J/cm³)                          NASA/文献估算\n5        含能材料          氢氧燃烧  ...             氢气1atm常温燃烧            LNG Energy Density Wiki\n6        含能材料           黑火药  ...               传统火药(估算)                              数量级估算\n7        含能材料           烟火剂  ...           一般烟火/信号剂(估算)                              数量级估算\n8        含能材料        TNT猛炸药  ...    密度1.63g/cc×4.2MJ/kg                    Wikipedia/PSEMC\n9        化石燃料  天然气(CNG/LNG)  ...    压缩/液化态(常压仅~38MJ/m³)           Engineering Toolbox;Smil\n10       化石燃料        煤(无烟煤)  ...  固态 1400kg/m³×~27MJ/kg      Engineering Toolbox;Wikipedia\n11       化石燃料        石油(原油)  ...         液态 约35-45GJ/m³  Engineering Toolbox;SchoolPhysics\n12         核能    核裂变(铀-235)  ...              U-235完全裂变                              文献常用值\n13         核能          氘氚聚变  ...            D-T聚变(含氚质量)                              文献常用值\n14       理论极限          完全湮灭  ...             质能方程 E=mc²                        mc² (c=3e8)\n\n[15 rows x 6 columns]",
           "type_name": "DataFrame",
-          "shape": "(15, 4)"
+          "shape": "(15, 6)"
         }
       ]
     },
     {
       "id": "a1001000000000000000000000000002",
       "source": "def plot_energy_density(df: pd.DataFrame):\n    \"\"\"按 Category 分组绘制能量密度对数坐标柱状图（直接从 CSV DataFrame 驱动）.\"\"\"\n    fig, ax = plt.subplots(figsize=(14, 7.5))\n    bar_width = 0.62\n\n    # groupby 自动给出分组边界 + 每柱颜色\n    groups = list(df.groupby(\"Category\", sort=False))\n    boundaries = []\n    idx = 0\n    for _, gdf in groups:\n        n = len(gdf)\n        boundaries.append((idx, idx + n - 1, gdf[\"Category\"].iloc[0], gdf[\"Color\"].iloc[0]))\n        idx += n\n\n    labels = df[\"Subcategory\"].tolist()\n    values = df[\"EnergyDensity_J_per_m3\"].to_numpy(dtype=float)\n    colors = df[\"Color\"].tolist()\n    x = np.arange(len(labels))\n\n    bars = ax.bar(x, values, color=colors, width=bar_width,\n                 edgecolor=\"white\", linewidth=0.6, zorder=3)\n\n    # 柱顶标注（10^n 科学计数法）\n    for bar, v in zip(bars, values):\n        if v <= 0:\n            continue\n        exp = int(np.log10(v))\n        ax.text(bar.get_x() + bar.get_width() / 2, v * 1.25,\n                f\"10^{exp}\", ha=\"center\", va=\"bottom\",\n                fontsize=9, rotation=90)\n\n    # 对数纵轴 + 横轴标签\n    ax.set_yscale(\"log\")\n    ax.set_ylim(1e3, 1e38)\n    ax.set_ylabel(\"能量密度 (J/m³，对数坐标)\", fontsize=13)\n    ax.set_xticks(x)\n    ax.set_xticklabels(labels, fontsize=11)\n\n    # 网格 + 分组底色\n    ax.grid(axis=\"y\", which=\"both\", linestyle=\"--\", alpha=0.35, zorder=0)\n    ax.set_axisbelow(True)\n    for start, end, _glabel, gcolor in boundaries:\n        ax.axvspan(start - 0.5, end + 0.5, color=gcolor, alpha=0.08, zorder=0)\n\n    # 图例\n    legend_handles = [Patch(facecolor=gcolor, alpha=0.85, label=glabel)\n                      for _, _, glabel, gcolor in boundaries]\n    ax.legend(handles=legend_handles, loc=\"upper left\",\n              fontsize=11, title=\"能量大类\", title_fontsize=12, framealpha=0.9)\n\n    ax.set_title(\"不同能量形式的能量密度对比（体积能量密度，数量级估算）\",\n                 fontsize=15, pad=12)\n    fig.text(0.99, 0.01, \"注：典型值估算，用于数量级对比；单位统一为 J/m³\",\n             ha=\"right\", fontsize=8, color=\"gray\")\n    plt.tight_layout(rect=[0, 0.02, 1, 1])\n    return fig, ax",
-      "execution_count": 28,
+      "execution_count": 2,
       "outputs": []
     },
     {
       "id": "a1001000000000000000000000000003",
       "source": "# 绘图 + 保存\nfig, ax = plot_energy_density(df)\nplt.show()",
-      "execution_count": 29,
+      "execution_count": 3,
       "outputs": []
     },
     {
       "id": "146bd0b244f144e192dd949b38ab4ab8",
       "source": "output_png = cwd / \"energy_density_compare.png\"\noutput_pdf = cwd / \"energy_density_compare.pdf\"\n\nfig.savefig(str(output_png), dpi=200, bbox_inches=\"tight\")\nfig.savefig(str(output_pdf), bbox_inches=\"tight\")\nprint(f\"图表已生成：{output_png.name} / {output_pdf.name}\")",
-      "execution_count": 30,
+      "execution_count": 4,
       "outputs": [
         {
           "kind": "stream",

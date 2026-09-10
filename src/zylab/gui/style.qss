@@ -42,11 +42,12 @@ QLabel#headerTitle {
     font-size: ${FONT_TITLE};
     font-weight: bold;
 }
-/* 分组容器 + 标签 + 版本 */
+/* 分组容器：统一 min-height 保证工作区与环境版本胶囊同高 */
 QFrame#headerGroup {
     background-color: ${QSS_NAV_BG_HOVER};
     border: 1px solid ${QSS_NAV_ACCENT};
     border-radius: ${RADIUS_SM};
+    min-height: 28px;
 }
 QLabel#headerTag {
     color: ${QSS_NAV_ACCENT};
@@ -62,10 +63,11 @@ QLabel#headerVersion {
     font-size: ${FONT_CAPTION};
     font-weight: bold;
 }
-/* 竖向分隔线：1px 宽 + nav_accents 半透明 */
+/* 竖向分隔线：与 headerGroup 同高 */
 QLabel#headerSeparator {
     background-color: ${QSS_NAV_ACCENT};
     border: none;
+    min-height: 28px;
 }
 /* 工作区显示（MATLAB 风格 cwd）：头部 nav 色系紧凑按钮组 */
 QLabel#workspaceLabel {

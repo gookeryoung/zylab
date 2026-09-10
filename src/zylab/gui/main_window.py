@@ -146,9 +146,8 @@ class MainWindow(QMainWindow):
         ws_layout.addWidget(self._workspace_btn)
         layout.addWidget(workspace_group, alignment=Qt.AlignVCenter)
 
-        # 竖向分隔线
+        # 竖向分隔线（高度由 QSS min-height 统一控制）
         separator = QLabel(objectName="headerSeparator")
-        separator.setFixedHeight(20)
         separator.setFixedWidth(1)
         layout.addWidget(separator, alignment=Qt.AlignVCenter)
 
