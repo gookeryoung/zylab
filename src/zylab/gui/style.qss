@@ -34,13 +34,15 @@ QLineEdit, QPlainTextEdit, QTextEdit, QComboBox, QSpinBox, QDoubleSpinBox {
 /* ------------------------------------------------ 头部条 */
 QFrame#headerBar {
     background-color: ${QSS_NAV_BG};
-    min-height: 40px;
-    max-height: 40px;
+    border-bottom: 1px solid ${QSS_NAV_ACCENT};
+    min-height: 32px;
+    max-height: 32px;
 }
 QLabel#headerTitle {
-    color: ${QSS_NAV_TEXT};
-    font-size: ${FONT_TITLE};
+    color: ${QSS_NAV_ACCENT};
+    font-size: ${FONT_HEADING};
     font-weight: bold;
+    letter-spacing: 1px;
 }
 /* 分组容器：统一 min-height 保证工作区与环境版本胶囊同高 */
 QFrame#headerGroup {
@@ -69,41 +71,56 @@ QLabel#headerSeparator {
     border: none;
     min-height: 28px;
 }
-/* 工作区地址栏（MATLAB 风格 cwd 地址栏：居中、完整路径、等宽字体、浅边框） */
+/* 工作区地址栏（胶囊形状 + accent 边框 + 标签/路径/按钮组） */
 QFrame#workspaceBar {
-    background-color: ${QSS_BG_INPUT};
-    border: 1px solid ${QSS_BORDER};
-    border-radius: ${RADIUS_SM};
-    min-height: 28px;
-    max-height: 30px;
+    background-color: ${QSS_NAV_BG_HOVER};
+    border: 1px solid ${QSS_NAV_ACCENT};
+    border-radius: 10px;
+    min-height: 24px;
+    max-height: 24px;
 }
 QFrame#workspaceBar:hover { border-color: ${QSS_NAV_ACCENT}; }
-QLabel#workspaceIcon {
+QLabel#workspaceTag {
+    color: ${QSS_NAV_ACCENT};
+    font-size: ${FONT_CAPTION};
+    font-weight: bold;
     background: transparent;
     border: none;
+    padding: 0 2px;
+}
+QLabel#workspaceSeparator {
+    background-color: ${QSS_NAV_ACCENT};
+    border: none;
+    max-width: 1px;
+    min-height: 12px;
+    max-height: 12px;
+    margin: 0 2px;
 }
 QLabel#workspaceLabel {
-    color: ${QSS_TEXT_PRIMARY};
+    color: ${QSS_NAV_TEXT};
     font-family: ${FONT_MONO};
     font-size: ${FONT_BODY};
     background: transparent;
     border: none;
     padding: 0;
 }
-QPushButton#workspaceBtn {
+QPushButton#workspaceHistoryBtn,
+QPushButton#workspaceOpenBtn {
     background: transparent;
-    color: ${QSS_TEXT_SECONDARY};
+    color: ${QSS_NAV_TEXT};
     border: 1px solid transparent;
     border-radius: ${RADIUS_SM};
     padding: 0;
 }
-QPushButton#workspaceBtn:hover {
-    background-color: ${QSS_SELECTION_BG};
+QPushButton#workspaceHistoryBtn:hover,
+QPushButton#workspaceOpenBtn:hover {
+    background-color: ${QSS_NAV_BG_SELECTED};
     border-color: ${QSS_NAV_ACCENT};
-    color: ${QSS_PRIMARY};
+    color: ${QSS_NAV_ACCENT};
 }
-QPushButton#workspaceBtn:pressed {
-    background-color: ${QSS_BG_MUTED};
+QPushButton#workspaceHistoryBtn:pressed,
+QPushButton#workspaceOpenBtn:pressed {
+    background-color: ${QSS_SELECTION_BG};
 }
 
 /* 头部条命令搜索框（VS Code 命令面板入口，nav 色系） */
@@ -111,12 +128,15 @@ QLineEdit#commandSearch {
     background-color: ${QSS_NAV_BG_HOVER};
     color: ${QSS_NAV_TEXT};
     border: 1px solid transparent;
-    border-radius: ${RADIUS_SM};
+    border-radius: 10px;
     padding: 2px 10px;
     min-height: 0;
 }
 QLineEdit#commandSearch:hover { border-color: ${QSS_NAV_ACCENT}; }
-QLineEdit#commandSearch:focus { border-color: ${QSS_NAV_ACCENT}; }
+QLineEdit#commandSearch:focus {
+    border-color: ${QSS_NAV_ACCENT};
+    background-color: ${QSS_BG_APP};
+}
 
 /* 命令面板弹层（Ctrl+Shift+P） */
 QDialog#commandPalette {
@@ -167,7 +187,7 @@ QListWidget#sidebar {
     padding: 8px 0;
 }
 QListWidget#sidebar::item {
-    height: 40px;
+    height: 36px;
     padding-left: 13px;
     border-left: 3px solid transparent;
     color: ${QSS_NAV_TEXT};
@@ -605,8 +625,8 @@ QStatusBar {
     background-color: ${QSS_BG_MUTED};
     color: ${QSS_TEXT_SECONDARY};
     font-size: ${FONT_CAPTION};
-    min-height: 28px;
-    max-height: 28px;
+    min-height: 24px;
+    max-height: 24px;
 }
 QStatusBar::item { border: none; }
 QLabel#statusCwdLabel {

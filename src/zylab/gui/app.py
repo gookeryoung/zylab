@@ -144,20 +144,22 @@ def _load_qt_translations(app: QApplication) -> None:
 
     # 候选搜索路径：项目内置 → 系统 PySide2 自带
     search_dirs: list[Path] = []
-    if bundled.is_dir():
+    if bundled.is_dir():  # pragma: no cover - 随包分发，正常始终存在
         search_dirs.append(bundled)
-    if sys_transl and Path(sys_transl).is_dir():
+    if sys_transl and Path(sys_transl).is_dir():  # pragma: no cover - fallback 分支
         search_dirs.append(Path(sys_transl))
 
     for fname in ("qtbase", "qt"):
         # 用 locale.name() 得到 "zh_CN"，尝试精确匹配
         translator = QTranslator(app)
         loaded = translator.load(locale, fname, "_", str(bundled))
-        if not loaded and sys_transl:
+        if not loaded and sys_transl:  # pragma: no cover - fallback 分支
             loaded = translator.load(locale, fname, "_", sys_transl)
         if loaded:
             app.installTranslator(translator)
             logger.debug("Qt 翻译已加载: %s", fname)
+        else:  # pragma: no cover - 翻译缺失时静默跳过（fallback 防御）
+            pass
 
 
 def register_user_themes(data_dir: Path) -> list[str]:

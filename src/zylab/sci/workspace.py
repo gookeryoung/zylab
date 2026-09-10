@@ -33,6 +33,9 @@ CURRENT_WORKSPACE_FILE = "workspace.json"
 #: 工作区变更事件主题
 TOPIC_WORKSPACE_CHANGED = "workspace.changed"
 
+#: 历史工作区保留的最大条数
+_MAX_HISTORY = 10
+
 
 @dataclass(frozen=True)
 class VarInfo:
@@ -155,22 +158,27 @@ class WorkspaceManager:
     1. 维护 ``cwd`` 属性（类型为 :class:`pathlib.Path`），默认为 ``Path.cwd()``。
     2. 切换路径经 :meth:`set_workspace` 校验（必须存在且为目录），
        成功后同时更新 ``os.chdir()`` 使 ``Path.cwd()`` 一致。
-    3. 关闭前调用 :meth:`save` 持久化路径到 ``default_data_dir()/workspace.json``，
-       下次启动 :meth:`load` 自动恢复上次路径。
-    4. 切换后经 :class:`EventBus` 广播 ``TOPIC_WORKSPACE_CHANGED`` 事件，
+    3. 切换成功后将新路径前置到 ``history``（去重、限制最近 10 条），
+       下次启动可经 :meth:`recent_workspaces` 取出供 UI 下拉展示。
+    4. 关闭前调用 :meth:`save` 持久化当前路径与历史到
+       ``default_data_dir()/workspace.json``，下次启动 :meth:`load` 自动恢复。
+    5. 切换后经 :class:`EventBus` 广播 ``TOPIC_WORKSPACE_CHANGED`` 事件，
        内核（注入 namespace["cwd"]）与 UI（状态栏显示）各取所需。
 
     持久化 JSON 结构::
 
-        {"path": "F:/projects/my-work"}
+        {"path": "F:/projects/my-work", "history": ["F:/prev1", "F:/prev2"]}
+
+    历史数组长度上限 :data:`_MAX_HISTORY`（10），当前路径不出现在历史中。
 
     用法::
 
         bus = EventBus()
         wm = WorkspaceManager(bus)
-        wm.load()           # 恢复上次关闭前的路径
-        wm.set_workspace(Path.home())  # 切换工作区
-        wm.save()           # 关闭前持久化
+        wm.load()                       # 恢复上次关闭前的路径 + 历史
+        wm.set_workspace(Path.home())   # 切换工作区（自动并入历史）
+        wm.recent_workspaces()          # 最近 10 个（不含当前）
+        wm.save()                       # 关闭前持久化
     """
 
     def __init__(self, bus: EventBus | None = None, data_dir: Path | None = None) -> None:
@@ -182,20 +190,29 @@ class WorkspaceManager:
         self.bus = bus or EventBus()
         self.data_dir = Path(data_dir) if data_dir else default_data_dir()
         self._cwd = Path.cwd().resolve()
+        self._history: list[Path] = []  # 最近切换过的路径（不含当前），首项为最新
 
     @property
     def cwd(self) -> Path:
         """当前工作区绝对路径（只读）."""
         return self._cwd
 
+    def recent_workspaces(self, limit: int = 10) -> list[Path]:
+        """返回最近切换过的工作区路径列表（不含当前）。
+
+        :param limit: 最多返回的条数（默认 10）。
+        :returns: 最近工作区路径列表，按时间倒序排列。
+        """
+        return list(self._history[:limit])
+
     # ------------------------------------------------------------ 切换与持久化
 
     def set_workspace(self, path: str | Path) -> WorkspaceInfo:
-        """切换工作区（校验 + 应用 + 广播事件）.
+        """切换工作区（校验 + 应用 + 更新历史 + 广播事件）.
 
         路径必须存在且为目录；非法路径直接拒绝（不抛异常，返回带错误标记
         的 WorkspaceInfo，调用方可据此提示 UI）。校验通过后同时更新
-        ``os.chdir()`` 使全局 cwd 与管理器一致。
+        ``os.chdir()`` 使全局 cwd 与管理器一致，并将旧 cwd 并入历史。
 
         :param path: 目标路径（字符串或 Path）。
         :returns: 工作区状态快照。
@@ -211,15 +228,22 @@ class WorkspaceManager:
         prev = self._cwd
         self._cwd = target
         os.chdir(target)
+        self._update_history(prev)
         info = WorkspaceInfo(path=target, prev_path=prev, source="set")
         self.bus.publish(TOPIC_WORKSPACE_CHANGED, info)
         logger.info("工作区已切换: %s", target)
         return info
 
-    def save(self) -> Path | None:
-        """持久化当前工作区路径（关闭前调用）.
+    def _update_history(self, prev_cwd: Path) -> None:
+        """将旧 cwd 并入历史（去重并限制数量，当前路径不出现在历史中）."""
+        # 过滤掉与当前 cwd 或新加入的旧 cwd 重复的条目
+        filtered = [p for p in self._history if p not in (prev_cwd, self._cwd)]
+        self._history = [prev_cwd, *filtered][:_MAX_HISTORY]
 
-        写入 ``default_data_dir()/workspace.json``（包含 ``{"path": "..."}``）。
+    def save(self) -> Path | None:
+        """持久化当前工作区路径与历史（关闭前调用）.
+
+        写入 ``default_data_dir()/workspace.json``（包含 ``{"path": "...", "history": [...]}``）。
         目录不存在时自动创建。
 
         :returns: 写入路径；持久化失败返回 None（仅记日志不抛）。
@@ -227,7 +251,13 @@ class WorkspaceManager:
         self.data_dir.mkdir(parents=True, exist_ok=True)
         target = self.data_dir / CURRENT_WORKSPACE_FILE
         try:
-            payload = json.dumps({"path": str(self._cwd)}, ensure_ascii=False, indent=2)
+            # 历史持久化前过滤掉当前路径，避免重复；数量上限 _MAX_HISTORY
+            history_strs = [str(p) for p in self._history if p != self._cwd][:_MAX_HISTORY]
+            payload = json.dumps(
+                {"path": str(self._cwd), "history": history_strs},
+                ensure_ascii=False,
+                indent=2,
+            )
             target.write_text(payload + "\n", encoding="utf-8")
         except OSError as exc:
             logger.warning("工作区路径持久化失败: %s", exc)
@@ -236,9 +266,10 @@ class WorkspaceManager:
         return target
 
     def load(self) -> WorkspaceInfo | None:
-        """从持久化文件恢复工作区路径（启动时调用）.
+        """从持久化文件恢复工作区路径与历史（启动时调用）.
 
         文件缺失、JSON 非法或路径已不存在时静默跳过，保持初始化 cwd。
+        历史数组中非字符串条目与不存在的路径会被自动剔除。
 
         :returns: 成功恢复时返回 WorkspaceInfo；无文件或非法时返回 None。
         """
@@ -250,10 +281,29 @@ class WorkspaceManager:
         except (OSError, json.JSONDecodeError) as exc:
             logger.warning("工作区持久化文件读取失败: %s", exc)
             return None
+        # 先尝试恢复历史（即使当前路径恢复失败，历史仍可在后续有效切换时合并）
+        raw_history = data.get("history")
+        if isinstance(raw_history, list):
+            history: list[Path] = []
+            seen: set[str] = set()
+            for item in raw_history:
+                if not isinstance(item, str) or not item.strip():
+                    continue
+                try:
+                    p = Path(item).expanduser().resolve()
+                except (OSError, ValueError):
+                    continue
+                key = str(p).lower()
+                if key in seen or not p.is_dir():
+                    continue
+                seen.add(key)
+                history.append(p)
+            self._history = history[:_MAX_HISTORY]
+        # 再恢复当前路径
         raw_path = data.get("path")
         if not isinstance(raw_path, str) or not raw_path.strip():
             return None
-        info = self.set_workspace(raw_path)  # 复用切换逻辑（校验 + os.chdir + 广播）
+        info = self.set_workspace(raw_path)  # 复用切换逻辑（校验 + os.chdir + 广播 + 并入历史）
         # 持久化路径已不存在时 set_workspace 返回 source="invalid"，须静默跳过
         if info.source == "invalid":
             return None

@@ -27,6 +27,7 @@ from .qt_compat import (
     QListWidget,
     QListWidgetItem,
     QMainWindow,
+    QMenu,
     QPushButton,
     QScrollArea,
     QShortcut,
@@ -47,7 +48,7 @@ _PAGE_TEMPLATE = 2
 _PAGE_ABOUT = 3
 
 #: 侧边栏图标显示尺寸（像素）
-_NAV_ICON_SIZE = QSize(18, 18)
+_NAV_ICON_SIZE = QSize(14, 14)
 
 
 class MainWindow(QMainWindow):
@@ -117,39 +118,60 @@ class MainWindow(QMainWindow):
         """构建头部条：左侧标题 + 居中 MATLAB 风格工作区地址栏 + 右侧功能搜索框."""
         bar = QFrame(objectName="headerBar")
         layout = QHBoxLayout(bar)
-        layout.setContentsMargins(theme.SPACING_MD, 0, theme.SPACING_MD, 0)
-        layout.setSpacing(theme.SPACING_SM)
+        layout.setContentsMargins(theme.SPACING_SM, 0, theme.SPACING_SM, 0)
+        layout.setSpacing(theme.SPACING_XS)
 
         # 左：应用标题
         layout.addWidget(QLabel("zylab", objectName="headerTitle"), alignment=Qt.AlignVCenter)
 
-        # 中：工作区地址栏（MATLAB 风格，居中且醒目）
+        # 中：工作区地址栏（标签 + 路径 + 操作按钮组）
         workspace_bar = QFrame(objectName="workspaceBar")
         ws_layout = QHBoxLayout(workspace_bar)
-        ws_layout.setContentsMargins(theme.SPACING_SM, 2, theme.SPACING_XS, 2)
+        ws_layout.setContentsMargins(theme.SPACING_SM, 0, theme.SPACING_XS, 0)
         ws_layout.setSpacing(theme.SPACING_XS)
-        ws_icon = QLabel(objectName="workspaceIcon")
-        ws_icon.setFixedSize(20, 20)
+
+        # 标签：【工作区】
+        ws_tag = QLabel("工作区", objectName="workspaceTag")
+
+        # 竖向分隔线
+        ws_sep = QLabel(objectName="workspaceSeparator")
+
+        # 路径地址
         self._workspace_label = QLabel(objectName="workspaceLabel")
         self._workspace_label.setToolTip("当前工作区（MATLAB 风格 cwd）")
-        self._workspace_label.setMinimumWidth(180)
-        self._workspace_label.setMaximumWidth(520)
-        self._workspace_btn = QPushButton(objectName="workspaceBtn")
-        self._workspace_btn.setToolTip("切换工作区目录")
-        self._workspace_btn.setFixedSize(26, 26)
-        self._workspace_btn.setIconSize(QSize(14, 14))
-        self._workspace_btn.clicked.connect(self._on_switch_workspace)
-        ws_layout.addWidget(ws_icon)
+        self._workspace_label.setMinimumWidth(100)
+        self._workspace_label.setMaximumWidth(400)
+
+        # 弹簧填充：让标签 + 路径居左，按钮组居右
+        ws_layout.addWidget(ws_tag)
+        ws_layout.addWidget(ws_sep)
         ws_layout.addWidget(self._workspace_label, stretch=1)
-        ws_layout.addWidget(self._workspace_btn)
+
+        # 操作按钮组（右侧）：下拉历史 + 打开新工作区
+        self._workspace_history_btn = QPushButton(objectName="workspaceHistoryBtn")
+        self._workspace_history_btn.setToolTip("切换到最近的工作区")
+        self._workspace_history_btn.setFixedSize(24, 22)
+        self._workspace_history_btn.setIconSize(QSize(10, 10))
+        self._workspace_history_menu = QMenu(self)
+        self._workspace_history_btn.setMenu(self._workspace_history_menu)
+        self._workspace_history_btn.clicked.connect(self._refresh_and_show_workspace_menu)
+
+        self._workspace_open_btn = QPushButton(objectName="workspaceOpenBtn")
+        self._workspace_open_btn.setToolTip("打开新工作区目录")
+        self._workspace_open_btn.setFixedSize(24, 22)
+        self._workspace_open_btn.setIconSize(QSize(12, 12))
+        self._workspace_open_btn.clicked.connect(self._on_switch_workspace)
+
+        ws_layout.addWidget(self._workspace_history_btn)
+        ws_layout.addWidget(self._workspace_open_btn)
         layout.addWidget(workspace_bar, stretch=1, alignment=Qt.AlignVCenter)
 
         # 右：功能搜索框（VS Code 命令面板入口：点击或 Ctrl+Shift+P 弹出）
         self._command_search = QLineEdit(objectName="commandSearch")
         self._command_search.setReadOnly(True)
         self._command_search.setPlaceholderText("搜索功能 (Ctrl+Shift+P)")
-        self._command_search.setFixedWidth(280)
-        self._command_search.setFixedHeight(28)
+        self._command_search.setFixedWidth(240)
+        self._command_search.setFixedHeight(24)
         self._command_search.installEventFilter(self)
         layout.addWidget(self._command_search, alignment=Qt.AlignVCenter)
 
@@ -176,19 +198,16 @@ class MainWindow(QMainWindow):
             self.statusBar().showMessage(f"主题已切换: {theme.current_palette().display_name}")
 
     def _refresh_sidebar_icons(self) -> None:
-        """按当前主题色重绘侧边栏图标（选中行用强调色）+ 工作区图标."""
+        """按当前主题色重绘侧边栏图标（选中行用强调色）+ 工作区操作按钮."""
         pal = theme.current_palette()
         for row, name in enumerate(NAV_ICON_NAMES):
             item = self._sidebar.item(row)
             if item is not None:
                 color = pal.nav_accent if row == self._sidebar.currentRow() else pal.nav_text
                 item.setIcon(nav_icon(name, color))
-        # 工作区切换按钮与文件夹图标
-        self._workspace_btn.setIcon(nav_icon("open_project", pal.nav_text))
-        # 工作区地址栏前的文件夹图标（复用 open_file 图标，主题色）
-        icon_widget = self.findChild(QLabel, "workspaceIcon")
-        if icon_widget is not None:
-            icon_widget.setPixmap(nav_icon("open_file", pal.nav_accent).pixmap(18, 18))
+        # 工作区下拉历史按钮（箭头）+ 打开文件夹按钮
+        self._workspace_history_btn.setIcon(nav_icon("arrow_down", pal.nav_text))
+        self._workspace_open_btn.setIcon(nav_icon("open_file", pal.nav_text))
 
     def _refresh_workspace_ui(self) -> None:
         """刷新头部和状态栏的工作区路径显示（只读 self._workspace_manager）."""
@@ -212,11 +231,39 @@ class MainWindow(QMainWindow):
         )
         if not target:
             return  # 用户取消
-        info = self._workspace_manager.set_workspace(target)
+        self._switch_workspace_to(target)
+
+    def _refresh_and_show_workspace_menu(self) -> None:
+        """刷新历史下拉菜单并立即弹出（供按钮点击或 setMenu 自动触发）."""
+        self._refresh_workspace_menu()
+
+    def _refresh_workspace_menu(self) -> None:
+        """重建历史工作区菜单（最近 10 条，点击即切换）."""
+        menu = self._workspace_history_menu
+        menu.clear()
+        history = self._workspace_manager.recent_workspaces(limit=10)
+        if not history:
+            # 无历史：显示禁用占位项
+            empty = menu.addAction("（暂无历史）")
+            empty.setEnabled(False)
+            return
+        for path in history:
+            action = menu.addAction(str(path))
+            action.setData(str(path))
+            action.triggered.connect(lambda _checked=False, p=str(path): self._switch_workspace_to(p))
+        menu.addSeparator()
+        open_action = menu.addAction("选择其他目录…")
+        open_action.triggered.connect(self._on_switch_workspace)
+
+    def _switch_workspace_to(self, target: str) -> None:
+        """切换到指定工作区路径（校验 + 应用 + 持久化 + 提示）."""
+        target_path = target
+        info = self._workspace_manager.set_workspace(target_path)
         if info.source == "invalid":
-            self.statusBar().showMessage(f"切换失败：目录不存在 — {target}")
+            self.statusBar().showMessage(f"切换失败：目录不存在 — {target_path}")
             return
         self._workspace_manager.save()
+        self._refresh_workspace_menu()
         self.statusBar().showMessage(f"工作区已切换：{info.path}")
 
     def _build_about_page(self) -> QWidget:
@@ -333,11 +380,13 @@ class MainWindow(QMainWindow):
         self._status_cwd_label.mouseDoubleClickEvent = lambda _e: self._on_switch_workspace()
         self.statusBar().addPermanentWidget(self._status_cwd_label, 1)
         self._refresh_workspace_ui()
+        self._refresh_workspace_menu()
 
     def _on_workspace_changed(self, info: object) -> None:
-        """WorkspaceManager 切路径后刷新头部与状态栏的工作区显示."""
+        """WorkspaceManager 切路径后刷新头部工作区显示、状态栏与历史菜单."""
         if isinstance(info, WorkspaceInfo):
             self._refresh_workspace_ui()
+            self._refresh_workspace_menu()
 
     def _setup_command_palette(self) -> None:
         """装配命令面板：注册全局命令 + Ctrl+Shift+P 快捷键."""
