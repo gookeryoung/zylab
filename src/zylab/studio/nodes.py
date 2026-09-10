@@ -54,6 +54,7 @@ from .bundle import ConductionBundle, ModelBundle
 from .dsl import substitute_refs
 from .errors import ParamError, StudioError
 from .expressions import ARRAY_MATH_NAMESPACE, safe_eval
+from .lsc import solve_lsc_curve
 from .meshing3d import cylinder_resistor_mesh, vfilm_resistor_mesh
 from .module import module_spec
 from .template import Template
@@ -78,6 +79,7 @@ __all__ = [
     "run_electrothermal",
     "run_electrothermal_transient",
     "run_harmonic",
+    "run_lsc_curve",
     "run_modal",
     "run_nonlinear",
     "run_sensitivity_test_node",
@@ -834,4 +836,18 @@ def analyze_updown_records_node(inputs: NodeInputs, params: NodeParams, report: 
     _report(report, 0.3, "升降法实测记录分析中")
     result = analyze_updown_records(**p)
     _report(report, 1.0, f"{result.method_label}实测分析完成")
+    return result
+
+
+def run_lsc_curve(inputs: NodeInputs, params: NodeParams, report: ReportFn | None = None) -> Any:
+    """LSC 曲线优化节点：10 参数 → DATA 载荷（系数/残差/四段曲线/断点角度）.
+
+    载荷为 dict，含 x(16 维系数)、cost(残差)、curves(四段采样)、
+    breakpoints(断点坐标)、angles(四角度)。
+    """
+    del inputs  # 源节点无输入
+    p = _params("compute.lsc_curve", params)
+    _report(report, 0.3, "LSC 曲线优化求解中")
+    result = solve_lsc_curve(**p)
+    _report(report, 1.0, f"LSC 优化完成，残差 {result['cost']:.6f}")
     return result

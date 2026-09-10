@@ -741,6 +741,27 @@ BUILTIN_MODULES: tuple[ModuleSpec, ...] = (
             ParamSpec("seed", "随机种子", ParamType.INT, 7, 0, 2147483647, 1, "", "bootstrap 固定种子"),
         ),
     ),
+    ModuleSpec(
+        type_id="compute.lsc_curve",
+        name="LSC 曲线优化",
+        category=ModuleCategory.SOURCE,
+        target="zylab.studio.nodes:run_lsc_curve",
+        outputs=(PortSpec("data", PortType.DATA, "LSC 结果"),),
+        params=(
+            ParamSpec("m", "内部断点 m", ParamType.FLOAT, -1.3, -100.0, 0.0, 0.05, doc="须为负数，内部段左端点"),
+            ParamSpec(
+                "m1", "外部断点 m1", ParamType.FLOAT, -2.4, -200.0, 0.0, 0.1, doc="须为负数且小于 m，外部段左端点"
+            ),
+            ParamSpec("s", "内部斜率 s", ParamType.FLOAT, 1.2183, -100.0, 100.0, 0.1, doc="内部段 x=0 处的目标斜率"),
+            ParamSpec("s1", "外部斜率 s1", ParamType.FLOAT, 8.1, -100.0, 200.0, 0.1, doc="外部段 x=0 处的目标斜率"),
+            ParamSpec("H", "切削高度 H", ParamType.FLOAT, 0.5, -10.0, 100.0, 0.1),
+            ParamSpec("m2", "特定点 m2", ParamType.FLOAT, 0.5, -100.0, 100.0, 0.1, doc="切削高度约束位置，可为正负"),
+            ParamSpec("H1", "内部保留高度 H1", ParamType.FLOAT, 0.2, -10.0, 100.0, 0.1),
+            ParamSpec("H2", "外部保留高度 H2", ParamType.FLOAT, 0.65, -10.0, 100.0, 0.1),
+            ParamSpec("J", "总角度 J", ParamType.FLOAT, 80.0, 0.0, 180.0, 1.0, "°"),
+            ParamSpec("J1", "内部角度 J1", ParamType.FLOAT, 40.0, 0.0, 180.0, 1.0, "°"),
+        ),
+    ),
 )
 
 _MODULES_BY_ID: dict[str, ModuleSpec] = {spec.type_id: spec for spec in BUILTIN_MODULES}

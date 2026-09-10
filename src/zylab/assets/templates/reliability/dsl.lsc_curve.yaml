@@ -1,0 +1,87 @@
+meta:
+  id: dsl.lsc_curve
+  name: LSC 曲线优化
+  discipline: reliability
+  description: 带几何约束的三断点四曲线最小二乘拟合（LSC 曲线优化器），用于刃口轮廓、刀具设计等需要多段曲线平滑过渡的工程场景。
+  tags: [曲线拟合, 优化, 刃口轮廓]
+params:
+  断点:
+    items:
+      m: {value: -1.3, min: -50.0, max: 0.0, step: 0.05, label: 内部断点 m}
+      m1: {value: -2.4, min: -100.0, max: 0.0, step: 0.1, label: 外部断点 m1}
+  斜率:
+    items:
+      s: {value: 1.2183, min: -100.0, max: 100.0, step: 0.1, label: 内部斜率 s}
+      s1: {value: 8.1, min: -100.0, max: 200.0, step: 0.1, label: 外部斜率 s1}
+  高度:
+    items:
+      H: {value: 0.5, min: -10.0, max: 100.0, step: 0.1, label: 切削高度 H}
+      m2: {value: 0.5, min: -100.0, max: 100.0, step: 0.1, label: 特定点 m2}
+      H1: {value: 0.2, min: -10.0, max: 100.0, step: 0.1, label: 内部保留高度 H1}
+      H2: {value: 0.65, min: -10.0, max: 100.0, step: 0.1, label: 外部保留高度 H2}
+  角度:
+    items:
+      J: {value: 80.0, min: 0.0, max: 180.0, step: 1.0, unit: "°", label: 总角度 J}
+      J1: {value: 40.0, min: 0.0, max: 180.0, step: 1.0, unit: "°", label: 内部角度 J1}
+pipeline:
+  - id: lsc
+    type: compute.lsc_curve
+    params:
+      m: "$m"
+      m1: "$m1"
+      s: "$s"
+      s1: "$s1"
+      H: "$H"
+      m2: "$m2"
+      H1: "$H1"
+      H2: "$H2"
+      J: "$J"
+      J1: "$J1"
+results:
+  - id: curves
+    group: 曲线结果
+    kind: curve
+    title: LSC 拟合四段曲线
+    x: lsc.curves.inner_upper.x
+    y:
+      - lsc.curves.inner_upper.y
+      - lsc.curves.inner_lower.y
+      - lsc.curves.outer_upper.y
+      - lsc.curves.outer_lower.y
+    x_label: X
+    y_label: Y
+  - id: summary
+    group: 计算摘要
+    kind: text
+    title: 优化摘要
+    text: "残差 cost = {cost:.6e}（接近零表示约束满足良好）"
+    values:
+      cost: "lsc.cost"
+  - id: angles_table
+    group: 计算摘要
+    kind: table
+    title: 断点角度（°）
+    columns:
+      - {title: 位置, ref: ["m_upper", "m_lower", "m1_upper", "m1_lower"]}
+      - {title: 角度, ref: lsc.angles}
+  - id: points_table
+    group: 计算摘要
+    kind: table
+    title: 断点坐标
+    columns:
+      - {title: 点, ref: ["内部断点", "外部断点"]}
+      - {title: X, ref: lsc.breakpoints}
+report:
+  exports: [md, html]
+  sections:
+    - title: LSC 拟合曲线
+      figure: curves
+    - title: 优化摘要
+      figure: summary
+docs:
+  intro:
+    text: |
+      LSC（Least Squares Curve）曲线优化器以带几何约束的最小二乘法拟合三段四曲线。
+      三个断点 m < m1 < 0 将 x 轴分为内部段 [m, m1] 和外部段 [m1, 0]，每段上下各一条
+      三次多项式曲线。约束包括断点处函数值、一阶/二阶导数连续、特定点高度匹配、
+      端点角度匹配。常用于刃口轮廓、刀具设计等工程场景。
