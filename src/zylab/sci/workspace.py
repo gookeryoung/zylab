@@ -1,20 +1,37 @@
-"""zylab.sci 工作区变量检视（MATLAB 式 whos）.
+"""zylab.sci 工作区管理（MATLAB 式 cwd + whos）.
 
-从命名空间字典提取变量的结构化描述（名称/类型/形状/字节数/预览），
-供控制台 whos 命令与 GUI 变量浏览器共用（GUI 显示层不重复实现格式化逻辑）。
+- :class:`WorkspaceManager`：当前工作目录管理器，负责持久化上一次关闭前的
+  工作区路径到 ``workspace.json``，启动时自动恢复；切换路径经 EventBus
+  广播 ``workspace.changed`` 事件，供内核和 UI 订阅。
+- :func:`whos` / :func:`format_whos`：从命名空间提取变量的结构化描述，
+  MATLAB 风格 ``whos`` 表格输出，供 REPL 命令与 GUI 变量浏览器共用。
 """
 
 from __future__ import annotations
 
+import json
+import logging
+import os
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Any, Collection, Mapping
 
 import numpy as np
 
-__all__ = ["VarInfo", "whos"]
+from zylab.core import EventBus, default_data_dir
 
-# 值预览的最大长度
+__all__ = ["CURRENT_WORKSPACE_FILE", "TOPIC_WORKSPACE_CHANGED", "VarInfo", "WorkspaceManager", "whos"]
+
+logger = logging.getLogger(__name__)
+
+#: 值预览的最大长度
 _PREVIEW_MAXLEN = 60
+
+#: 工作区持久化文件名（放在 default_data_dir 下）
+CURRENT_WORKSPACE_FILE = "workspace.json"
+
+#: 工作区变更事件主题
+TOPIC_WORKSPACE_CHANGED = "workspace.changed"
 
 
 @dataclass(frozen=True)
@@ -115,3 +132,125 @@ def format_whos(infos: list[VarInfo]) -> str:
     sep = "  ".join("-" * w for w in widths)
     body = ["  ".join(r[c].ljust(widths[c]) for c in range(len(headers))) for r in rows]
     return "\n".join([header_line, sep, *body])
+
+
+@dataclass(frozen=True)
+class WorkspaceInfo:
+    """WorkspaceManager 状态快照（TOPIC_WORKSPACE_CHANGED 事件载荷）.
+
+    :param path: 当前工作区绝对路径。
+    :param prev_path: 切换前的路径（首次恢复时为 None）。
+    :param source: 触发来源（"init" / "set" / "restore"）。
+    """
+
+    path: Path
+    prev_path: Path | None
+    source: str
+
+
+class WorkspaceManager:
+    """MATLAB 风格当前工作目录管理器（Qt-free）.
+
+    职责：
+    1. 维护 ``cwd`` 属性（类型为 :class:`pathlib.Path`），默认为 ``Path.cwd()``。
+    2. 切换路径经 :meth:`set_workspace` 校验（必须存在且为目录），
+       成功后同时更新 ``os.chdir()`` 使 ``Path.cwd()`` 一致。
+    3. 关闭前调用 :meth:`save` 持久化路径到 ``default_data_dir()/workspace.json``，
+       下次启动 :meth:`load` 自动恢复上次路径。
+    4. 切换后经 :class:`EventBus` 广播 ``TOPIC_WORKSPACE_CHANGED`` 事件，
+       内核（注入 namespace["cwd"]）与 UI（状态栏显示）各取所需。
+
+    持久化 JSON 结构::
+
+        {"path": "F:/projects/my-work"}
+
+    用法::
+
+        bus = EventBus()
+        wm = WorkspaceManager(bus)
+        wm.load()           # 恢复上次关闭前的路径
+        wm.set_workspace(Path.home())  # 切换工作区
+        wm.save()           # 关闭前持久化
+    """
+
+    def __init__(self, bus: EventBus | None = None, data_dir: Path | None = None) -> None:
+        """初始化管理器（默认 cwd = Path.cwd()，不触发 EventBus 事件）.
+
+        :param bus: 事件总线（可选）。
+        :param data_dir: 持久化目录；默认 ``default_data_dir()``。
+        """
+        self.bus = bus or EventBus()
+        self.data_dir = Path(data_dir) if data_dir else default_data_dir()
+        self._cwd = Path.cwd().resolve()
+
+    @property
+    def cwd(self) -> Path:
+        """当前工作区绝对路径（只读）."""
+        return self._cwd
+
+    # ------------------------------------------------------------ 切换与持久化
+
+    def set_workspace(self, path: str | Path) -> WorkspaceInfo:
+        """切换工作区（校验 + 应用 + 广播事件）.
+
+        路径必须存在且为目录；非法路径直接拒绝（不抛异常，返回带错误标记
+        的 WorkspaceInfo，调用方可据此提示 UI）。校验通过后同时更新
+        ``os.chdir()`` 使全局 cwd 与管理器一致。
+
+        :param path: 目标路径（字符串或 Path）。
+        :returns: 工作区状态快照。
+        :raises OSError: ``os.chdir()`` 失败时抛出（极罕见）。
+        """
+        target = Path(path).expanduser().resolve()
+        if not target.is_dir():
+            # 路径不存在或不是目录：静默拒绝，保持当前 cwd 不变
+            logger.warning("拒绝无效工作区路径: %s", target)
+            return WorkspaceInfo(path=self._cwd, prev_path=self._cwd, source="invalid")
+        if target == self._cwd:
+            return WorkspaceInfo(path=self._cwd, prev_path=None, source="same")
+        prev = self._cwd
+        self._cwd = target
+        os.chdir(target)
+        info = WorkspaceInfo(path=target, prev_path=prev, source="set")
+        self.bus.publish(TOPIC_WORKSPACE_CHANGED, info)
+        logger.info("工作区已切换: %s", target)
+        return info
+
+    def save(self) -> Path | None:
+        """持久化当前工作区路径（关闭前调用）.
+
+        写入 ``default_data_dir()/workspace.json``（包含 ``{"path": "..."}``）。
+        目录不存在时自动创建。
+
+        :returns: 写入路径；持久化失败返回 None（仅记日志不抛）。
+        """
+        self.data_dir.mkdir(parents=True, exist_ok=True)
+        target = self.data_dir / CURRENT_WORKSPACE_FILE
+        try:
+            payload = json.dumps({"path": str(self._cwd)}, ensure_ascii=False, indent=2)
+            target.write_text(payload + "\n", encoding="utf-8")
+        except OSError as exc:
+            logger.warning("工作区路径持久化失败: %s", exc)
+            return None
+        logger.debug("工作区路径已持久化: %s -> %s", self._cwd, target)
+        return target
+
+    def load(self) -> WorkspaceInfo | None:
+        """从持久化文件恢复工作区路径（启动时调用）.
+
+        文件缺失、JSON 非法或路径已不存在时静默跳过，保持初始化 cwd。
+
+        :returns: 成功恢复时返回 WorkspaceInfo；无文件或非法时返回 None。
+        """
+        target = self.data_dir / CURRENT_WORKSPACE_FILE
+        if not target.is_file():
+            return None
+        try:
+            data = json.loads(target.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError) as exc:
+            logger.warning("工作区持久化文件读取失败: %s", exc)
+            return None
+        raw_path = data.get("path")
+        if not isinstance(raw_path, str) or not raw_path.strip():
+            return None
+        return self.set_workspace(raw_path)  # 复用切换逻辑（校验 + os.chdir + 广播）

@@ -7,6 +7,7 @@ import platform
 from zylab import __version__
 from zylab.console import ReplKernel
 from zylab.core import EventBus, default_data_dir
+from zylab.sci import TOPIC_WORKSPACE_CHANGED, WorkspaceManager
 
 from . import theme
 from .app import apply_theme, save_theme_name
@@ -56,7 +57,12 @@ class MainWindow(QMainWindow):
         self.resize(1280, 800)
 
         self._bus = EventBus()
+        # 工作区管理器先于内核：kernel.set_workspace_manager() 需要 WM 已构造好；
+        # WM.load() 会触发 TOPIC_WORKSPACE_CHANGED 事件，内核已订阅后自动同步 namespace.cwd
+        self._workspace_manager = WorkspaceManager(self._bus)
+        self._workspace_manager.load()
         self._kernel = ReplKernel(self._bus)
+        self._kernel.set_workspace_manager(self._workspace_manager)
 
         self._build_ui()
         self._setup_command_palette()
@@ -236,9 +242,10 @@ class MainWindow(QMainWindow):
         return super().eventFilter(obj, event)
 
     def closeEvent(self, event) -> None:  # Qt 命名约定
-        """关闭前询问保存笔记本，确认后终止后台求解执行器."""
+        """关闭前询问保存笔记本，持久化工作区路径，终止后台求解执行器."""
         if not self._notebook_page.maybe_save():
             event.ignore()
             return
+        self._workspace_manager.save()
         self._studio_page.shutdown()
         super().closeEvent(event)

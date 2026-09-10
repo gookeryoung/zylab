@@ -15,6 +15,7 @@ import code
 import contextlib
 import io
 import logging
+import os
 import sys
 import traceback
 from dataclasses import dataclass
@@ -24,7 +25,15 @@ from typing import Any
 import numpy as np
 
 from zylab.core.events import EventBus
-from zylab.sci import TOPIC_PLOT_REQUESTED, PlotRequest, format_whos, make_plot_function, whos
+from zylab.sci import (
+    TOPIC_PLOT_REQUESTED,
+    TOPIC_WORKSPACE_CHANGED,
+    PlotRequest,
+    WorkspaceInfo,
+    format_whos,
+    make_plot_function,
+    whos,
+)
 from zylab.sci.notebook import (
     CellOutput,
     ErrorOutput,
@@ -63,6 +72,8 @@ _NP_SYMBOLS = (
 # help() 打印的内置命令说明
 _HELP_TEXT = """内置命令:
   whos()          列出工作区变量（MATLAB 风格表格）
+  cd(path)        切换工作目录（cwd 变量自动同步）
+  cwd             当前工作目录（pathlib.Path）
   plot(x, y)      绘制曲线（自动切换右侧绘图页）
   run(path)       执行 Python 脚本文件
   cls() / clc()   清空控制台输出区
@@ -149,7 +160,16 @@ class ReplKernel:
         self.builtin_names: frozenset[str] = frozenset()
         #: 笔记本单元执行序号（execute_cell 单调递增）
         self.execution_count = 0
+        #: 外部 WorkspaceManager（由 MainWindow 注入，用于 cd() 命令切换）
+        self._workspace_manager: Any = None
         self._init_namespace()
+        # 订阅工作区变更：内核 namespace 中的 cwd 同步更新
+        self.bus.subscribe(TOPIC_WORKSPACE_CHANGED, self._on_workspace_changed)
+
+    def _on_workspace_changed(self, info: Any) -> None:
+        """WorkspaceManager 切换路径后同步更新 namespace['cwd']."""
+        if isinstance(info, WorkspaceInfo):
+            self.namespace["cwd"] = info.path
 
     def _init_namespace(self) -> None:
         """构建 REPL 命名空间：NumPy 符号 + whos/plot/run/cls/clear/help 命令."""
@@ -184,6 +204,27 @@ class ReplKernel:
             """打印内置命令帮助."""
             print(_HELP_TEXT)
 
+        def _cd(path: str | Path | None = None) -> None:
+            """切换工作目录（MATLAB cd 语义；无参数时等价于 cwd）."""
+            if path is None:
+                print(ns["cwd"])
+                return
+            from zylab.sci import WorkspaceManager  # 懒加载避免循环依赖
+
+            target = Path(path).expanduser()
+            if not target.is_dir():
+                print(f"cd: 目录不存在: {target}")
+                return
+            # 优先经外部 WorkspaceManager 切换（同步事件总线）；
+            # 无管理器时退化为 os.chdir + 直接更新 namespace
+            wm = self._workspace_manager
+            if wm is not None and isinstance(wm, WorkspaceManager):
+                wm.set_workspace(target)
+            else:
+                os.chdir(target)
+                ns["cwd"] = target.resolve()
+            print(ns["cwd"])
+
         ns["whos"] = _whos
         ns["plot"] = make_plot_function(self.bus)
         ns["run"] = self.run_file
@@ -191,7 +232,19 @@ class ReplKernel:
         ns["clc"] = _cls
         ns["clear"] = _clear
         ns["help"] = _help
+        ns["cd"] = _cd
+        ns["cwd"] = Path.cwd().resolve()
         self.builtin_names = frozenset(ns)
+
+    def set_workspace_manager(self, wm: Any) -> None:
+        """注入外部 WorkspaceManager（MainWindow 在构建 WM 后调用）.
+
+        注入后优先经 WM 切换路径，保证 EventBus 事件广播和持久化链路一致。
+        """
+        self._workspace_manager = wm
+        # 如果 WM 已有初始 cwd（load 过），同步到 namespace
+        if wm is not None and hasattr(wm, "cwd"):
+            self.namespace["cwd"] = wm.cwd
 
     def restart_kernel(self) -> None:
         """重启内核：清空命名空间并重建内置符号，执行计数归零（jupyter Restart Kernel 语义）."""

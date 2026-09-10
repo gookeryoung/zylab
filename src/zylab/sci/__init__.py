@@ -42,10 +42,20 @@ from .notebook import (
     save_notebook,
 )
 from .plotting import TOPIC_PLOT_REQUESTED, PlotRequest, make_plot_function
-from .workspace import VarInfo, format_whos, whos
+from .workspace import (
+    CURRENT_WORKSPACE_FILE,
+    TOPIC_WORKSPACE_CHANGED,
+    VarInfo,
+    WorkspaceInfo,
+    WorkspaceManager,
+    format_whos,
+    whos,
+)
 
 __all__ = [
+    "CURRENT_WORKSPACE_FILE",
     "TOPIC_PLOT_REQUESTED",
+    "TOPIC_WORKSPACE_CHANGED",
     "ErrorOutput",
     "Notebook",
     "NotebookCell",
@@ -56,6 +66,8 @@ __all__ = [
     "ResultOutput",
     "StreamOutput",
     "VarInfo",
+    "WorkspaceInfo",
+    "WorkspaceManager",
     "arange",
     "array",
     "cos",
