@@ -169,7 +169,11 @@ class CellEditor(QPlainTextEdit):
 
 
 class CellWidget(QFrame):
-    """单格卡片：序号栏 + 代码编辑器 + 输出区 + 悬停浮现的单元级工具条."""
+    """单格卡片：序号栏 + 代码编辑器 + 输出区 + 悬停浮现的单元级工具条.
+
+    聚焦态通过动态属性 ``selected``（bool, 初始 False）驱动 QSS 属性选择器，
+    实现 jupyter 风格的主色左边框高亮与序号栏联动背景。
+    """
 
     #: 单元级动作请求（"run"/"up"/"down"/"insert"/"delete"，页面解析执行）
     action_requested = Signal(str)
@@ -184,6 +188,7 @@ class CellWidget(QFrame):
             cell: 绑定的笔记本单元（编辑与运行双向往 cell 同步）。
         """
         super().__init__(objectName="notebookCell", parent=parent)
+        self.setProperty("selected", "false")
         self._cell = cell
         self._editor = CellEditor(objectName="cellEditor")
         self._editor.setPlainText(cell.source)
@@ -236,6 +241,18 @@ class CellWidget(QFrame):
 
         self._update_count_label()
         self.render_outputs()
+
+    def set_selected(self, selected: bool) -> None:
+        """设置/清除聚焦态（驱动 QSS 属性选择器高亮单元格）."""
+        # QSS 属性选择器 [selected="true"] 匹配字符串，不是 bool
+        value = "true" if selected else "false"
+        if self.property("selected") == value:
+            return
+        self.setProperty("selected", value)
+        # 动态属性变更后必须 unpolish + polish 才能让 QSS 属性选择器生效
+        style = self.style()
+        style.unpolish(self)
+        style.polish(self)
 
     def refresh_icons(self) -> None:
         """按当前主题重绘单元级工具条图标（删除动作用危险色区分）."""
@@ -340,7 +357,7 @@ class CellWidget(QFrame):
         label.setTextFormat(Qt.RichText)
         label.setWordWrap(True)
         label.setText(f'<pre style="margin:0">{html.escape(out.text.rstrip())}</pre>')
-        label.setStyleSheet(f"color: {color}; padding: 4px 8px; background-color: {pal.bg_input}; border-radius: 4px;")
+        label.setStyleSheet(f"color: {color}; padding: 4px 0;")
         self._output_layout.addWidget(label)
 
     def _add_result(self, out: ResultOutput) -> None:
@@ -356,7 +373,7 @@ class CellWidget(QFrame):
             f'<pre style="margin:0; color: {pal.success_text}">{html.escape(out.repr_text)}</pre>'
             f'<span style="color: {pal.text_secondary}; font-size: 11px">{html.escape(summary)}</span>'
         )
-        label.setStyleSheet(f"padding: 4px 8px; background-color: {pal.bg_input}; border-radius: 4px;")
+        label.setStyleSheet("padding: 4px 0;")
         self._output_layout.addWidget(label)
 
     def _add_error(self, out: ErrorOutput) -> None:
@@ -370,7 +387,7 @@ class CellWidget(QFrame):
             f'<pre style="margin:0; color: {pal.danger_text}">'
             f"<b>{html.escape(out.ename)}</b>\n{html.escape(out.traceback_text.rstrip())}</pre>"
         )
-        label.setStyleSheet(f"padding: 4px 8px; background-color: {pal.bg_input}; border-radius: 4px;")
+        label.setStyleSheet("padding: 4px 0;")
         self._output_layout.addWidget(label)
 
     def _add_plot(self, out: PlotOutput) -> None:
@@ -690,6 +707,7 @@ class NotebookPage(QWidget):
             self._cells_layout.insertWidget(self._cells_layout.count() - 1, widget)
             self._widgets.append(widget)
         self._current = min(self._current, max(0, len(self._widgets) - 1))
+        self._sync_selected()
 
     def _on_cell_action(self, widget: CellWidget, action: str) -> None:
         """单元级工具条动作分发：运行/上移/下移/下方插入/删除."""
@@ -773,14 +791,20 @@ class NotebookPage(QWidget):
         self._btn_vars.setIcon(nav_icon("variable", color))
 
     def _wrap_focus_in(self, widget: CellWidget, index: int):
-        """包装编辑器 focusInEvent：记录当前焦点格并保留默认聚焦行为."""
+        """包装编辑器 focusInEvent：记录当前焦点格 + 同步全部 selected 状态."""
         original = widget.editor.focusInEvent
 
         def _focus_in(event) -> None:  # Qt 命名约定
             self._current = index
+            self._sync_selected()
             original(event)
 
         return _focus_in
+
+    def _sync_selected(self) -> None:
+        """按 self._current 同步全部单元的 selected 动态属性（驱动 QSS 高亮）."""
+        for i, w in enumerate(self._widgets):
+            w.set_selected(i == self._current)
 
     def _on_run_shortcut(self, widget: CellWidget, advance: bool) -> None:
         """编辑器运行快捷键：运行本格；advance 时推进/新建下格."""

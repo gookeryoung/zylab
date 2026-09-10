@@ -2,56 +2,68 @@
   "format": "zylab.notebook.v1",
   "metadata": {
     "created": "2026-09-10T11:01:29",
-    "modified": "2026-09-10T11:28:55"
+    "modified": "2026-09-10T12:47:09"
   },
   "cells": [
     {
       "id": "2516cb10c6874500a4c9e52d5830a101",
-      "source": "# 不同能量形式的能量密度对比（对数坐标分组柱状图）\nimport numpy as np\nimport matplotlib.pyplot as plt\nfrom matplotlib import font_manager\nfrom matplotlib.patches import Patch\n\n\n# 跨平台中文字体自动选择（前置到默认 sans-serif 列表，保留 fallback 链）\n_CN_FONT_CANDIDATES = [\n    'DengXian', 'Microsoft YaHei', 'Microsoft YaHei UI',\n    'SimHei', 'KaiTi', 'STKaiti', 'FangSong', 'STFangsong',\n    'PingFang SC', 'Heiti SC', 'Hiragino Sans GB',\n    'WenQuanYi Micro Hei', 'WenQuanYi Zen Hei',\n    'Noto Sans CJK SC', 'Noto Sans SC', 'Source Han Sans SC',\n]\n_available_fonts = {f.name for f in font_manager.fontManager.ttflist}\n_selected_cn = [f for f in _CN_FONT_CANDIDATES if f in _available_fonts]\nif _selected_cn:\n    plt.rcParams['font.sans-serif'] = _selected_cn + plt.rcParams['font.sans-serif']\nplt.rcParams['axes.unicode_minus'] = False",
-      "execution_count": 1,
-      "outputs": []
+      "source": "# 不同能量形式的能量密度对比（对数坐标分组柱状图）\nimport numpy as np\nimport matplotlib.pyplot as plt\nimport pandas as pd\nfrom matplotlib import font_manager\nfrom matplotlib.patches import Patch\n\n\n# 跨平台中文字体自动选择（前置到默认 sans-serif 列表，保留 fallback 链）\n_CN_FONT_CANDIDATES = [\n    'DengXian', 'Microsoft YaHei', 'Microsoft YaHei UI',\n    'SimHei', 'KaiTi', 'STKaiti', 'FangSong', 'STFangsong',\n    'PingFang SC', 'Heiti SC', 'Hiragino Sans GB',\n    'WenQuanYi Micro Hei', 'WenQuanYi Zen Hei',\n    'Noto Sans CJK SC', 'Noto Sans SC', 'Source Han Sans SC',\n]\n_available_fonts = {f.name for f in font_manager.fontManager.ttflist}\n_selected_cn = [f for f in _CN_FONT_CANDIDATES if f in _available_fonts]\nif _selected_cn:\n    plt.rcParams['font.sans-serif'] = _selected_cn + plt.rcParams['font.sans-serif']\nplt.rcParams['axes.unicode_minus'] = False",
+      "execution_count": 3,
+      "outputs": [
+        {
+          "kind": "error",
+          "ename": "ModuleNotFoundError",
+          "traceback_text": "Traceback (most recent call last):\n  File \"F:\\Dev\\zylab\\src\\zylab\\console\\kernel.py\", line 393, in _run_cell\n    exec(code_exec, self.namespace)  # notebook 内核预期执行用户代码\n  File \"<cell>\", line 4, in <module>\n  File \"F:\\Dev\\zylab\\.venv\\Lib\\site-packages\\shiboken2\\files.dir\\shibokensupport\\__feature__.py\", line 142, in _import\n    return original_import(name, *args, **kwargs)\nModuleNotFoundError: No module named 'pandas'\n"
+        }
+      ]
     },
     {
       "id": "35c7b96be3e5490e8cd165f9b8223e05",
       "source": "# MATLAB 风格工作区：cwd 为内核自动注入的当前工作目录（pathlib.Path）\n# 内核启动时自动恢复上次关闭前的工作区路径；cd(path) 可切换\nprint(f\"当前工作区: {cwd}\")\n\noutput_png = cwd / \"energy_density_compare.png\"\noutput_pdf = cwd / \"energy_density_compare.pdf\"",
-      "execution_count": 2,
+      "execution_count": null,
       "outputs": []
+    },
+    {
+      "id": "8dc8edec50b34775bca22c7f2597d127",
+      "source": "csv_path = cwd / \"data\" / \"energy_density.csv\"\ndf = pd.read_csv(csv_path)\ndf.head(5)",
+      "execution_count": 2,
+      "outputs": [
+        {
+          "kind": "error",
+          "ename": "NameError",
+          "traceback_text": "Traceback (most recent call last):\n  File \"F:\\Dev\\zylab\\src\\zylab\\console\\kernel.py\", line 393, in _run_cell\n    exec(code_exec, self.namespace)  # notebook 内核预期执行用户代码\n  File \"<cell>\", line 2, in <module>\nNameError: name 'pd' is not defined\n"
+        }
+      ]
     },
     {
       "id": "90a1b2c3d4e54f60718293a4b5c6d7e8",
       "source": "# 能量密度数据：分组 -> 具体能量形式 -> 能量密度 (J/m³)\nENERGY_DATA = {\n    \"可再生能源\": {\n        \"color\": \"#4CAF50\",\n        \"items\": {\"风能\": 1e5, \"太阳能\": 1e4, \"水能\": 1e6},\n    },\n    \"机械与智能材料驱动\": {\n        \"color\": \"#00BCD4\",\n        \"items\": {\"电机驱动\": 1e6, \"记忆合金变形\": 1e8},\n        \"group_label\": \"机械与\\n智能材料驱动\",\n    },\n    \"化石燃料\": {\n        \"color\": \"#8D6E63\",\n        \"items\": {\"煤\": 2e10, \"石油\": 4e10, \"天然气\": 1e10},\n    },\n    \"核能\": {\n        \"color\": \"#FF9800\",\n        \"items\": {\"铀裂变\": 5.5e15, \"氘氚聚变\": 6e16},\n    },\n    \"理论极限\": {\n        \"color\": \"#7E57C2\",\n        \"items\": {\"完全湮灭\\n(E=mc²)\": 2e36},\n    },\n}",
-      "execution_count": 3,
+      "execution_count": null,
       "outputs": []
     },
     {
       "id": "a1b2c3d4e5f640718293a4b5c6d7e8f9",
       "source": "def flatten_energy_data(data: dict) -> tuple[list[str], np.ndarray, list[str], list[tuple]]:\n    \"\"\"将分组能量数据展平为绘图所需的并行列表。\n\n    返回：\n        labels: 柱体标签（保持分组顺序）\n        values: 能量密度数组\n        colors: 每个柱体对应的分组颜色\n        boundaries: [(start_idx, end_idx, group_label, color), ...]\n    \"\"\"\n    labels, values, colors = [], [], []\n    boundaries = []\n    idx = 0\n    for gname, gdata in data.items():\n        glabel = gdata.get(\"group_label\", gname)\n        items = gdata[\"items\"]\n        for item, val in items.items():\n            labels.append(item)\n            values.append(val)\n            colors.append(gdata[\"color\"])\n        boundaries.append((idx, idx + len(items) - 1, glabel, gdata[\"color\"]))\n        idx += len(items)\n    return labels, np.array(values), colors, boundaries",
-      "execution_count": 4,
+      "execution_count": null,
       "outputs": []
     },
     {
       "id": "b2c3d4e5f6a7408192a3b4c5d6e7f8a9",
       "source": "def plot_energy_density(labels, values, colors, boundaries):\n    \"\"\"绘制能量密度对数坐标分组柱状图。\"\"\"\n    fig, ax = plt.subplots(figsize=(14, 7.5))\n    bar_width = 0.62\n\n    x = np.arange(len(labels))\n    bars = ax.bar(\n        x, values,\n        color=colors, width=bar_width,\n        edgecolor=\"white\", linewidth=0.6, zorder=3,\n    )\n\n    # 柱顶数值标注（10^n 科学计数法）\n    for bar, v in zip(bars, values):\n        exp = int(np.log10(v))\n        ax.text(\n            bar.get_x() + bar.get_width() / 2,\n            v * 1.25,\n            f\"10^{exp}\",\n            ha=\"center\", va=\"bottom\",\n            fontsize=9, rotation=90,\n        )\n\n    # 对数纵轴\n    ax.set_yscale(\"log\")\n    ax.set_ylim(1e3, 1e38)\n    ax.set_ylabel(\"能量密度 (J/m³，对数坐标)\", fontsize=13)\n\n    # 横轴标签\n    ax.set_xticks(x)\n    ax.set_xticklabels(labels, fontsize=11)\n\n    # 网格线\n    ax.grid(axis=\"y\", which=\"both\", linestyle=\"--\", alpha=0.35, zorder=0)\n    ax.set_axisbelow(True)\n\n    # 分组底色（竖向背景带）\n    for start, end, glabel, gcolor in boundaries:\n        ax.axvspan(start - 0.5, end + 0.5, color=gcolor, alpha=0.08, zorder=0)\n\n    # 分组图例\n    legend_handles = [\n        Patch(facecolor=gcolor, alpha=0.85, label=glabel.replace(\"\\n\", \"\"))\n        for _, _, glabel, gcolor in boundaries\n    ]\n    ax.legend(\n        handles=legend_handles,\n        loc=\"upper left\", fontsize=11,\n        title=\"能量大类\", title_fontsize=12,\n        framealpha=0.9,\n    )\n\n    # 标题与备注\n    ax.set_title(\n        \"不同能量形式的能量密度对比（体积能量密度，数量级估算）\",\n        fontsize=15, pad=12,\n    )\n    fig.text(\n        0.99, 0.01,\n        \"注：典型值估算，用于数量级对比；单位统一为 J/m³\",\n        ha=\"right\", fontsize=8, color=\"gray\",\n    )\n\n    plt.tight_layout(rect=[0, 0.02, 1, 1])\n    return fig, ax",
-      "execution_count": 5,
+      "execution_count": null,
       "outputs": []
     },
     {
       "id": "c3d4e5f6a7b8408192a3b4c5d6e7f8a9",
       "source": "# 数据准备 + 绘图\nlabels, values, colors, boundaries = flatten_energy_data(ENERGY_DATA)\nfig, ax = plot_energy_density(labels, values, colors, boundaries)",
-      "execution_count": 6,
+      "execution_count": null,
       "outputs": []
     },
     {
       "id": "739b97036e9c4b61a201e296aac5729b",
       "source": "# 保存（必须在 show 之前，否则 plt 状态被清空）\nfig.savefig(str(output_png), dpi=200, bbox_inches=\"tight\")\nfig.savefig(str(output_pdf), bbox_inches=\"tight\")\nprint(f\"图表已生成：{output_png.name} / {output_pdf.name}\")\n\nplt.show()",
-      "execution_count": 7,
-      "outputs": [
-        {
-          "kind": "stream",
-          "name": "stdout",
-          "text": "图表已生成：energy_density_compare.png / energy_density_compare.pdf\n"
-        }
-      ]
+      "execution_count": null,
+      "outputs": []
     }
   ]
 }
