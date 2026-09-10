@@ -205,6 +205,7 @@ class MainWindow(QMainWindow):
             if item is not None:
                 color = pal.nav_accent if row == self._sidebar.currentRow() else pal.nav_text
                 item.setIcon(nav_icon(name, color))
+
         # 工作区下拉历史按钮（箭头）+ 打开文件夹按钮
         self._workspace_history_btn.setIcon(nav_icon("arrow_down", pal.nav_text))
         self._workspace_open_btn.setIcon(nav_icon("open_file", pal.nav_text))
