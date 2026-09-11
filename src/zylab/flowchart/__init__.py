@@ -22,7 +22,17 @@
 
 from __future__ import annotations
 
-from .batch import NodeOutcome, ReportFn, RunOutcome, resolve_target, run_scan, run_workflow, summarize
+from .batch import (
+    NodeOutcome,
+    ReportFn,
+    RunOutcome,
+    resolve_target,
+    run_batch,
+    run_batch_outputs,
+    run_scan,
+    run_workflow,
+    summarize,
+)
 from .builtin import BUILTIN_TEMPLATES
 from .bundle import ConductionBundle, ModelBundle
 from .cache import content_hash, node_fingerprint
@@ -114,6 +124,8 @@ __all__ = [
     "node_fingerprint",
     "resolve_path",
     "resolve_target",
+    "run_batch",
+    "run_batch_outputs",
     "run_scan",
     "run_workflow",
     "save_template",

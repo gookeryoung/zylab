@@ -2,16 +2,22 @@
 
 from __future__ import annotations
 
+import dataclasses
+
+import numpy as np
 import pytest
 
 from zylab.fea import StaticSolution
 from zylab.flowchart import (
     ModelBundle,
     NodeOutcome,
+    OutputParam,
     RunOutcome,
     Template,
     TemplateRegistry,
     resolve_target,
+    run_batch,
+    run_batch_outputs,
     run_scan,
     run_workflow,
     summarize,
@@ -27,7 +33,6 @@ def _template(template_id: str) -> Template:
 
 def _tip_displacement(outcome) -> float:
     """取静力解最大位移模长."""
-    import numpy as np
 
     solution = outcome.outcome("solve").result
     assert isinstance(solution, StaticSolution)
@@ -61,7 +66,6 @@ class TestRunWorkflow:
         template = _template("dsl.cantilever_harmonic")
         outcome = run_workflow(template)
         assert outcome.succeeded
-        import numpy as np
 
         amp = outcome.outcome("amp").result
         solve = outcome.outcome("solve").result
@@ -210,3 +214,83 @@ def test_node_outcome_defaults() -> None:
     assert skipped.outcome("x").ok
     assert skipped.outcome("x").result is None
     assert skipped.first_error() == ""
+
+
+class TestRunBatch:
+    """run_batch / run_batch_outputs —— 参数批量运行 + 扁平 X/Y 输出."""
+
+    def test_run_batch_multi_row_flat_param_keys(self) -> None:
+        """多组 'node_id.param_key' 扁平参数批量运行，全部成功."""
+        tpl = _template("structural.cantilever_static")
+        rows = [
+            {"model.nx": 4, "model.ny": 2},
+            {"model.nx": 6, "model.ny": 3},
+            {"model.nx": 8, "model.ny": 4},
+        ]
+        outcomes = run_batch(tpl, rows)
+        assert len(outcomes) == 3
+        for o in outcomes:
+            assert o.succeeded, o.first_error()
+
+    def test_run_batch_report_callback_invoked(self) -> None:
+        """report 回调在运行期间被调用（节点级进度更新）."""
+        tpl = _template("structural.cantilever_static")
+        rows = [{"model.nx": 4, "model.ny": 2}, {"model.nx": 6, "model.ny": 3}]
+        call_count: list[int] = []
+
+        def report(_progress: float, _msg: str) -> None:
+            call_count.append(1)
+
+        outcomes = run_batch(tpl, rows, report=report)
+        assert len(call_count) > 0  # 至少被调用一次
+        for o in outcomes:
+            assert o.succeeded, o.first_error()
+
+    def test_run_batch_outputs_scalar_yields(self) -> None:
+        """带 output_params 的模板 → run_batch_outputs 返回 (N, D_in) X + (N, D_out) Y."""
+        tpl = _template("structural.cantilever_static")
+        new_tpl = dataclasses.replace(
+            tpl,
+            output_params=(
+                OutputParam(
+                    name="strain_energy",
+                    source="solve.strain_energy",
+                    label="应变能",
+                    unit="J",
+                ),
+            ),
+        )
+        rows = [
+            {"model.nx": 4, "model.ny": 2},
+            {"model.nx": 6, "model.ny": 3},
+        ]
+        X, Y = run_batch_outputs(new_tpl, rows)
+        assert X.shape == (2, 2)  # 两行 × 两个输入参数
+        assert Y.shape == (2, 1)  # 两行 × 一个输出参数
+        # 更细网格的应变能更大（应力更集中）——定性关系
+        assert Y[1, 0] > Y[0, 0]
+
+    def test_run_batch_empty_rows_raises(self) -> None:
+        """param_rows 为空 —— ValueError 快速失败."""
+        tpl = _template("structural.cantilever_static")
+        with pytest.raises(ValueError, match="param_rows 不能为空"):
+            run_batch(tpl, [])
+
+    def test_run_batch_outputs_no_output_params_raises(self) -> None:
+        """run_batch_outputs 需要 template 声明 output_params."""
+        tpl = _template("structural.cantilever_static")
+        with pytest.raises(Exception, match="未声明 output_params"):
+            run_batch_outputs(tpl, [{"model.nx": 4}])
+
+    def test_row_to_overrides_internal(self) -> None:
+        """_row_to_overrides 内部：无 '.' 键跳过 / 未知节点跳过."""
+        from zylab.flowchart.batch import _row_to_overrides
+
+        tpl = _template("structural.cantilever_static")
+        # 不含 . 的键被静默跳过
+        r1 = _row_to_overrides(tpl, {"plain_key": 5})
+        assert r1 == {}
+        # 未知节点 id 也被跳过（抛 ValueError 被捕获）
+        r2 = _row_to_overrides(tpl, {"unknown_node.x": 5, "model.nx": 4})
+        assert "model" in r2
+        assert "unknown_node" not in r2

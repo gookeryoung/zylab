@@ -4,6 +4,13 @@
 批处理场景（CLI、参数扫描）无交互，进程内直调节点函数省去子进程 pickle
 往返，扫描多组参数时收益显著。失败策略 = 首个失败节点中止（下游依赖其
 输出，不可继续），后续节点保持未执行。
+
+批量探索层（Phase 4/5）入口：
+
+- :func:`run_scan`：单参数逐值扫描（旧路径，简洁）；
+- :func:`run_batch`：多行扁平参数批量运行——直接消费
+  :meth:`~zylab.doe.design_space.DesignSpace.to_input_rows` 的输出，
+  每行 ``{"node_id.param_key": value}`` 自动展开为节点分组 override。
 """
 
 from __future__ import annotations
@@ -12,7 +19,7 @@ import importlib
 import logging
 import time
 from dataclasses import dataclass
-from typing import Any, Callable, Mapping
+from typing import Any, Callable, Mapping, Sequence
 
 import numpy as np
 
@@ -33,7 +40,17 @@ from .param_store import ParameterStore
 from .results import resolve_input
 from .template import Template
 
-__all__ = ["NodeOutcome", "ReportFn", "RunOutcome", "resolve_target", "run_scan", "run_workflow", "summarize"]
+__all__ = [
+    "NodeOutcome",
+    "ReportFn",
+    "RunOutcome",
+    "resolve_target",
+    "run_batch",
+    "run_batch_outputs",
+    "run_scan",
+    "run_workflow",
+    "summarize",
+]
 
 logger = logging.getLogger(__name__)
 
@@ -183,6 +200,108 @@ def _node_params(template: Template, node_id: str) -> dict[str, Any]:
         return dict(template.node(node_id).params)
     except FlowchartError as exc:
         raise ValueError(f"参数化计算 {template.id!r} 无节点 {node_id!r}: {exc}") from exc
+
+
+def _row_to_overrides(template: Template, row: Mapping[str, Any]) -> dict[str, dict[str, Any]]:
+    """将 ``{'node.param': value, ...}`` 扁平行展开为 ``{node: {param: value}}`` override.
+
+    每个节点的基础参数来自 ``template.node(node_id).params``，
+    扁平行中指定的键覆盖同名参数。未知节点 id 或未知扁平格式
+    （不含 ``.``）会静默跳过——允许用户只覆盖部分节点。
+    """
+    overrides: dict[str, dict[str, Any]] = {}
+    for flat_key, val in row.items():
+        if "." not in flat_key:
+            continue
+        node_id, _, param_key = flat_key.partition(".")
+        if node_id not in overrides:
+            try:
+                overrides[node_id] = _node_params(template, node_id)
+            except ValueError:
+                continue
+        overrides[node_id][param_key] = val
+    return overrides
+
+
+def run_batch(
+    template: Template,
+    param_rows: Sequence[Mapping[str, Any]],
+    *,
+    report: ReportFn | None = None,
+) -> list[RunOutcome]:
+    """批量参数化运行（Phase 4 入口）.
+
+    对 ``DesignSpace.to_input_rows`` 的每一行扁平参数，展开为节点分组
+    override 后进程内拓扑序执行整个参数化计算。节点间无数据依赖——
+    每组参数独立运行，不会修改其它组的运行状态。
+
+    :param template: 参数化计算模板。
+    :param param_rows: 每行 ``{"node_id.param_key": value}`` 的参数表。
+        典型来源：:meth:`~zylab.doe.design_space.DesignSpace.to_input_rows`
+        或用户手写的 What-if 表格。
+    :param report: 总进度回调 ``(fraction, message)``，每次运行结束后调用。
+    :return: 与 ``param_rows`` 等长的结果列表。
+    :raises ValueError: ``param_rows`` 为空。
+
+    使用示例::
+
+        ds = DesignSpace.from_variables([v1, v2])
+        rows = ds.to_input_rows(ds.sample(SamplingMethod.LATIN_HYPERCUBE, 12))
+        outcomes = run_batch(template, rows)
+        for outcome, row in zip(outcomes, rows):
+            print(outcome.succeeded, row)
+    """
+    if not param_rows:
+        raise ValueError("run_batch: param_rows 不能为空")
+    results: list[RunOutcome] = []
+    n = len(param_rows)
+    for i, row in enumerate(param_rows):
+        overrides = _row_to_overrides(template, row)
+        outcome = run_workflow(template, overrides, report)
+        results.append(outcome)
+        if report is not None:
+            report((i + 1) / n, f"批量运行 {i + 1}/{n}")
+    return results
+
+
+def run_batch_outputs(
+    template: Template,
+    param_rows: Sequence[Mapping[str, Any]],
+) -> tuple[np.ndarray, np.ndarray]:
+    """批量运行 + 输出参数解析（Phase 5 探索层便捷入口）.
+
+    内部调用 :func:`run_batch`，成功运行的每组结果通过
+    :meth:`RunOutcome.resolve_outputs` 把 template 的 ``output_params``
+    声明解析成 ``y`` 向量。
+
+    :return: ``(X, y)`` 形状均为 ``(n_success, n_vars_or_outputs)``，
+        其中 ``X`` 直接来自 ``param_rows`` 按顺序堆叠、``y`` 来自
+        output_params 解析。失败运行自动跳过，两端长度始终一致。
+    :raises FlowchartError: template 未声明 ``output_params`` /
+        所有运行均失败 / 部分运行 output_params 解析失败。
+
+    使用示例::
+
+        X, y = run_batch_outputs(template, rows)
+        surrogate.fit(X, y)
+        result = optimize(surrogate, ds.variables)
+    """
+    outcomes = run_batch(template, param_rows)
+    succeeded_rows: list[np.ndarray] = []
+    succeeded_ys: list[np.ndarray] = []
+    for outcome, row in zip(outcomes, param_rows):
+        if not outcome.succeeded:
+            continue
+        outputs = outcome.resolve_outputs(template)
+        if not outputs:
+            raise FlowchartError("run_batch_outputs: template 未声明 output_params")
+        succeeded_rows.append(np.array([row[k] for k in sorted(row)]))
+        succeeded_ys.append(np.array([outputs[name] for name in sorted(outputs)], dtype=float))
+    if not succeeded_rows:
+        raise FlowchartError("run_batch_outputs: 所有运行均失败，无可用 y 值")
+    X = np.vstack(succeeded_rows)
+    y = np.vstack(succeeded_ys) if succeeded_ys else np.empty((0, 0))
+    return X, y
 
 
 def summarize(outcome: RunOutcome) -> str:
