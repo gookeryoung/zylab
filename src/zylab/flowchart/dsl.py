@@ -27,7 +27,7 @@ import yaml
 
 from .errors import ParamError, TemplateError
 from .expressions import expr_names, safe_eval
-from .template import Template, TemplateNode
+from .template import OutputParam, Template, TemplateNode
 
 __all__ = [
     "DslDocs",
@@ -275,6 +275,7 @@ class DslTemplate(Template):
             for raw in pipeline_list
         )
         dsl_results = _parse_results(data.get("results", ()))
+        dsl_outputs = _parse_outputs(data.get("outputs", {}), str(meta.get("id", "")))
         return cls(
             id=str(meta["id"]),
             name=str(meta["name"]),
@@ -284,6 +285,7 @@ class DslTemplate(Template):
             tags=tuple(str(t) for t in meta.get("tags", ())),
             param_groups=(),  # DSL 用 dsl_params 扁平命名空间，不复用节点参数引用
             results=tuple(r.spec["ref"] for r in dsl_results if r.kind == "cloud" and "ref" in r.spec),
+            output_params=dsl_outputs,
             icon=str(meta.get("icon", "")),
             theme=theme,
             dsl_params=dsl_params,
@@ -451,6 +453,51 @@ def _parse_docs(raw: Any) -> DslDocs | None:
     data = _expect_mapping(raw, "docs")
     intro = _expect_mapping(data.get("intro", {}), "docs.intro")
     return DslDocs(text=str(intro.get("text", "")), image=str(intro.get("image", "")))
+
+
+def _parse_outputs(raw: Any, template_id: str) -> tuple[OutputParam, ...]:
+    """解析 DSL ``outputs`` 输出参数声明.
+
+    支持两种形式：
+
+    - **简写**：``{"max_disp": "cantilever.solve.max_displacement"}``
+      （key 为输出名，value 为 source 路径）；
+    - **完整对象**：``{"max_disp": {source: "...", expr: "...", unit: "mm"}}``.
+
+    :param raw: ``outputs`` 字段原始值（映射或空）。
+    :param template_id: 参数化计算 id（错误消息用）。
+    :return: OutputParam 元组。
+    """
+    if not raw:
+        return ()
+    data = _expect_mapping(raw, "outputs")
+    seen: set[str] = set()
+    result: list[OutputParam] = []
+    for raw_name, spec in data.items():
+        name = str(raw_name)
+        if name in seen:
+            raise TemplateError(f"参数化计算 {template_id!r} 输出参数名重复: {name!r}")
+        seen.add(name)
+        if isinstance(spec, str):
+            # 简写：name -> source 路径
+            result.append(OutputParam(name=name, source=spec))
+        elif isinstance(spec, Mapping):
+            source = str(spec.get("source", ""))
+            if not source:
+                raise TemplateError(f"参数化计算 {template_id!r} 输出参数 {name!r} 须含 source")
+            result.append(
+                OutputParam(
+                    name=name,
+                    source=source,
+                    expr=str(spec.get("expr", "")),
+                    unit=str(spec.get("unit", "")),
+                    label=str(spec.get("label", name)),
+                    doc=str(spec.get("doc", "")),
+                )
+            )
+        else:
+            raise TemplateError(f"参数化计算 {template_id!r} 输出参数 {name!r} 声明应为字符串或对象")
+    return tuple(result)
 
 
 def _substitute_node_params(

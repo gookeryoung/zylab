@@ -29,6 +29,7 @@ from zylab.fea import (
 from .bundle import ConductionBundle, ModelBundle
 from .errors import FlowchartError
 from .graph import WorkflowGraph
+from .param_store import ParameterStore
 from .results import resolve_input
 from .template import Template
 
@@ -96,6 +97,24 @@ class RunOutcome:
             if not o.ok:
                 return f"{o.node_id} ({o.name}): {o.error}"
         return ""
+
+    # ------------------------------------------------------------------ Phase 3 参数中心化集成
+
+    def resolve_outputs(self, template: Template) -> dict[str, Any]:
+        """基于参数化计算的 OutputParam 声明解析运行结果，返回输出参数名 -> 值.
+
+        :param template: 来源参数化计算（须声明 output_params）。
+        :return: 全部成功解析的输出参数值表。
+        :raises FlowchartError: 运行有失败节点 / 节点未声明 output_params /
+            source 解析失败 / expr 求值失败。
+        """
+        if not self.succeeded:
+            raise FlowchartError(f"工作流存在失败节点，无法解析输出参数: {self.first_error()}")
+        store = ParameterStore.from_template(template)
+        if not store.outputs:
+            return {}
+        outputs = {o.node_id: o.result for o in self.outcomes if o.ok and o.result is not None}
+        return store.resolve_all(outputs)
 
 
 def run_workflow(

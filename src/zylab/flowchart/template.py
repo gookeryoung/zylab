@@ -13,9 +13,18 @@ from pathlib import Path
 from typing import Any, Mapping
 
 from .errors import FlowchartError, LinkError, ParamError, TemplateError
+from .expressions import ARRAY_MATH_NAMESPACE, safe_eval
 from .module import ModuleSpec, PortType, module_spec
 
-__all__ = ["ParamGroup", "Template", "TemplateNode", "load_template", "save_template", "template_from_json"]
+__all__ = [
+    "OutputParam",
+    "ParamGroup",
+    "Template",
+    "TemplateNode",
+    "load_template",
+    "save_template",
+    "template_from_json",
+]
 
 
 @dataclass(frozen=True)
@@ -47,6 +56,53 @@ class ParamGroup:
 
 
 @dataclass(frozen=True)
+class OutputParam:
+    """输出参数声明（Phase 3 参数中心化：从节点输出载荷中提取标量/序列的规则）.
+
+    :param name: 输出参数名（全局唯一，供 design_space/优化模块引用）。
+    :param source: 取值来源（``"node_id.field_path"`` 格式，路径下行规则同
+        :func:`results.resolve_path`）。
+    :param expr: 可选变换表达式——在 source 取到值后经
+        :func:`~zylab.flowchart.expressions.safe_eval` 二次计算，
+        命名空间提供 ``value`` 绑定（source 原值）以及全部输入参数
+        （``node_id.param_key`` 扁平命名）。
+    :param unit: 输出量纲（UI/报告展示用，如 ``"mm"``）。
+    :param label: 中文显示名（缺省取 name）。
+    :param doc: 参数说明（tooltip/文档）。
+    """
+
+    name: str
+    source: str
+    expr: str = ""
+    unit: str = ""
+    label: str = ""
+    doc: str = ""
+
+    def validate(self, template_id: str, known_nodes: set[str]) -> None:
+        """校验 source 引用合法性（节点存在 + 路径非空 + 表达式语法）.
+
+        :param template_id: 所属参数化计算 id（错误消息用）。
+        :param known_nodes: 参数化计算全部节点 id 集合。
+        :raises TemplateError: 引用格式非法 / 节点不存在 / 路径空 /
+            表达式语法错误。
+        """
+        if not self.name:
+            raise TemplateError(f"参数化计算 {template_id!r} 含空 name 输出参数")
+        node_id, _, rest = self.source.partition(".")
+        if not node_id or not rest:
+            raise TemplateError(f"参数化计算 {template_id!r} 输出参数 {self.name!r} source 应为 '节点id.字段路径' 格式")
+        if node_id not in known_nodes:
+            raise TemplateError(f"参数化计算 {template_id!r} 输出参数 {self.name!r} 引用未知节点 {node_id!r}")
+        if self.expr:
+            # 用完整数组数学命名空间 + 占位 value 做语法校验，
+            # 覆盖 amax/amin/linspace 等数组函数，避免运行期合法表达式被误判
+            try:
+                safe_eval(self.expr, {**ARRAY_MATH_NAMESPACE, "value": 0})
+            except ParamError as exc:
+                raise TemplateError(f"参数化计算 {template_id!r} 输出参数 {self.name!r} 表达式非法: {exc}") from exc
+
+
+@dataclass(frozen=True)
 class Template:
     """参数化计算（定制化计算工具的完整配置）.
 
@@ -58,6 +114,7 @@ class Template:
     :param tags: 检索标签。
     :param param_groups: 暴露给用户的参数分组（缺省时 GUI 展示全部参数）。
     :param results: 结果节点 id 表（求解完成后默认展示这些节点的输出）。
+    :param output_params: 输出参数声明（Phase 3 参数中心化，空 tuple 表示模板未声明）。
     """
 
     id: str
@@ -68,6 +125,7 @@ class Template:
     tags: tuple[str, ...] = ()
     param_groups: tuple[ParamGroup, ...] = ()
     results: tuple[str, ...] = ()
+    output_params: tuple[OutputParam, ...] = ()
 
     def node(self, node_id: str) -> TemplateNode:
         """按 id 取节点；不存在抛 :class:`TemplateError`."""
@@ -105,6 +163,7 @@ class Template:
                 tags=tuple(str(t) for t in data.get("tags", ())),
                 param_groups=groups,
                 results=tuple(str(r) for r in ui.get("results", ())),
+                output_params=tuple(_parse_output_params(ui.get("output_params", []), str(data["id"]))),
             )
         except KeyError as exc:
             raise TemplateError(f"参数化计算定义缺字段: {exc}") from exc
@@ -138,6 +197,14 @@ class Template:
         for group in self.param_groups:
             for ref in group.params:
                 self._validate_param_ref(ref)
+        # 输出参数声明校验：source 节点存在 + 表达式合法
+        known = {n.id for n in self.nodes}
+        seen_outs: set[str] = set()
+        for op in self.output_params:
+            if op.name in seen_outs:
+                raise TemplateError(f"参数化计算 {self.id!r} 输出参数名重复: {op.name!r}")
+            seen_outs.add(op.name)
+            op.validate(self.id, known)
 
     def _validate_node_links(self, node: TemplateNode, spec: ModuleSpec) -> None:
         """校验单个节点的全部输入连接（端口存在 + 引用格式 + 类型匹配）."""
@@ -200,10 +267,27 @@ class Template:
             tags=self.tags,
             param_groups=self.param_groups,
             results=self.results,
+            output_params=self.output_params,
         )
 
     def to_dict(self) -> dict[str, Any]:
         """序列化为可 :meth:`from_dict` 回读的字典."""
+        ui: dict[str, Any] = {
+            "param_groups": [{"title": g.title, "params": list(g.params)} for g in self.param_groups],
+            "results": list(self.results),
+        }
+        if self.output_params:
+            ui["output_params"] = [
+                {
+                    "name": op.name,
+                    "source": op.source,
+                    "expr": op.expr,
+                    "unit": op.unit,
+                    "label": op.label,
+                    "doc": op.doc,
+                }
+                for op in self.output_params
+            ]
         return {
             "id": self.id,
             "name": self.name,
@@ -213,10 +297,7 @@ class Template:
             "nodes": [
                 {"id": n.id, "type": n.type_id, "params": dict(n.params), "inputs": dict(n.inputs)} for n in self.nodes
             ],
-            "ui": {
-                "param_groups": [{"title": g.title, "params": list(g.params)} for g in self.param_groups],
-                "results": list(self.results),
-            },
+            "ui": ui,
         }
 
 
@@ -226,6 +307,44 @@ def _expect_list(data: Mapping[str, Any], key: str, where: str) -> list[Any]:
     if not isinstance(value, list):
         raise TemplateError(f"{where} 的 {key!r} 应为列表")
     return value
+
+
+def _parse_output_params(raw: Any, template_id: str) -> list[OutputParam]:
+    """解析 ``ui.output_params`` 列表声明.
+
+    每项为 ``{name, source, expr?, unit?, label?, doc?}`` 对象；
+    简写 ``"max_disp": "node.field"`` 也接受（name = key, source = value）。
+    """
+    if not raw:
+        return []
+    if isinstance(raw, Mapping):
+        # 简写形式：{"out_name": "source.path"}
+        return [OutputParam(name=str(name), source=str(source)) for name, source in raw.items()]
+    if not isinstance(raw, list):
+        raise TemplateError(f"参数化计算 {template_id!r} ui.output_params 应为列表或对象")
+    result: list[OutputParam] = []
+    seen: set[str] = set()
+    for item in raw:
+        if not isinstance(item, Mapping):
+            raise TemplateError(f"参数化计算 {template_id!r} output_params 项应为对象")
+        name = str(item.get("name", ""))
+        source = str(item.get("source", ""))
+        if not name or not source:
+            raise TemplateError(f"参数化计算 {template_id!r} output_params 项须含 name + source")
+        if name in seen:
+            raise TemplateError(f"参数化计算 {template_id!r} 输出参数名重复: {name!r}")
+        seen.add(name)
+        result.append(
+            OutputParam(
+                name=name,
+                source=source,
+                expr=str(item.get("expr", "")),
+                unit=str(item.get("unit", "")),
+                label=str(item.get("label", name)),
+                doc=str(item.get("doc", "")),
+            )
+        )
+    return result
 
 
 def template_from_json(text: str) -> Template:

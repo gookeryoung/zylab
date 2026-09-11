@@ -64,6 +64,11 @@ SAFE_MATH_NAMESPACE: dict[str, Any] = {
     "e": math.e,
     "tau": math.tau,
     "inf": math.inf,
+    # 常用类型转换（DSL 派生参数 / OutputParam expr 里 float()/int() 高频）
+    "float": float,
+    "int": int,
+    "str": str,
+    "list": list,
 }
 SAFE_MATH_NAMESPACE = {k: v for k, v in SAFE_MATH_NAMESPACE.items() if v is not None}
 

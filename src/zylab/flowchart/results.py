@@ -35,6 +35,7 @@ __all__ = [
     "ViewData",
     "build_result",
     "resolve_input",
+    "resolve_path",
 ]
 
 
@@ -294,13 +295,17 @@ def _build_text(result: DslResult, outputs: Mapping[str, Any]) -> TextData:
 # ------------------------------------------------------------------ 引用解析
 
 
-def _resolve_path(ref: str, outputs: Mapping[str, Any]) -> Any:
-    """按 ``"节点id.字段路径"`` 引用取值.
+def resolve_path(ref: str, outputs: Mapping[str, Any]) -> Any:
+    """按 ``"节点id.字段路径"`` 引用取值（结果视图层 + 参数中心化共用的路径解析原语）.
 
     路径逐级下行：映射按键取值；序列（list/tuple）按数字段取下标
     （支持负索引，如 ``sweep.series.y.-1`` 取末项）；其余对象（解
     对象等）按公开属性取值（如 ``solve.t_max``/``solve.times``）。
     段与当前值类型不匹配或不存在时报错。
+
+    :param ref: 引用串（``"node_id.field[.subfield...]"``）。
+    :param outputs: 节点 id -> 输出载荷。
+    :raises TemplateError: 节点无输出 / 路径段不存在。
     """
     node_id, _, rest = ref.partition(".")
     if node_id not in outputs:
@@ -309,6 +314,10 @@ def _resolve_path(ref: str, outputs: Mapping[str, Any]) -> Any:
     for segment in rest.split(".") if rest else ():
         value = _descend(value, segment, ref)
     return _plain(value)
+
+
+# 向后兼容别名（内部调用点）
+_resolve_path = resolve_path
 
 
 def resolve_input(ref: str, outputs: Mapping[str, Any]) -> Any:
