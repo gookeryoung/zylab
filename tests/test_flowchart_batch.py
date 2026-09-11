@@ -294,3 +294,60 @@ class TestRunBatch:
         r2 = _row_to_overrides(tpl, {"unknown_node.x": 5, "model.nx": 4})
         assert "model" in r2
         assert "unknown_node" not in r2
+
+    def test_row_to_overrides_int_rounds_float(self) -> None:
+        """INT 类型 param 收到 float 自动 round —— 适配 DOE 采样浮点."""
+        from zylab.flowchart.batch import _row_to_overrides
+
+        tpl = _template("structural.cantilever_static")
+        r = _row_to_overrides(tpl, {"model.nx": 10.7, "model.ny": 4.2})
+        # nx 是 INT param，10.7 → 11；ny 是 INT param，4.2 → 4
+        assert r["model"]["nx"] == 11
+        assert r["model"]["ny"] == 4
+
+    def test_run_batch_outputs_skips_failed_rows(self) -> None:
+        """run_batch_outputs 混合成功+失败 → 跳过失败行只返回成功的 X/Y."""
+        from unittest.mock import patch
+
+        tpl = _template("structural.cantilever_static")
+        new_tpl = dataclasses.replace(
+            tpl,
+            output_params=(OutputParam(name="e", source="solve.strain_energy"),),
+        )
+        ok = RunOutcome((NodeOutcome(node_id="solve", name="s", result=object()),))
+        bad = RunOutcome((NodeOutcome(node_id="solve", name="s", error="SolverError: failed"),))
+
+        with patch.object(RunOutcome, "resolve_outputs", return_value={"e": 0.5}), patch(
+            "zylab.flowchart.batch.run_batch", return_value=[ok, bad]
+        ):
+            X, Y = run_batch_outputs(new_tpl, [{"model.nx": 4}, {"model.nx": 5}])
+            assert X.shape[0] == 1  # 只保留成功行
+            assert Y.shape[0] == 1
+
+    def test_run_batch_outputs_all_failed_raises(self) -> None:
+        """全部运行失败 → FlowchartError 快速失败."""
+        from unittest.mock import patch
+
+        tpl = _template("structural.cantilever_static")
+        new_tpl = dataclasses.replace(
+            tpl,
+            output_params=(OutputParam(name="e", source="solve.strain_energy"),),
+        )
+        bad = RunOutcome((NodeOutcome(node_id="solve", name="s", error="failed"),))
+
+        with patch("zylab.flowchart.batch.run_batch", return_value=[bad, bad]), pytest.raises(
+            Exception, match="所有运行均失败"
+        ):
+            run_batch_outputs(new_tpl, [{"model.nx": 4}, {"model.nx": 5}])
+
+    def test_resolve_outputs_failed_runoutcome_raises(self) -> None:
+        """失败 RunOutcome 调 resolve_outputs —— FlowchartError."""
+        tpl = _template("structural.cantilever_static")
+        new_tpl = dataclasses.replace(
+            tpl,
+            output_params=(OutputParam(name="e", source="solve.strain_energy"),),
+        )
+        failed = RunOutcome((NodeOutcome(node_id="solve", name="s", error="SolverError: boom"),))
+        assert not failed.succeeded
+        with pytest.raises(Exception, match="失败节点"):
+            failed.resolve_outputs(new_tpl)
