@@ -29,9 +29,11 @@ from .errors import ReliabilityError
 __all__ = [
     "Distribution",
     "FORMResult",
+    "MCResult",
     "RandomVariable",
     "SORMResult",
     "form_analysis",
+    "mc_analysis",
     "sorm_analysis",
 ]
 
@@ -279,6 +281,31 @@ class SORMResult:
     kappa: np.ndarray
 
 
+@dataclass(frozen=True)
+class MCResult:
+    """Monte Carlo 可靠性分析结果.
+
+    :param pf: 失效概率估计值 ``P̂_f = N_fail / N``.
+    :param n_samples: 总样本数.
+    :param n_fail: 失效样本数.
+    :param beta: 可靠性指数 ``β = -Φ^{-1}(P̂_f)``（P̂_f 过小时设为 inf）.
+    :param variables: 随机变量列表.
+    :param method: 抽样方法——``crude``（独立正态）/ ``lhc``（拉丁超立方）/
+        ``sobol``（Sobol 低差异序列）.
+    :param cov: ``P̂_f`` 的变异系数 ``√(P̂_f·(1-P̂_f)/N) / P̂_f``——反映 MC 估计的相对精度.
+    :param pf_ci_95: ``P̂_f`` 的 95% 置信区间 (下, 上).
+    """
+
+    pf: float
+    n_samples: int
+    n_fail: int
+    beta: float
+    variables: Sequence[RandomVariable]
+    method: str
+    cov: float
+    pf_ci_95: tuple[float, float]
+
+
 # ---------- FORM 主算法 ----------
 
 
@@ -506,3 +533,103 @@ def _hessian_finite_diff(fn: Callable[[np.ndarray], float], x: np.ndarray) -> np
             H[i, j] = val
             H[j, i] = val
     return H
+
+
+# ---------- Monte Carlo 可靠性分析 ----------
+
+
+def mc_analysis(
+    limit_state: LimitStateFn,
+    variables: Sequence[RandomVariable],
+    *,
+    n_samples: int = 100_000,
+    method: str = "crude",
+    seed: int = 0,
+) -> MCResult:
+    """Monte Carlo reliability analysis - estimate Pf and beta.
+
+    Generate standard-normal (U-space) samples, transform to physical space via
+    Rosenblatt, evaluate limit state, count g<0 as failure.
+
+    :param limit_state: g(X) -> float, G<0 = failure.
+    :param variables: independent random variables.
+    :param n_samples: total samples (default 100k). Use >= 1e6 for Pf around 1e-3
+        to keep relative error below 10 percent.
+    :param method: sampling - 'crude' (independent normal), 'lhc' (Latin Hypercube),
+        'sobol' (low-discrepancy, n_samples auto-rounded up to 2^k).
+    :param seed: RNG seed.
+    :return: MCResult with Pf, beta, 95 percent CI, COV.
+    :raises ValueError: bad method / n_samples <= 0 / empty variables.
+    """
+    if n_samples <= 0:
+        raise ValueError("mc_analysis: n_samples must be positive")
+    if not variables:
+        raise ValueError("mc_analysis: variables must not be empty")
+    if method not in ("crude", "lhc", "sobol"):
+        raise ValueError(f"mc_analysis: unsupported method '{method}'")
+
+    D = len(variables)
+    rng = np.random.default_rng(seed)
+
+    # ---- U-space sampling ----
+    if method == "crude":
+        U = rng.standard_normal((n_samples, D))
+    elif method == "lhc":
+        from scipy.stats import qmc as _qmc
+
+        lhs = _qmc.LatinHypercube(D, seed=seed)
+        U = stats.norm.ppf(lhs.random(n_samples))
+    else:  # sobol
+        k = math.ceil(math.log2(max(n_samples, 1)))
+        n2 = 1 << k  # 2^k
+        from scipy.stats import qmc as _qmc
+
+        sampler = _qmc.Sobol(D, scramble=True, seed=seed)
+        U = stats.norm.ppf(sampler.random(n2))[:n_samples]
+
+    # ---- U -> X (physical space) ----
+    X = np.array([_from_standard(U[j], variables) for j in range(n_samples)])
+
+    # ---- Evaluate limit state ----
+    g_vals = np.array([limit_state(X[j]) for j in range(n_samples)])
+    n_fail = int(np.sum(g_vals < 0))
+    pf = n_fail / n_samples
+
+    # ---- Derived stats ----
+    if pf <= 0:
+        beta = math.inf
+    elif pf >= 1.0:
+        beta = -math.inf
+    else:
+        beta = float(-stats.norm.ppf(pf))
+
+    pf_var = pf * (1.0 - pf) / n_samples
+    cov = float(np.sqrt(pf_var) / pf) if pf > 0 else float("inf")
+
+    # 95 percent Wilson score CI
+    if n_fail == 0:
+        ci_lo = 0.0
+        ci_hi = 1.0 - (0.05 / n_samples)
+    elif n_fail == n_samples:
+        ci_lo = 0.05 / n_samples
+        ci_hi = 1.0
+    else:
+        z = stats.norm.ppf(0.975)
+        denom = 1.0 + z**2 / n_samples
+        center = pf + z**2 / (2 * n_samples)
+        spread = z * np.sqrt(pf * (1.0 - pf) / n_samples + z**2 / (4 * n_samples**2))
+        ci_lo = float((center - spread) / denom)
+        ci_hi = float((center + spread) / denom)
+        ci_lo = max(0.0, min(1.0, ci_lo))
+        ci_hi = max(0.0, min(1.0, ci_hi))
+
+    return MCResult(
+        pf=pf,
+        n_samples=n_samples,
+        n_fail=n_fail,
+        beta=beta,
+        variables=tuple(variables),
+        method=method,
+        cov=cov,
+        pf_ci_95=(ci_lo, ci_hi),
+    )

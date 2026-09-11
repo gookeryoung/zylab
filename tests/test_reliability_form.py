@@ -10,9 +10,11 @@ from scipy import stats
 
 from zylab.reliability import (
     Distribution,
+    MCResult,
     RandomVariable,
     ReliabilityError,
     form_analysis,
+    mc_analysis,
     sorm_analysis,
 )
 
@@ -200,3 +202,76 @@ class TestResultDataclass:
         res = form_analysis(lambda x: float(x[0] - x[1]), [R, S])
         with pytest.raises(AttributeError):
             res.beta = 0.0  # type: ignore[misc]
+
+
+# ---------- Monte Carlo ----------
+
+
+class TestMC:
+    def test_mc_crude_pf_close_to_form(self) -> None:
+        R = RandomVariable("R", Distribution.NORMAL, {"loc": 100.0, "scale": 10.0})
+        S = RandomVariable("S", Distribution.NORMAL, {"loc": 60.0, "scale": 8.0})
+
+        def g(x):
+            return float(x[0] - x[1])
+
+        res_f = form_analysis(g, [R, S], grad=lambda _x: np.array([1.0, -1.0]))
+        res_mc = mc_analysis(g, [R, S], n_samples=500_000, seed=42)
+        assert res_mc.pf_ci_95[0] <= res_f.pf_form <= res_mc.pf_ci_95[1]
+        assert res_f.beta == pytest.approx(res_mc.beta, abs=0.05)
+        assert isinstance(res_mc, MCResult)
+
+    def test_mc_lhs_method(self) -> None:
+        R = RandomVariable("R", Distribution.NORMAL, {"loc": 100.0, "scale": 10.0})
+        S = RandomVariable("S", Distribution.NORMAL, {"loc": 60.0, "scale": 8.0})
+        res = mc_analysis(lambda x: float(x[0] - x[1]), [R, S], n_samples=100_000, method="lhc", seed=42)
+        assert res.method == "lhc"
+        assert 0 < res.pf < 1
+        assert res.n_fail > 0
+
+    def test_mc_sobol_method(self) -> None:
+        R = RandomVariable("R", Distribution.NORMAL, {"loc": 100.0, "scale": 10.0})
+        S = RandomVariable("S", Distribution.NORMAL, {"loc": 60.0, "scale": 8.0})
+        res = mc_analysis(lambda x: float(x[0] - x[1]), [R, S], n_samples=100_000, method="sobol", seed=42)
+        assert res.method == "sobol"
+        assert 0 < res.pf < 1
+
+    def test_mc_stats_fields(self) -> None:
+        R = RandomVariable("R", Distribution.NORMAL, {"loc": 100.0, "scale": 10.0})
+        S = RandomVariable("S", Distribution.NORMAL, {"loc": 60.0, "scale": 8.0})
+        res = mc_analysis(lambda x: float(x[0] - x[1]), [R, S], n_samples=500_000, seed=42)
+        assert res.cov > 0
+        assert res.pf_ci_95[0] < res.pf < res.pf_ci_95[1]
+        assert res.beta > 0
+
+    def test_mc_bad_method_raises(self) -> None:
+        R = RandomVariable("R", Distribution.NORMAL, {"loc": 100.0, "scale": 10.0})
+        with pytest.raises(ValueError, match="unsupported method"):
+            mc_analysis(lambda x: float(x[0]), [R], method="bogus")
+
+    def test_mc_empty_variables_raises(self) -> None:
+        with pytest.raises(ValueError, match="variables must not be empty"):
+            mc_analysis(lambda x: float(x[0]), [])
+
+    def test_mc_zero_samples_raises(self) -> None:
+        R = RandomVariable("R", Distribution.NORMAL, {"loc": 100.0, "scale": 10.0})
+        with pytest.raises(ValueError, match="must be positive"):
+            mc_analysis(lambda x: float(x[0]), [R], n_samples=0)
+
+    def test_mc_always_safe_pf_zero(self) -> None:
+        """Always-safe LSF: Pf=0, beta=inf, CI degenerates."""
+        R = RandomVariable("R", Distribution.NORMAL, {"loc": 100.0, "scale": 10.0})
+        res = mc_analysis(lambda x: float(1000.0 - x[0]), [R], n_samples=10_000, seed=42)
+        assert res.pf == 0.0
+        assert res.beta == float("inf")
+        assert res.n_fail == 0
+        assert res.pf_ci_95[0] == 0.0
+
+    def test_mc_always_fail_pf_one(self) -> None:
+        """Always-failing LSF: Pf=1, beta=-inf, CI degenerates."""
+        R = RandomVariable("R", Distribution.NORMAL, {"loc": 100.0, "scale": 10.0})
+        res = mc_analysis(lambda _x: -1.0, [R], n_samples=10_000, seed=42)
+        assert res.pf == 1.0
+        assert res.beta == float("-inf")
+        assert res.n_fail == 10_000
+        assert res.pf_ci_95[1] == 1.0

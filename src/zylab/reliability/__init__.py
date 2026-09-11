@@ -25,9 +25,11 @@ from .errors import ReliabilityError
 from .form import (
     Distribution,
     FORMResult,
+    MCResult,
     RandomVariable,
     SORMResult,
     form_analysis,
+    mc_analysis,
     sorm_analysis,
 )
 from .methods import METHOD_LABELS, METHOD_NAMES
@@ -41,6 +43,7 @@ __all__ = [
     "Distribution",
     "DixonMoodDetail",
     "FORMResult",
+    "MCResult",
     "RandomVariable",
     "ReliabilityError",
     "ResponsePoints",
@@ -53,6 +56,7 @@ __all__ = [
     "form_analysis",
     "gh_factors",
     "karber",
+    "mc_analysis",
     "mle_estimate",
     "parse_trial_records",
     "response_points",
