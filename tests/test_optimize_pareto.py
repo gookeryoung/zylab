@@ -141,3 +141,89 @@ def test_optimize_pareto_cache_reuse(cantilever_template, small_design) -> None:
     # 第二次应该有缓存收益（因为解空间部分重叠）
     assert second < first_slow * 1.5  # 允许轻微反超，但不应该慢很多
     assert len(cache) > 0
+
+
+# --- optimize_direct 覆盖 ---
+
+
+class _FakeVar:
+    def __init__(self, nm: str, lo: float, hi: float, levels: tuple[float, ...] = ()) -> None:
+        self.name = nm
+        self.lower = lo
+        self.upper = hi
+        self.levels = tuple(levels)
+
+
+def test_optimize_direct_all_optimizers(cantilever_template) -> None:
+    """覆盖 DE / basinhopping / shgo / dual_annealing 四条优化器路径."""
+    from zylab.optim import optimize_direct
+
+    for opt in ("differential_evolution", "basinhopping", "shgo", "dual_annealing"):
+        res = optimize_direct(
+            cantilever_template,
+            [_FakeVar("model.nx", 4, 16), _FakeVar("model.ny", 2, 8)],
+            target="E",
+            optimizer=opt,
+            n_iter=4,
+            seed=0,
+        )
+        assert res.best_y is not None
+        assert res.best_x.shape == (2,)
+
+
+def test_optimize_direct_discrete_levels(cantilever_template) -> None:
+    """覆盖离散变量 levels round 分支."""
+    from zylab.optim import optimize_direct
+
+    var = _FakeVar("model.nx", 4, 16, levels=(4, 8, 12, 16))
+    res = optimize_direct(cantilever_template, [var], target="E", n_iter=3, seed=0)
+    assert float(res.best_x[0]) in (4.0, 8.0, 12.0, 16.0)
+
+
+def test_optimize_direct_callback(cantilever_template) -> None:
+    """覆盖 callback 路径."""
+    from zylab.optim import optimize_direct
+
+    calls: list[int] = []
+    optimize_direct(
+        cantilever_template,
+        [_FakeVar("model.nx", 4, 16)],
+        target="E",
+        n_iter=2,
+        seed=0,
+        callback=lambda _x, _y: calls.append(1),
+    )
+    assert len(calls) > 0
+
+
+def test_optimize_direct_bad_optimizer(cantilever_template) -> None:
+    """覆盖未知 optimizer 抛 OptimError."""
+    from zylab.optim import optimize_direct
+
+    with pytest.raises(OptimError, match="未知优化器"):
+        optimize_direct(cantilever_template, [_FakeVar("model.nx", 4, 16)], optimizer="xxx")
+
+
+def test_optimize_direct_bad_var_name(cantilever_template) -> None:
+    """覆盖变量名缺 dot 抛 OptimError."""
+    from zylab.optim import optimize_direct
+
+    with pytest.raises(OptimError, match="dotted"):
+        optimize_direct(cantilever_template, [_FakeVar("nx", 4, 16)])
+
+
+def test_optimize_direct_missing_output(cantilever_template) -> None:
+    """覆盖 template 无 output_params 抛 OptimError."""
+    from zylab.optim import optimize_direct
+
+    tpl = dataclasses.replace(cantilever_template, output_params=())
+    with pytest.raises(OptimError, match="未声明"):
+        optimize_direct(tpl, [_FakeVar("model.nx", 4, 16)])
+
+
+def test_optimize_direct_bad_target(cantilever_template) -> None:
+    """覆盖 target 不在 output_params 中抛 OptimError."""
+    from zylab.optim import optimize_direct
+
+    with pytest.raises(OptimError, match="无名为"):
+        optimize_direct(cantilever_template, [_FakeVar("model.nx", 4, 16)], target="zzz")
