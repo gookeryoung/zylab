@@ -352,6 +352,7 @@ def optimize_pareto(  # noqa: PLR0913, PLR0912
     callback: Optional[Callable[[np.ndarray, np.ndarray], None]] = None,
     report: Optional[Callable[..., Any]] = None,
     cache: dict[str, Any] | None = None,
+    n_workers: int | None = None,
 ) -> ParetoOptResult:
     """NSGA-II 风格直接多目标优化——跳过代理，把 workflow 当目标函数跑.
 
@@ -385,7 +386,7 @@ def optimize_pareto(  # noqa: PLR0913, PLR0912
         variables 名不合法 / n_population 过小。
     """
     # 延迟导入——optim 是底层包，不硬依赖 flowchart / pareto
-    from zylab.flowchart import run_workflow
+    from zylab.flowchart import run_batch, run_workflow
 
     from .pareto import crowding_distance, pareto_ranks
 
@@ -457,10 +458,37 @@ def optimize_pareto(  # noqa: PLR0913, PLR0912
                     F[k] = -val if maximize_mask[k] else val
         return F
 
+    # 根据 n_workers 决定走串行 evaluate 闭包还是 run_batch 并行
+    _parallel = n_workers is not None and n_workers >= 2
+
+    def _batch_evaluate(pop_matrix: np.ndarray) -> np.ndarray:
+        """批量评估种群——n_workers>=2 时用 run_batch 并行."""
+        N = len(pop_matrix)
+        if not _parallel:
+            return np.array([evaluate(p) for p in pop_matrix])
+
+        vnames = [getattr(v, "name", "") for v in variables]
+        rows: list[dict[str, Any]] = []
+        for p in pop_matrix:
+            row = {}
+            for j, vn in enumerate(vnames):
+                row[vn] = float(p[j])
+            rows.append(row)
+        outcomes = run_batch(template, rows, n_workers=n_workers, cache=cache_local)
+        F = np.full((N, K), float(penalty))
+        for idx, outcome in enumerate(outcomes):
+            if outcome.succeeded:
+                resolved = outcome.resolve_outputs(template)
+                for k, tname in enumerate(targets):
+                    if tname in resolved:
+                        val = float(resolved[tname])
+                        F[idx, k] = -val if maximize_mask[k] else val
+        return F
+
     # --- 初始化种群 ---
     pop = rng.uniform(lo, hi, (n_population, D))
     pop = np.array([_round(p) for p in pop])
-    F_pop = np.array([evaluate(p) for p in pop])
+    F_pop = _batch_evaluate(pop)
 
     n_eval = n_population
     offspring = np.empty_like(pop)
@@ -509,7 +537,7 @@ def optimize_pareto(  # noqa: PLR0913, PLR0912
                 if i + idx < n_population:
                     offspring[i + idx] = child
 
-        F_off = np.array([evaluate(p) for p in offspring])
+        F_off = _batch_evaluate(offspring)
         n_eval += n_population
 
         # --- 环境选择：父代 + 子代 合并保留 n_population ---

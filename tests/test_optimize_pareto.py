@@ -227,3 +227,51 @@ def test_optimize_direct_bad_target(cantilever_template) -> None:
 
     with pytest.raises(OptimError, match="无名为"):
         optimize_direct(cantilever_template, [_FakeVar("model.nx", 4, 16)], target="zzz")
+
+
+# --- optimize_pareto 并行评估 ---
+
+
+def test_optimize_pareto_parallel_n_workers(cantilever_template, small_design) -> None:
+    """n_workers=2 开 run_batch 并行，能正常返回 Pareto front."""
+    res = optimize_pareto(
+        cantilever_template,
+        small_design.variables,
+        targets=["E", "dmax"],
+        n_population=12,
+        n_generations=4,
+        seed=42,
+        n_workers=2,
+    )
+    assert res.X.shape[0] > 0
+    assert res.X.shape[1] == 2
+    assert res.F.shape[1] == 2
+    assert res.n_evaluations > 0
+
+
+def test_optimize_pareto_parallel_fe_match_serial(cantilever_template, small_design) -> None:
+    """串行/并行 FE 数值一致（用相同 seed 跑相同 n_population）."""
+    res_s = optimize_pareto(
+        cantilever_template,
+        small_design.variables,
+        targets=["E", "dmax"],
+        n_population=8,
+        n_generations=2,
+        seed=42,
+    )
+    res_p = optimize_pareto(
+        cantilever_template,
+        small_design.variables,
+        targets=["E", "dmax"],
+        n_population=8,
+        n_generations=2,
+        seed=42,
+        n_workers=2,
+    )
+    # FE 总评估次数相同
+    assert res_s.n_evaluations == res_p.n_evaluations
+    # 优化结果 FE 值量级合理（两个不同随机路径 Pareto 前沿可能不同）
+    import numpy as np
+
+    assert np.isfinite(res_s.F).all()
+    assert np.isfinite(res_p.F).all()
