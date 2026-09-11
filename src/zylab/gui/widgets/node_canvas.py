@@ -175,6 +175,19 @@ class _NodeCard(QGraphicsItem):
         self.selected = False
         self.spin_angle = 0
         self.setPos(rect.topLeft())
+        self.setFlag(QGraphicsItem.ItemIsMovable)
+        self.setFlag(QGraphicsItem.ItemSendsGeometryChanges)
+        self.setFlag(QGraphicsItem.ItemIsSelectable)
+
+    def itemChange(self, change: int, value):  # Qt 命名约定
+        """位置变化时通知视图同步连线坐标."""
+        if change == QGraphicsItem.ItemPositionHasChanged:
+            canvas = self.scene().parent() if self.scene() else None
+            if canvas is not None:
+                canvas.node_moved.emit(self.node_id, value.x(), value.y())
+                # 重绘连线
+                canvas._update_edges()
+        return super().itemChange(change, value)
 
     def refresh(self, state: NodeState, detail: str) -> None:
         """更新状态与摘要文字并重绘."""
@@ -322,6 +335,39 @@ class _EdgeItem(QGraphicsItem):
         self._phase = (self._phase + _FLOW_STEP) % sum(_FLOW_DASH)
         self.update()
 
+    def update_path(self, src_xy: tuple[float, float], dst_xy: tuple[float, float]) -> None:
+        """重新计算连线路径（单元位置变化时调用）."""
+        self._build_paths(src_xy, dst_xy)
+        self._bounds = self._line.boundingRect().united(self._arrow.boundingRect()).adjusted(-2.0, -2.0, 2.0, 2.0)
+        self.prepareGeometryChange()
+        self.update()
+
+    def _build_paths(self, src_xy: tuple[float, float], dst_xy: tuple[float, float]) -> None:
+        """从端点坐标重建折线 + 箭头路径（肘形圆角）."""
+        x1 = src_xy[0] + _CELL_W
+        y1 = src_xy[1] + _CELL_H / 2.0
+        x2 = dst_xy[0]
+        y2 = dst_xy[1] + _CELL_H / 2.0
+        base_x = x2 - _ARROW_LEN
+        self._line = QPainterPath()
+        self._line.moveTo(x1, y1)
+        if abs(y2 - y1) < 0.5:
+            self._line.lineTo(base_x, y1)
+        else:
+            mid_x = (x1 + base_x) / 2.0
+            sign = 1.0 if y2 > y1 else -1.0
+            r = min(_RADIUS, (base_x - x1) / 2.0, abs(y2 - y1) / 2.0)
+            self._line.lineTo(mid_x - r, y1)
+            _quad_to(self._line, QPointF(mid_x, y1), QPointF(mid_x, y1 + sign * r))
+            self._line.lineTo(mid_x, y2 - sign * r)
+            _quad_to(self._line, QPointF(mid_x, y2), QPointF(mid_x + r, y2))
+            self._line.lineTo(base_x, y2)
+        self._arrow = QPainterPath()
+        self._arrow.moveTo(base_x, y2 - _ARROW_HALF)
+        self._arrow.lineTo(x2, y2)
+        self._arrow.lineTo(base_x, y2 + _ARROW_HALF)
+        self._arrow.closeSubpath()
+
     def boundingRect(self) -> QRectF:  # Qt 命名约定
         """包围盒（折线 + 箭头 + 笔宽余量）."""
         return self._bounds
@@ -359,6 +405,8 @@ class NodeCanvasWidget(QGraphicsView):
     all_selected = Signal()
     #: 右键空白区域（全局坐标 QPoint）—— 页面据此弹出「运行全部」等菜单
     background_context_menu = Signal(object)
+    #: 单元拖拽后位置变化（节点 id, 新 x, 新 y）
+    node_moved = Signal(str, float, float)
 
     def __init__(self, parent=None) -> None:
         """初始化空画布（场景/视图配置 + 旋转动画定时器）."""
@@ -406,6 +454,11 @@ class NodeCanvasWidget(QGraphicsView):
                 y = _HEADER_H + _FRAME_PAD + row * (_CELL_H + _GAP_Y)
                 positions[node_id] = (x, y)
 
+        # 用户手动布局优先覆盖自动布局
+        for node in graph.nodes():
+            if node.position is not None:
+                positions[node.id] = node.position
+
         # 组合框整体尺寸
         n_layers = max(1, len(by_layer))
         max_rows = max(1, *(len(ids) for ids in by_layer.values()))
@@ -434,6 +487,25 @@ class NodeCanvasWidget(QGraphicsView):
         edge = _EdgeItem(src_xy, dst_xy)
         self._scene.addItem(edge)
         self._edges.append((edge, dst_id))
+
+    def _update_edges(self) -> None:
+        """遍历所有连线，根据 card 当前位置重算路径（单元拖拽后调用）."""
+        for edge, dst_id in self._edges:
+            # 找到 src card：所有 edges 都用 dst_id 记录下游，需要从 graph 反查上游
+            # 简单做法：遍历 graph.edges 找 src
+            if self._graph is None:
+                continue
+            dst_node = self._graph.node(dst_id)
+            for _port, ref in dst_node.inputs.items():
+                src_id = ref.partition(".")[0]
+                src_card = self._cards.get(src_id)
+                dst_card = self._cards.get(dst_id)
+                if src_card and dst_card:
+                    edge.update_path(
+                        (src_card.pos().x(), src_card.pos().y()),
+                        (dst_card.pos().x(), dst_card.pos().y()),
+                    )
+                    break
 
     # ------------------------------------------------------------------ 状态刷新
 

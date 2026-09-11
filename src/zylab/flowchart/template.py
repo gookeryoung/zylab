@@ -41,6 +41,7 @@ class TemplateNode:
     type_id: str
     params: dict[str, Any] = field(default_factory=dict)
     inputs: dict[str, str] = field(default_factory=dict)
+    position: tuple[float, float] | None = None  # GUI 画布用户手动布局坐标（None = 自动布局）
 
 
 @dataclass(frozen=True)
@@ -144,6 +145,7 @@ class Template:
                     type_id=str(raw["type"]),
                     params=dict(raw.get("params", {})),
                     inputs=dict(raw.get("inputs", {})),
+                    position=_parse_position(raw.get("position")),
                 )
                 for raw in _expect_list(data, "nodes", "<root>")
             )
@@ -295,10 +297,27 @@ class Template:
             "description": self.description,
             "tags": list(self.tags),
             "nodes": [
-                {"id": n.id, "type": n.type_id, "params": dict(n.params), "inputs": dict(n.inputs)} for n in self.nodes
+                {
+                    "id": n.id,
+                    "type": n.type_id,
+                    "params": dict(n.params),
+                    "inputs": dict(n.inputs),
+                    **({"position": list(n.position)} if n.position else {}),
+                }
+                for n in self.nodes
             ],
             "ui": ui,
         }
+
+
+def _parse_position(raw: Any) -> tuple[float, float] | None:
+    """解析节点 position 字段：[x, y] 列表 → (x, y) tuple；非法/缺失返回 None."""
+    if not isinstance(raw, (list, tuple)) or len(raw) != 2:
+        return None
+    try:
+        return (float(raw[0]), float(raw[1]))
+    except (TypeError, ValueError):
+        return None
 
 
 def _expect_list(data: Mapping[str, Any], key: str, where: str) -> list[Any]:

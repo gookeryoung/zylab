@@ -60,6 +60,7 @@ class NodeInstance:
     running: bool = False
     elapsed: float = 0.0
     content_hash: str | None = None
+    position: tuple[float, float] | None = None  # GUI 画布坐标（None = 自动布局）
 
     @property
     def state(self) -> NodeState:
@@ -99,6 +100,7 @@ class WorkflowGraph:
                 spec=spec,
                 params=spec.coerce_params(tn.params),
                 inputs=dict(tn.inputs),
+                position=tn.position,
             )
 
     @property
