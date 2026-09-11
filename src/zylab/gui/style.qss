@@ -822,6 +822,29 @@ QFrame#sidePanel {
     background-color: ${QSS_BG_APP};
     border: none;
 }
+/* 侧栏 Tab：紧凑样式，窄空间下保持清爽 */
+QTabWidget#sideTabs::pane {
+    border: none;
+    top: -1px;
+    background-color: transparent;
+}
+QTabWidget#sideTabs > QTabBar::tab {
+    background-color: transparent;
+    color: ${QSS_TEXT_SECONDARY};
+    padding: 6px 16px;
+    border: none;
+    border-bottom: 2px solid transparent;
+    font-size: ${FONT_BODY};
+    min-height: 28px;
+}
+QTabWidget#sideTabs > QTabBar::tab:selected {
+    color: ${QSS_PRIMARY};
+    border-bottom: 2px solid ${QSS_PRIMARY};
+    font-weight: bold;
+}
+QTabWidget#sideTabs > QTabBar::tab:hover:!selected {
+    color: ${QSS_TEXT_PRIMARY};
+}
 /* 说明卡：Jupyter 式轻盈卡片，与 resultCell 风格对齐 */
 QFrame#docsCard {
     background-color: transparent;

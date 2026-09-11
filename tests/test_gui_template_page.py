@@ -85,6 +85,9 @@ def test_page_load_and_run(qtbot, template) -> None:
     assert page._run_btn.isEnabled()
     assert page._tabs.count() == 1  # curve + text 两结果页
     assert page._tabs.tabText(0) == "结果"
+    # 说明面板在 Tab 内，QTabWidget 会隐藏非激活 tab 的 widget；切到说明页再校验
+    assert page._side_tabs.isTabVisible(1)  # 说明 tab 存在且可见
+    page._side_tabs.setCurrentIndex(1)  # 切到说明页使 widget 可见
     assert page._docs_panel.isVisibleTo(page)
     assert "扫描范围" in page._docs_panel._text_browser.toPlainText()
 

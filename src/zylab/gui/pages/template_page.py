@@ -2,8 +2,9 @@
 
 布局（左右分栏 + 底部运行条，三区边界以 1px 分隔线与卡片化面板呈现）：
 
-- 左：图文说明卡（docs 声明：markdown 文本 + 示意图，可折叠）+
-  DSL 参数表单（:class:`DslParamForm`），同置滚动侧栏；
+- 左：QTabWidget 分页（第一页「参数」= DSL 参数表单
+  :class:`DslParamForm`，第二页「说明」= 图文引导面板
+  :class:`DocsPanel`，说明卡按模板 ``docs`` 声明动态显隐）；
 - 右：结果多 TAB（普通结果默认合并「结果」流页；显式 ``group`` 为单独页签；
   cloud 路由到既有解算视图 :class:`~zylab.gui.widgets.result_view.ResultView`）；
 - 底：加载参数化计算 / 运行（主色）/ 导出报告（按 ``report.exports`` 声明
@@ -62,6 +63,10 @@ _TEMPLATE_FILTER = "DSL 参数化计算 (*.yaml *.yml *.json);;所有文件 (*)"
 #: 默认无分组普通结果的页签名
 _DEFAULT_GROUP = "结果"
 
+#: 左侧栏 Tab 索引
+_TAB_PARAM = 0
+_TAB_DOCS = 1
+
 
 def _builtin_dsl_templates() -> list[DslTemplate]:
     """注册表中的 DSL 参数化计算（内置资产 + 用户目录，供下拉快捷加载）."""
@@ -102,7 +107,7 @@ class TemplatePage(QWidget):
     # ------------------------------------------------------------------ 布局
 
     def _build_body(self) -> QWidget:
-        """左右分栏：左侧说明卡+参数面板 | 右侧结果多 TAB."""
+        """左右分栏：左侧 Tab 分页（参数/说明） | 右侧结果多 TAB."""
         splitter = QSplitter(Qt.Horizontal)
         self._param_scroll = QScrollArea()
         self._param_scroll.setWidgetResizable(True)
@@ -112,11 +117,17 @@ class TemplatePage(QWidget):
         self._param_layout = QVBoxLayout(self._param_panel)
         self._param_layout.setContentsMargins(theme.SPACING_MD, theme.SPACING_MD, theme.SPACING_MD, theme.SPACING_MD)
         self._param_layout.setSpacing(theme.SPACING_MD)
-        self._docs_panel = DocsPanel()
-        self._param_layout.addWidget(self._docs_panel)
+
+        # 左侧 Tab 分页：参数（默认） | 说明
+        self._side_tabs = QTabWidget(objectName="sideTabs")
         self._param_form = DslParamForm()
-        self._param_layout.addWidget(self._param_form)
-        self._param_layout.addStretch()
+        self._side_tabs.addTab(self._param_form, "参数")
+        self._docs_panel = DocsPanel()
+        self._side_tabs.addTab(self._docs_panel, "说明")
+        # 初始隐藏说明页（加载模板后按 docs 声明决定显隐）
+        self._side_tabs.setTabVisible(_TAB_DOCS, False)
+        self._param_layout.addWidget(self._side_tabs)
+
         self._param_scroll.setWidget(self._param_panel)
         self._param_scroll.setMinimumWidth(300)
         splitter.addWidget(self._param_scroll)
@@ -199,6 +210,11 @@ class TemplatePage(QWidget):
         if template.theme:
             self.theme_requested.emit(template.theme)
         self.status_message.emit(f"已加载: {template.name}")
+        # 说明页显隐：按模板 docs 声明有无内容直接判断
+        docs = template.docs
+        has_docs = bool(docs) and bool((docs.text or "").strip() or (docs.image or "").strip())
+        self._side_tabs.setTabVisible(_TAB_DOCS, has_docs)
+        self._side_tabs.setCurrentIndex(_TAB_PARAM)
 
     # ------------------------------------------------------------------ 运行
 

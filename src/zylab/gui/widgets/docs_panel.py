@@ -4,13 +4,16 @@
 默认透明背景、hover 微背景提示、主色左边框视觉锚点，与 Jupyter 式结果流
 卡片风格统一，避免侧边栏风格碎片化。
 
-布局（TemplatePage 左侧栏顶部）：
+布局（TemplatePage 左侧栏「说明」Tab 页内）：
 
 - 卡片容器 ``#docsCard``（透明 + 主色左边框 + hover 微背景）；
 - 标题行：问号图标 ``#docsIcon`` + 加粗标题 ``#docsTitle`` + 折叠箭头
   ``#docsCaret``（整行可点击，折叠/展开正文）；
-- 正文：markdown 文本（QTextBrowser 只读、高度随内容自适应、上限内滚动）
-  + 示意图（圆角边框卡片式展示，等比缩放至卡片宽度）。
+- 正文：markdown 文本（QTextBrowser 只读，高度随内容自适应展开，
+  **无内部滚动条**）+ 示意图（圆角边框卡片式展示，等比缩放）。
+
+说明内容过长时由外层 QScrollArea（TemplatePage 侧栏）统一承接滚动，
+不在卡片内部出现单独滚动条，视觉更整洁。
 
 ``DslDocs.image`` 声明非空但文件缺失时显示次级占位提示（帮助模板作者
 发现路径错误）；模板无 ``docs`` 声明或内容全空时整卡隐藏。文本渲染复用
@@ -32,6 +35,7 @@ from ..qt_compat import (
     QHBoxLayout,
     QLabel,
     QPixmap,
+    QSizePolicy,
     Qt,
     QTextBrowser,
     QVBoxLayout,
@@ -41,10 +45,7 @@ from ..qt_compat import (
 
 __all__ = ["DocsPanel", "resolve_docs_image"]
 
-#: 说明正文高度上限（px，超出内部滚动，避免长说明挤占参数区）
-_DOCS_TEXT_MAX_HEIGHT = 240
-
-#: 示意图高度上限（px，等比缩放）
+#: 示意图高度上限（px，等比缩放；文本无上限，由外层滚动区域承接）
 _DOCS_IMAGE_MAX_HEIGHT = 180
 
 #: 标题栏图标尺寸（正方形，像素）
@@ -119,6 +120,9 @@ class DocsPanel(QWidget):
 
     设计语言：透明卡片 + 主色左边框 + hover 微背景，与 ResultBlockCard
     风格统一。详见模块文档。
+
+    正文 QTextBrowser 关闭自身滚动条并按文档内容自然撑开高度，
+    避免在说明 Tab 页内出现二级滚动条。
     """
 
     def __init__(self, parent: QWidget | None = None) -> None:
@@ -150,10 +154,13 @@ class DocsPanel(QWidget):
         body.setContentsMargins(0, 0, 0, 0)
         body.setSpacing(theme.SPACING_SM)
 
-        # markdown 文本（QTextBrowser，只读可复制）
+        # markdown 文本（QTextBrowser，无内部滚动，高度随内容自然展开）
         self._text_browser = QTextBrowser(objectName="docsText")
         self._text_browser.setOpenExternalLinks(False)
         self._text_browser.setFrameShape(QFrame.NoFrame)
+        # 关闭自身滚动条，高度由文档内容决定；溢出时由外层 QScrollArea 承接
+        self._text_browser.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        self._text_browser.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
         self._text_browser.setVisible(False)
         body.addWidget(self._text_browser)
 
@@ -231,11 +238,11 @@ class DocsPanel(QWidget):
         """按当前宽度同步正文高度与示意图缩放（resize/set_template 后调用）."""
         if not self.isVisible():
             return
-        # 文本高度：文档实际高度，上限内滚动
+        # 文本高度：按文档实际高度自适应展开，无上限（由外层滚动区域承接溢出）
         if self._text_browser.isVisible():
             doc = self._text_browser.document()
             doc.setTextWidth(max(self._text_browser.viewport().width(), 16))
-            height = min(int(doc.size().height()) + 4, _DOCS_TEXT_MAX_HEIGHT)
+            height = int(doc.size().height()) + 4
             self._text_browser.setFixedHeight(max(height, 20))
         # 示意图：等比缩放至卡内容宽（预留卡内边距 + 图片边框）
         if self._pixmap is not None:
