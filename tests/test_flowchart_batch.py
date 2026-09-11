@@ -353,6 +353,60 @@ class TestRunBatch:
         with pytest.raises(Exception, match="失败节点"):
             failed.resolve_outputs(new_tpl)
 
+    def test_run_batch_parallel_n_workers(self) -> None:
+        """n_workers=2 开进程池，结果全成功且长度匹配行数（Windows spawn）."""
+        tpl = _template("structural.cantilever_static")
+        rows = [
+            {"model.nx": 4, "model.ny": 2},
+            {"model.nx": 6, "model.ny": 3},
+            {"model.nx": 8, "model.ny": 4},
+            {"model.nx": 10, "model.ny": 4},
+        ]
+        outcomes = run_batch(tpl, rows, n_workers=2)
+        assert len(outcomes) == 4
+        for o in outcomes:
+            assert o.succeeded, o.first_error()
+
+    def test_run_batch_parallel_outputs_match_serial(self) -> None:
+        """run_batch_outputs 并行/串行数值完全一致（结果顺序对齐）."""
+        tpl = _template("structural.cantilever_static")
+        new_tpl = dataclasses.replace(
+            tpl,
+            output_params=(OutputParam(name="strain_energy", source="solve.strain_energy"),),
+        )
+        rows = [
+            {"model.nx": 4, "model.ny": 2},
+            {"model.nx": 6, "model.ny": 3},
+            {"model.nx": 8, "model.ny": 4},
+        ]
+        Xs, Ys = run_batch_outputs(new_tpl, rows)
+        Xp, Yp = run_batch_outputs(new_tpl, rows, n_workers=2)
+        assert np.allclose(Xs, Xp)
+        assert np.allclose(Ys, Yp)
+
+    def test_run_batch_parallel_cache_isolated(self) -> None:
+        """并行模式下外部 cache dict 不被回填（进程间隔离）."""
+        tpl = _template("structural.cantilever_static")
+        rows = [{"model.nx": 4, "model.ny": 2} for _ in range(4)]
+        external_cache: dict = {}
+        run_batch(tpl, rows, cache=external_cache, n_workers=2)
+        assert len(external_cache) == 0  # 并行时进程间不共享
+
+    def test_batch_row_worker_direct_call(self) -> None:
+        """_batch_row_worker 主进程直接调用（覆盖 worker 函数体，绕过 coverage 子进程盲区）."""
+        from zylab.flowchart.batch import _batch_row_worker
+
+        tpl = _template("structural.cantilever_static")
+        outcome = _batch_row_worker((tpl, {"model.nx": 4, "model.ny": 2}, True))
+        assert outcome.succeeded, outcome.first_error()
+
+    def test_run_batch_no_cache_no_external(self) -> None:
+        """use_cache=False 且无外部 cache —— effective_cache=None 分支."""
+        tpl = _template("structural.cantilever_static")
+        rows = [{"model.nx": 4, "model.ny": 2}, {"model.nx": 6, "model.ny": 3}]
+        outcomes = run_batch(tpl, rows, use_cache=False)
+        assert all(o.succeeded for o in outcomes)
+
 
 class TestExploreDoe:
     """explore_doe 一行走完 DOE → batch → surrogate → Sobol 敏感性分解."""

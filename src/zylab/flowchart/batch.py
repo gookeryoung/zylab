@@ -17,7 +17,9 @@ from __future__ import annotations
 
 import importlib
 import logging
+import os
 import time
+from concurrent.futures import ProcessPoolExecutor
 from dataclasses import dataclass, replace
 from typing import Any, Callable, Mapping, Sequence
 
@@ -294,13 +296,30 @@ def _row_to_overrides(template: Template, row: Mapping[str, Any]) -> dict[str, d
     return overrides
 
 
-def run_batch(
+def _batch_row_worker(args: tuple[Template, Mapping[str, Any], bool]) -> RunOutcome:
+    """进程池 worker——对单行参数完整跑一次 run_workflow.
+
+    模块级函数（Windows spawn 模式可 pickle）。每个 worker 进程内部自建
+    空节点级 cache——节点内部的哈希缓存仍有效，但**跨进程不共享**
+    （进程间隔离）。跨进程共享的 cache 应在主进程里做"去重采样"预处理.
+
+    :param args: ``(template, row_dict, use_cache)`` 三元组.
+    :return: 单次 run_workflow 的 RunOutcome.
+    """
+    template, row, use_cache = args
+    overrides = _row_to_overrides(template, row)
+    local_cache: dict[str, Any] | None = {} if use_cache else None
+    return run_workflow(template, overrides, report=None, cache=local_cache)
+
+
+def run_batch(  # noqa: PLR0913
     template: Template,
     param_rows: Sequence[Mapping[str, Any]],
     *,
     report: ReportFn | None = None,
     use_cache: bool = True,
     cache: dict[str, Any] | None = None,
+    n_workers: int | None = None,
 ) -> list[RunOutcome]:
     """批量参数化运行（Phase 4 入口）.
 
@@ -313,15 +332,24 @@ def run_batch(
         典型来源：:meth:`~zylab.doe.design_space.DesignSpace.to_input_rows`
         或用户手写的 What-if 表格。
     :param report: 总进度回调 ``(fraction, message)``，每次运行结束后调用。
+        **并行模式下不触发**（进程池 map 无法注入回调）。
     :param use_cache: 是否开启节点级哈希缓存（默认 True）。开启后
         内部维护一个 ``{content_hash: result}`` 共享字典。
     :param cache: 外部传入的缓存字典——提供后 ``use_cache`` 自动置 True，
         本次 batch 结果会回填到外部 dict，后续 batch / Sobol / optimize
         可继续复用。典型场景是 :func:`explore_doe` 里 DOE 采样 + Sobol
         子采样 + optimize 三次独立调用，共享同一个 cache dict 避免
-        重复 FE 求解。
-    :return: 与 ``param_rows`` 等长的结果列表。
-    :raises ValueError: ``param_rows`` 为空。
+        重复 FE 求解。**并行模式下此参数失效**——每个 worker 进程自建
+        空缓存（进程间不能共享 dict），跨进程去重需用户先预处理
+        param_rows 去掉重复配置。
+    :param n_workers: 进程池大小。``None`` 或 ``<=1`` 走当前进程
+        串行（默认，向后兼容）；``>=2`` 时开 :class:`ProcessPoolExecutor`
+        多进程并行。Windows / Linux 均支持（模板 dataclass 可 pickle，
+        worker 模块级定义）。**并行收益在单次 FE > 10ms 时显著**
+        （例如非线性、瞬态、热耦合问题），快 FE（<5ms）进程池启动开销
+        可能抵消收益。
+    :return: 与 ``param_rows`` 等长的结果列表，结果顺序与输入行对齐.
+    :raises ValueError: ``param_rows`` 为空.
 
     使用示例::
 
@@ -333,9 +361,28 @@ def run_batch(
 
         # 关掉缓存（调试 / 内存敏感场景）：
         run_batch(template, rows, use_cache=False)
+
+        # 4 进程并行跑 1000 次非线性 FE：
+        run_batch(template, rows, n_workers=4)
     """
     if not param_rows:
         raise ValueError("run_batch: param_rows 不能为空")
+
+    n = len(param_rows)
+
+    # ---- 并行分支 ----
+    if n_workers is not None and n_workers >= 2:
+        # 每个 worker 内部自建节点级 cache（进程间隔离）
+        # 不回填主进程的 cache dict——跨进程共享不可行
+        args_iter = ((template, row, use_cache) for row in param_rows)
+        actual_workers = min(n_workers, max(1, os.cpu_count() or 1))
+        with ProcessPoolExecutor(max_workers=actual_workers) as pool:
+            # map 保序——保证 outcomes 与 param_rows 对齐
+            outcomes = list(pool.map(_batch_row_worker, args_iter))
+        # 并行时 cache 共享失效，直接返回
+        return outcomes
+
+    # ---- 串行分支 ----
     effective_cache: dict[str, Any] | None
     if cache is not None:
         effective_cache = cache
@@ -344,7 +391,6 @@ def run_batch(
     else:
         effective_cache = None
     results: list[RunOutcome] = []
-    n = len(param_rows)
     for i, row in enumerate(param_rows):
         overrides = _row_to_overrides(template, row)
         outcome = run_workflow(template, overrides, report, cache=effective_cache)
@@ -360,6 +406,7 @@ def run_batch_outputs(
     *,
     use_cache: bool = True,
     cache: dict[str, Any] | None = None,
+    n_workers: int | None = None,
 ) -> tuple[np.ndarray, np.ndarray]:
     """批量运行 + 输出参数解析（Phase 5 探索层便捷入口）.
 
@@ -369,6 +416,7 @@ def run_batch_outputs(
 
     :param use_cache: 透传给 :func:`run_batch` 的缓存开关。
     :param cache: 透传给 :func:`run_batch` 的外部缓存字典。
+    :param n_workers: 透传给 :func:`run_batch` 的进程池大小.
 
     :return: ``(X, y)`` 形状均为 ``(n_success, n_vars_or_outputs)``，
         其中 ``X`` 直接来自 ``param_rows`` 按顺序堆叠、``y`` 来自
@@ -382,7 +430,7 @@ def run_batch_outputs(
         surrogate.fit(X, y)
         result = optimize(surrogate, ds.variables)
     """
-    outcomes = run_batch(template, param_rows, use_cache=use_cache, cache=cache)
+    outcomes = run_batch(template, param_rows, use_cache=use_cache, cache=cache, n_workers=n_workers)
     succeeded_rows: list[np.ndarray] = []
     succeeded_ys: list[np.ndarray] = []
     for outcome, row in zip(outcomes, param_rows):
