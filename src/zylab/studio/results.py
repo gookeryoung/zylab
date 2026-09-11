@@ -172,21 +172,32 @@ def build_result(result: DslResult, outputs: Mapping[str, Any]) -> ViewData:
 
 
 def _build_curve(result: DslResult, outputs: Mapping[str, Any]) -> CurveData:
-    """解析曲线声明：x 单序列 + y 单/多序列."""
+    """解析曲线声明：x 单序列 + y 单/多序列.
+
+    y 序列支持两种形式：字符串（用统一 x）或 dict（含 ref/x）。
+    """
     spec = result.spec
-    x_values = _resolve_sequence(str(spec["x"]), outputs)
+    shared_x = _resolve_sequence(str(spec["x"]), outputs)
     y_raw = spec["y"]
-    y_refs = [y_raw] if isinstance(y_raw, str) else [str(ref) for ref in y_raw]
-    if not y_refs:
+    y_entries = [y_raw] if isinstance(y_raw, (str, Mapping)) else list(y_raw)
+    if not y_entries:
         raise TemplateError(f"曲线结果 {result.id!r} 的 y 引用为空")
     series: list[CurveSeries] = []
-    for ref in y_refs:
-        y_values = _resolve_sequence(ref, outputs)
+    for entry in y_entries:
+        if isinstance(entry, Mapping):
+            y_ref = str(entry["ref"])
+            x_values = _resolve_sequence(str(entry["x"]), outputs) if "x" in entry else shared_x
+            name = str(entry.get("name", y_ref.rpartition(".")[2]))
+        else:
+            y_ref = str(entry)
+            x_values = shared_x
+            name = y_ref.rpartition(".")[2]
+        y_values = _resolve_sequence(y_ref, outputs)
         if len(y_values) != len(x_values):
             raise TemplateError(
-                f"曲线结果 {result.id!r} 序列 {ref!r} 长度 {len(y_values)} 与 x 长度 {len(x_values)} 不匹配"
+                f"曲线结果 {result.id!r} 序列 {y_ref!r} 长度 {len(y_values)} 与 x 长度 {len(x_values)} 不匹配"
             )
-        series.append(CurveSeries(name=ref.rpartition(".")[2], x=x_values, y=y_values))
+        series.append(CurveSeries(name=name, x=x_values, y=y_values))
     series_styles_raw = spec.get("series", [])
     series_styles = tuple(dict(s) for s in series_styles_raw) if isinstance(series_styles_raw, list) else ()
     return CurveData(

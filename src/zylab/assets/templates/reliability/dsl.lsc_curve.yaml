@@ -44,10 +44,18 @@ results:
     title: LSC 拟合四段曲线
     x: lsc.curves.inner_upper.x
     y:
-      - lsc.curves.inner_upper.y
-      - lsc.curves.inner_lower.y
-      - lsc.curves.outer_upper.y
-      - lsc.curves.outer_lower.y
+      - ref: lsc.curves.inner_upper.y
+        x: lsc.curves.inner_upper.x
+        name: inner_upper
+      - ref: lsc.curves.inner_lower.y
+        x: lsc.curves.inner_lower.x
+        name: inner_lower
+      - ref: lsc.curves.outer_upper.y
+        x: lsc.curves.outer_upper.x
+        name: outer_upper
+      - ref: lsc.curves.outer_lower.y
+        x: lsc.curves.outer_lower.x
+        name: outer_lower
     x_label: X
     y_label: Y
   - id: summary

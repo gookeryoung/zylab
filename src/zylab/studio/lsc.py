@@ -254,7 +254,7 @@ class LSCCurve:
     @cached_property
     def i(self) -> np.ndarray:
         """内部段采样向量：linspace(m, 0, 100)."""
-        return np.linspace(self.m1, 0, 100)
+        return np.linspace(self.m, 0, 100)
 
     @cached_property
     def j(self) -> np.ndarray:
