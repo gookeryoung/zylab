@@ -171,3 +171,37 @@ def test_dsl_lsc_curve_template() -> None:
     result = outcome.outcome("lsc").result
     assert result["cost"] >= 0  # 正确应用约束后，cost 变大是预期行为
     assert set(result["curves"].keys()) == {"inner_upper", "inner_lower", "outer_upper", "outer_lower"}
+
+
+class TestLSCCurveValidationWarnings:
+    """LSCCurve 负参数警告分支 (miss 127, 129, 131, 136, 138)."""
+
+    def test_negative_heights_warn(self, caplog) -> None:
+        LSCCurve(H=-1.0, H1=-0.5, H2=-0.3)
+        messages = [r.message for r in caplog.records]
+        assert any("负的切削高度" in m for m in messages)
+        assert any("负的内部保留高度" in m for m in messages)
+        assert any("负的外部保留高度" in m for m in messages)
+
+    def test_negative_slopes_warn(self, caplog) -> None:
+        LSCCurve(s=-1.0, s1=-2.0)
+        messages = [r.message for r in caplog.records]
+        assert any("负的内部斜率" in m for m in messages)
+        assert any("负的外部斜率" in m for m in messages)
+
+
+class TestLSCCurveCachedProperties:
+    """LSCCurve cached_property 访问 (miss 190, 195, 200, 274, 293, 298, 334)."""
+
+    def test_m2_powers(self) -> None:
+        c = LSCCurve(m2=2.0)
+        assert c.m2s == 4.0
+        assert c.m2c == 8.0
+        assert c.m2s4 == 16.0
+
+    def test_constraint_matrices(self) -> None:
+        c = LSCCurve()
+        assert c.A_ineq.shape == (11, 16)
+        assert c.b_ineq.shape == (11,)
+        assert c.A_eq.shape == (11, 16)
+        assert c.b_eq.shape == (11,)

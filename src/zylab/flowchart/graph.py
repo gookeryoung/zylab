@@ -12,6 +12,7 @@
 
 from __future__ import annotations
 
+import uuid
 from dataclasses import dataclass
 from enum import Enum, unique
 from typing import Any, Mapping
@@ -219,6 +220,56 @@ class WorkflowGraph:
         if dst_port in node.inputs:
             del node.inputs[dst_port]
             self._invalidate(dst_id)
+
+    def add_node(
+        self,
+        type_id: str,
+        node_id: str | None = None,
+        params: Mapping[str, Any] | None = None,
+        position: tuple[float, float] | None = None,
+    ) -> str:
+        """在图中新增节点（动态添加，供 GUI 工具箱拖放等场景使用）.
+
+        :param type_id: 模块类型 id（须已在注册表中）。
+        :param node_id: 显式指定 id；为 None 时自动生成 ``<type>_<short_uuid>`` 风格唯一 id。
+        :param params: 初始参数（为空则使用模块 schema 默认值）。
+        :param position: GUI 画布坐标（None 表示自动布局）。
+        :returns: 最终使用的节点 id。
+        :raises TemplateError: 显式提供的 ``node_id`` 与现有节点冲突。
+        """
+        spec = module_spec(type_id)
+        final_id = node_id or self._generate_node_id(type_id)
+        if final_id in self._nodes:
+            raise TemplateError(f"节点 id 冲突: {final_id!r}")
+        instance = NodeInstance(
+            id=final_id,
+            spec=spec,
+            params=spec.coerce_params(params or {}),
+            inputs={},
+            position=position,
+        )
+        self._nodes[final_id] = instance
+        return final_id
+
+    def remove_node(self, node_id: str) -> None:
+        """删除节点：自身 + 所有下游指向本节点的入端口一并清理。
+
+        :raises TemplateError: 图中不存在该节点。
+        """
+        self.node(node_id)  # 校验存在性（不存在抛 TemplateError）
+        for other in self._nodes.values():
+            refs_to_remove = [port for port, ref in other.inputs.items() if ref.startswith(f"{node_id}.")]
+            for port in refs_to_remove:
+                del other.inputs[port]
+        del self._nodes[node_id]
+
+    def _generate_node_id(self, type_id: str) -> str:
+        """生成唯一节点 id；格式 ``<type_last_segment>_<4hex>``."""
+        prefix = type_id.rsplit(".", maxsplit=1)[-1]
+        while True:
+            candidate = f"{prefix}_{uuid.uuid4().hex[:6]}"
+            if candidate not in self._nodes:
+                return candidate
 
     def invalidate(self, node_id: str) -> None:
         """手动失效本节点与全部下游（强制重跑用）；清空结果/错误/耗时."""

@@ -21,10 +21,8 @@ __all__ = ["ModuleToolbox"]
 
 _CATEGORY_LABELS = {
     ModuleCategory.SOURCE: "数据源",
-    ModuleCategory.MESH: "网格与材料",
     ModuleCategory.ANALYSIS: "分析求解器",
     ModuleCategory.POST: "后处理",
-    ModuleCategory.UTILITY: "工具",
 }
 
 
@@ -64,10 +62,8 @@ class ModuleToolbox(QTreeWidget):
         buckets = _group_modules(all_modules())
         for category in (
             ModuleCategory.SOURCE,
-            ModuleCategory.MESH,
             ModuleCategory.ANALYSIS,
             ModuleCategory.POST,
-            ModuleCategory.UTILITY,
         ):
             specs = buckets.get(category, [])
             if not specs:

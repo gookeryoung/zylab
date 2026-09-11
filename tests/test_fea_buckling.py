@@ -297,3 +297,14 @@ class TestBucklingErrors:
         )
         with pytest.raises(SolverError):
             solve_buckling(mesh, [material], [section], case)
+
+    def test_n_modes_zero_rejected(self) -> None:
+        mesh = _column_mesh(2, 1.0)
+        material = LinearElastic(E_MOD)
+        section = Section(area=0.01, inertia=1e-4)
+        case = StaticCase(
+            constraints=(Constraint(0, (0, 1, 2)),),
+            loads=(NodalLoad(2, (-1.0, 0.0, 0.0)),),
+        )
+        with pytest.raises(SolverError, match="至少为 1"):
+            solve_buckling(mesh, [material], [section], case, n_modes=0)

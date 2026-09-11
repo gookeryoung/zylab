@@ -338,3 +338,45 @@ class TestContentHash:
         assert graph.node("model").content_hash != graph.compute_node_hash("model")
         assert graph.node("static").content_hash != graph.compute_node_hash("static")
         assert graph.node("modal").content_hash != graph.compute_node_hash("modal")
+
+
+class TestAddRemoveNode:
+    """WorkflowGraph.add_node / remove_node 动态图编辑."""
+
+    def test_add_node_auto_id(self) -> None:
+        graph = _graph()
+        nid = graph.add_node("example.cantilever_q4")
+        assert nid.startswith("cantilever_q4_")
+        assert len(graph.nodes()) == 4
+        assert graph.node(nid).spec.type_id == "example.cantilever_q4"
+        # 源节点（无输入）新增后 READY
+        assert graph.node(nid).state is NodeState.READY
+
+    def test_add_node_explicit_id(self) -> None:
+        graph = _graph()
+        nid = graph.add_node("analysis.harmonic", node_id="extra_harmonic")
+        assert nid == "extra_harmonic"
+        assert graph.node(nid).params  # harmonic 有 f_max/n_freq/alpha/beta 四参数
+
+    def test_add_node_id_conflict_raises(self) -> None:
+        graph = _graph()
+        with pytest.raises(TemplateError, match="冲突"):
+            graph.add_node("fea.modal", node_id="model")
+
+    def test_add_node_with_position(self) -> None:
+        graph = _graph()
+        nid = graph.add_node("fea.modal", position=(300.0, 100.0))
+        assert graph.node(nid).position == (300.0, 100.0)
+
+    def test_remove_node_cleans_downstream_refs(self) -> None:
+        graph = _graph()
+        # modal 和 static 都连到 model，删 model 后两者 inputs 应清空
+        graph.remove_node("model")
+        assert len(graph.nodes()) == 2
+        assert graph.node("static").inputs == {}
+        assert graph.node("modal").inputs == {}
+
+    def test_remove_nonexistent_raises(self) -> None:
+        graph = _graph()
+        with pytest.raises(TemplateError, match="无节点"):
+            graph.remove_node("ghost")

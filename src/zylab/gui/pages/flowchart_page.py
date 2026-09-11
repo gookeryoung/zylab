@@ -66,6 +66,7 @@ from ..widgets.node_canvas import NodeCanvasWidget
 from ..widgets.param_form import ParamForm
 from ..widgets.result_view import ResultTabs
 from ..widgets.template_dialog import TemplateDialog, discipline_label
+from ..widgets.toolbox import ModuleToolbox
 
 __all__ = ["FlowchartPage"]
 
@@ -143,13 +144,18 @@ class FlowchartPage(QWidget):
     # ------------------------------------------------------------------ UI
 
     def _build_ui(self) -> None:
-        """组装布局：顶部工具栏 + 中央画布/结果 + 右侧参数 + 底部状态栏."""
+        """组装布局：顶部工具栏 + 左侧模块箱 + 中央画布/结果 + 右侧参数 + 底部状态栏."""
         root = QVBoxLayout(self)
         root.setContentsMargins(0, 0, 0, 0)
         root.setSpacing(0)
         root.addWidget(self._build_toolbar())
 
         splitter = QSplitter(Qt.Horizontal)
+
+        # 左侧模块箱（双击节点 → 画布添加）
+        self._toolbox = ModuleToolbox(self)
+        splitter.addWidget(self._toolbox)
+
         center = QSplitter(Qt.Vertical)
         self._canvas = NodeCanvasWidget()
         center.addWidget(self._canvas)
@@ -168,11 +174,12 @@ class FlowchartPage(QWidget):
         self._param_form = ParamForm()
         right.setWidget(self._param_form)
         splitter.addWidget(right)
-        splitter.setCollapsible(1, False)
 
-        splitter.setStretchFactor(0, 1)
-        splitter.setStretchFactor(1, 0)
-        splitter.setSizes([900, 320])
+        splitter.setCollapsible(2, False)
+        splitter.setStretchFactor(0, 0)  # 工具箱固定宽度
+        splitter.setStretchFactor(1, 1)  # 中央画布拉伸
+        splitter.setStretchFactor(2, 0)  # 参数表单固定宽度
+        splitter.setSizes([240, 900, 320])
         root.addWidget(splitter, stretch=1)
 
         root.addWidget(self._build_bottom_bar())
@@ -262,6 +269,7 @@ class FlowchartPage(QWidget):
         self._bridge.node_failed.connect(self._on_node_failed)
         self._bridge.finished_with_state.connect(self.run_status_changed)
         self._preview_bridge.done.connect(self._on_preview_done)
+        self._toolbox.node_requested.connect(self._on_toolbox_node_requested)
 
     def _classic_templates(self) -> list[Template]:
         """经典节点节点图参数化计算（DSL 参数化计算由参数化计算应用页承载，流程图不重复展示）."""
@@ -640,6 +648,20 @@ class FlowchartPage(QWidget):
         if not self._graph.node(node_id).spec.inputs:
             self._preview_timer.start()  # 模型几何/网格参数变化 -> 云图预览联动
         self.status_message.emit("参数已修改，需重新运行")
+
+    def _on_toolbox_node_requested(self, type_id: str) -> None:
+        """工具箱双击模块 → 画布添加节点（图不存在时提示先选模板）."""
+        if self._graph is None:
+            self.status_message.emit("请先选择参数化计算模板")
+            return
+        try:
+            nid = self._graph.add_node(type_id)
+        except Exception as exc:
+            logger.warning("工具箱添加节点失败 %s: %s", type_id, exc)
+            self.status_message.emit(f"添加节点失败: {exc}")
+            return
+        self._canvas.set_graph(self._graph)  # 画布按最新图重建（保留现有节点位置）
+        self.status_message.emit(f"已添加节点: {nid}")
 
     def _refresh_preview_async(self) -> None:
         """后台线程重建过期源节点的模型预览（画布转圈 + 状态提示，不阻塞 UI）."""
