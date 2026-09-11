@@ -29,6 +29,7 @@ dependencies = [
     "matplotlib>=3.7.5",
     "pandas>=2.0.3",
     "scikit-learn>=1.3.2",
+    "seaborn>=0.13",
 ]
 description = "通用科学计算仿真分析平台。"
 license = "MIT"

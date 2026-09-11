@@ -26,6 +26,7 @@ from typing import Any, Mapping
 import numpy as np
 
 from zylab.fea.viewdata import cmap_lut, deformed_coords, mesh_edges, nodal_stress_field, project3d, scalar_colors
+from zylab.sci.palettes import resolve_curve_color
 
 from .dsl import DslReportSection, DslTemplate
 from .errors import TemplateError
@@ -34,24 +35,7 @@ from .richtext import markdown_to_html
 
 __all__ = ["build_html", "build_markdown"]
 
-#: 曲线序列色表（与 GUI 图例配色风格一致的循环色）
-_CURVE_COLORS = ("#4c8bf5", "#e4572e", "#2ca02c", "#9467bd", "#ff7f0e", "#17becf")
-
-_SEMANTIC_COLOR_MAP: dict[str, str] = {
-    "primary": "#4c8bf5",
-    "success": "#2ca02c",
-    "warning": "#ff7f0e",
-    "danger": "#e4572e",
-    "info": "#17becf",
-    "text": "#222222",
-    "text_secondary": "#666666",
-}
-
-
-def _resolve_curve_color(spec: str | None, index: int) -> str:
-    if spec:
-        return _SEMANTIC_COLOR_MAP.get(spec, spec)
-    return _CURVE_COLORS[index % len(_CURVE_COLORS)]
+# 曲线色环与语义色解析统一委托 sci.palettes（report 须保持 Qt-free）
 
 
 _SVG_W = 640  # SVG 画布宽（像素）
@@ -365,7 +349,7 @@ def _curve_svg(data: CurveData) -> str:
             return _SVG_PAD_T + v * plot_h
 
         points = " ".join(f"{_sx(x):.1f},{_sy(y):.1f}" for x, y in zip(series.x, series.y))
-        color = _resolve_curve_color(style.get("color"), index)
+        color = resolve_curve_color(style.get("color"), index)
         stroke_w = float(style.get("width", 2))
         dash = style.get("dash")
         dash_attr = (
@@ -417,7 +401,7 @@ def _svg_legend(data: CurveData) -> list[str]:
     parts: list[str] = []
     for index, series in enumerate(data.series):
         style = data.series_styles[index] if index < len(data.series_styles) else {}
-        color = _resolve_curve_color(style.get("color"), index)
+        color = resolve_curve_color(style.get("color"), index)
         x = _SVG_W - _SVG_PAD_R - 140
         y = _SVG_PAD_T + 8 + index * 18
         parts.append(f'<rect x="{x}" y="{y}" width="12" height="12" fill="{color}"/>')

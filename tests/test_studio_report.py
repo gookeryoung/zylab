@@ -380,7 +380,7 @@ def test_curve_log_axis_and_peak_svg() -> None:
     assert "<circle " in svg  # 峰值标记
     assert 'stroke-dasharray="4,2"' in svg  # dashed 线型
     assert 'stroke-width="3.0"' in svg
-    assert 'stroke="#4c8bf5"' in svg  # primary 语义色
+    assert 'stroke="#3C2ECA"' in svg  # primary 语义色
 
 
 def test_curve_defaults_without_log_peak_style() -> None:
@@ -397,7 +397,7 @@ def test_curve_defaults_without_log_peak_style() -> None:
     )
     svg = _curve_svg(curve)
     assert "<circle " not in svg  # 无峰值标记
-    assert 'stroke="#4c8bf5"' in svg  # 默认循环色表第 0 个
+    assert 'stroke="#3C2ECA"' in svg  # 默认循环色表第 0 个
 
 
 def test_table_column_format_and_align_in_html_and_md() -> None:
@@ -443,12 +443,12 @@ def test_markdown_text_rendered_in_html_report() -> None:
 
 
 def test_resolve_curve_color_semantic_and_fallback() -> None:
-    """_resolve_curve_color 支持语义色名解析 + hex 直通 + 循环色表回落."""
-    from zylab.studio.report import _CURVE_COLORS, _resolve_curve_color
+    """resolve_curve_color 支持语义色名解析 + hex 直通 + 循环色表回落."""
+    from zylab.sci.palettes import CURVE_PALETTE, SEMANTIC_CURVE_COLORS, resolve_curve_color
 
-    assert _resolve_curve_color("primary", 0) == "#4c8bf5"
-    assert _resolve_curve_color("#FF0000", 0) == "#FF0000"  # hex 直通
-    assert _resolve_curve_color(None, 2) == _CURVE_COLORS[2]  # 循环色表回落
+    assert resolve_curve_color("primary", 0) == SEMANTIC_CURVE_COLORS["primary"]
+    assert resolve_curve_color("#FF0000", 0) == "#FF0000"  # hex 直通
+    assert resolve_curve_color(None, 2) == CURVE_PALETTE[2]  # 循环色表回落
 
 
 def test_curve_degenerate_range_handled() -> None:

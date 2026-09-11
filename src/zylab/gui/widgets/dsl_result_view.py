@@ -17,6 +17,7 @@ from typing import Any
 
 import pyqtgraph as pg
 
+from zylab.sci.palettes import CURVE_PALETTE, resolve_curve_color
 from zylab.studio.results import CloudData, CurveData, TableData, TextData, ViewData
 
 from .. import theme
@@ -188,7 +189,7 @@ def build_curve_widget(data: CurveData) -> QWidget:
             elif dash == "dotted":
                 pen.setDashPattern([1, 2])
         else:
-            pen = pg.mkPen(pg.intColor(index, hues=max(len(data.series), 2)), width=width)
+            pen = pg.mkPen(CURVE_PALETTE[index % len(CURVE_PALETTE)], width=width)
         plot.plot(
             list(series.x),
             list(series.y),
@@ -211,17 +212,8 @@ def build_curve_widget(data: CurveData) -> QWidget:
 
 
 def _resolve_color(color: str) -> str:  # pragma: no cover
-    """解析语义色名到十六进制（Qt 侧使用硬编码值，与报告一致）."""
-    _MAP = {
-        "primary": "#3C2ECA",
-        "success": "#10B981",
-        "warning": "#F59E0B",
-        "danger": "#EF4444",
-        "info": "#3B82F6",
-    }
-    if color.startswith("#"):
-        return color
-    return _MAP.get(color, color)
+    """解析语义色名到十六进制（委托 sci.palettes.resolve_curve_color）."""
+    return resolve_curve_color(color, 0)
 
 
 def _peak_index(values: tuple) -> int:  # pragma: no cover

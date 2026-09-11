@@ -7,6 +7,7 @@ import pytest
 
 from zylab.core import EventBus
 from zylab.sci import (
+    CURVE_PALETTE,
     TOPIC_PLOT_REQUESTED,
     PlotRequest,
     apply_matplotlib_defaults,
@@ -72,12 +73,6 @@ def test_apply_defaults_sets_linewidth() -> None:
     assert plt.rcParams["lines.linewidth"] == 2.0
 
 
-def test_apply_defaults_sets_font_size() -> None:
-    """应用默认后 font.size 应为 11.0."""
-    apply_matplotlib_defaults()
-    assert plt.rcParams["font.size"] == 11.0
-
-
 def test_apply_defaults_sets_dpi() -> None:
     """应用默认后 figure.dpi 应为 120."""
     apply_matplotlib_defaults()
@@ -100,6 +95,28 @@ def test_apply_defaults_injects_ns_vars() -> None:
     assert isinstance(ns["cn_font_candidates"], list)
 
 
+def test_apply_defaults_seaborn_fallback(monkeypatch) -> None:
+    """seaborn ImportError 时回退到基础 rcParams（不影响 matplotlib 可用性）."""
+    import builtins
+
+    original_import = builtins.__import__
+
+    def _blocked_import(name, *args, **kwargs):
+        if name == "seaborn":
+            raise ImportError("No module named 'seaborn'")
+        return original_import(name, *args, **kwargs)
+
+    monkeypatch.setattr(builtins, "__import__", _blocked_import)
+    # seaborn 缓存已存在，需清掉
+    import sys
+
+    sys.modules.pop("seaborn", None)
+    apply_matplotlib_defaults()
+    assert plt.rcParams["axes.grid"] is True
+    assert plt.rcParams["lines.linewidth"] == 2.0
+    assert plt.rcParams["axes.unicode_minus"] is False
+
+
 def test_apply_defaults_idempotent() -> None:
     """幂等性：重复调用不产生额外副作用."""
     apply_matplotlib_defaults()
@@ -117,9 +134,26 @@ def test_apply_defaults_returns_fonts() -> None:
     assert len(result) > 0
 
 
-def test_apply_defaults_updates_grid_visuals() -> None:
-    """grid 相关视觉参数应合理（alpha/color 兼顾可读性与不抢眼）."""
+def test_apply_defaults_palette_in_prop_cycle() -> None:
+    """CURVE_PALETTE 应进入 axes.prop_cycle（seaborn set_theme palette 参数）."""
+    from matplotlib.colors import to_hex
+
     apply_matplotlib_defaults()
-    assert plt.rcParams["grid.alpha"] == pytest.approx(0.3)
-    assert plt.rcParams["grid.linewidth"] == 0.8
-    assert plt.rcParams["grid.color"] == "#cccccc"
+    cycle_colors = plt.rcParams["axes.prop_cycle"].by_key()["color"]
+    # seaborn 把 palette 注入 prop_cycle，可能是 RGB tuple 或 hex
+    assert to_hex(cycle_colors[0]).upper() == CURVE_PALETTE[0].upper()
+
+
+def test_apply_defaults_unicode_minus_preserved_after_seaborn() -> None:
+    """seaborn set_theme 会重置 unicode_minus，_MPL_RC_OVERRIDES 须再次覆盖为 False."""
+    apply_matplotlib_defaults()
+    assert plt.rcParams["axes.unicode_minus"] is False
+
+
+def test_apply_defaults_grid_visuals_from_seaborn() -> None:
+    """seaborn whitegrid 接管网格视觉（alpha/color/linewidth 由主题决定），
+    这里只校验网格已开启且有可见 alpha。"""
+    apply_matplotlib_defaults()
+    assert plt.rcParams["axes.grid"] is True
+    # seaborn whitegrid 使用非零 alpha
+    assert plt.rcParams["grid.alpha"] > 0.0

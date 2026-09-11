@@ -41,6 +41,11 @@ from .notebook import (
     new_cell,
     save_notebook,
 )
+from .palettes import (
+    CURVE_PALETTE,
+    SEMANTIC_CURVE_COLORS,
+    resolve_curve_color,
+)
 from .plotting import (
     TOPIC_PLOT_REQUESTED,
     PlotRequest,
@@ -59,6 +64,8 @@ from .workspace import (
 
 __all__ = [
     "CURRENT_WORKSPACE_FILE",
+    "CURVE_PALETTE",
+    "SEMANTIC_CURVE_COLORS",
     "TOPIC_PLOT_REQUESTED",
     "TOPIC_WORKSPACE_CHANGED",
     "ErrorOutput",
@@ -93,6 +100,7 @@ __all__ = [
     "np",
     "ones",
     "pi",
+    "resolve_curve_color",
     "save_notebook",
     "sin",
     "sqrt",

@@ -20,6 +20,7 @@ import pyqtgraph as pg
 from zylab.console import ReplKernel
 from zylab.core import EventBus
 from zylab.sci import (
+    CURVE_PALETTE,
     ErrorOutput,
     Notebook,
     NotebookCell,
@@ -76,9 +77,6 @@ y = sin(x) * exp(-x / 10)
 plot(x, y, title="衰减振荡", xlabel="x", ylabel="y")
 y[:5]
 """
-
-#: 绘图多曲线着色循环（主题色板取色）
-_CURVE_KEYS = ("primary", "success_text", "warning_text", "danger_text", "border_strong")
 
 #: 单元级工具条按钮提示文案（按动作名）
 _TOOL_TIPS = {
@@ -462,7 +460,7 @@ class CellWidget(QFrame):
             legend.setLabelTextColor(pal.text_primary)
         plot.setMinimumHeight(180)
         for index, series in enumerate(out.series):
-            color = getattr(pal, _CURVE_KEYS[index % len(_CURVE_KEYS)])
+            color = CURVE_PALETTE[index % len(CURVE_PALETTE)]
             plot.plot(
                 series.x,
                 series.y,
