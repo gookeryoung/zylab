@@ -208,9 +208,14 @@ def _row_to_overrides(template: Template, row: Mapping[str, Any]) -> dict[str, d
     每个节点的基础参数来自 ``template.node(node_id).params``，
     扁平行中指定的键覆盖同名参数。未知节点 id 或未知扁平格式
     （不含 ``.``）会静默跳过——允许用户只覆盖部分节点。
+
+    INT 类型参数若收到 float 值（DOE 采样天然返回浮点），
+    自动 round 为整数，避免下游 ``coerce`` 拒绝。
     """
+    from .module import ParamType, module_spec  # 延迟 import 避免循环
+
     overrides: dict[str, dict[str, Any]] = {}
-    for flat_key, val in row.items():
+    for flat_key, raw_val in row.items():
         if "." not in flat_key:
             continue
         node_id, _, param_key = flat_key.partition(".")
@@ -219,6 +224,17 @@ def _row_to_overrides(template: Template, row: Mapping[str, Any]) -> dict[str, d
                 overrides[node_id] = _node_params(template, node_id)
             except ValueError:
                 continue
+        # INT param 自动 round float 值（DOE 采样天然返回浮点）
+        val: Any = raw_val
+        if isinstance(val, float):
+            try:
+                tn = template.node(node_id)
+                spec = module_spec(tn.type_id)
+                pspec = next((p for p in spec.params if p.key == param_key), None)
+                if pspec is not None and pspec.param_type is ParamType.INT:
+                    val = round(val)
+            except Exception:
+                pass  # 查不到 spec 就原样用，后续 coerce 会报错
         overrides[node_id][param_key] = val
     return overrides
 
