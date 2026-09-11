@@ -53,7 +53,7 @@ def test_tool_buttons_have_icons(qtbot) -> None:
     qtbot.addWidget(page)
     for btn, tip in (
         (page._new_template_button, "新建分析"),
-        (page._save_template_button, "另存为参数化计算"),
+        (page._save_template_button, "另存为模板"),
         (page._save_project_button, "保存工程"),
         (page._open_project_button, "打开工程"),
     ):

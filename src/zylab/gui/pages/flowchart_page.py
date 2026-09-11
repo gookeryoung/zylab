@@ -183,7 +183,7 @@ class FlowchartPage(QWidget):
         layout = QHBoxLayout(bar)
         layout.setContentsMargins(theme.SPACING_MD, theme.SPACING_SM, theme.SPACING_MD, theme.SPACING_SM)
         layout.setSpacing(theme.SPACING_SM)
-        layout.addWidget(QLabel("参数化计算"))
+        layout.addWidget(QLabel("模板"))
         self._template_combo = QComboBox(objectName="templateCombo")
         self._template_combo.setMinimumWidth(240)
         self._template_combo.setSizeAdjustPolicy(QComboBox.AdjustToContents)
@@ -192,8 +192,8 @@ class FlowchartPage(QWidget):
         layout.addStretch()
 
         icon_size = QSize(16, 16)
-        self._new_template_button = self._tool_button("新建分析（浏览参数化计算库）")
-        self._save_template_button = self._tool_button("另存为参数化计算")
+        self._new_template_button = self._tool_button("新建分析（浏览模板库）")
+        self._save_template_button = self._tool_button("另存为模板")
         self._save_project_button = self._tool_button("保存工程 (.zprj)")
         self._open_project_button = self._tool_button("打开工程 (.zprj)")
         self._refresh_tool_icons()
@@ -324,7 +324,7 @@ class FlowchartPage(QWidget):
     def _on_open_template_dialog(self) -> None:
         """打开参数化计算选择对话框（分组树 + 搜索 + 详情）并实例化所选参数化计算."""
         if self._runner is not None and self._runner.running:
-            self.status_message.emit("运行中，无法切换参数化计算")
+            self.status_message.emit("运行中，无法切换模板")
             return
         dialog = TemplateDialog(self._classic_templates(), self)
         if exec_dialog(dialog) and dialog.selected_id is not None:
@@ -426,8 +426,8 @@ class FlowchartPage(QWidget):
         from ..qt_compat import QInputDialog
 
         dialog = QInputDialog(self)
-        dialog.setWindowTitle("另存为参数化计算")
-        dialog.setLabelText("参数化计算名称:")
+        dialog.setWindowTitle("另存为模板")
+        dialog.setLabelText("模板名称:")
         dialog.setTextValue(f"{self._graph.template.name} 副本")
         dialog.setOkButtonText("确定")
         dialog.setCancelButtonText("取消")
@@ -435,7 +435,7 @@ class FlowchartPage(QWidget):
             return
         template = self._save_template_as(dialog.textValue())
         if template is not None:
-            self.status_message.emit(f"参数化计算已保存: {template.name}")
+            self.status_message.emit(f"模板已保存: {template.name}")
 
     def _on_save_project(self) -> None:
         """对话框：保存工程."""
