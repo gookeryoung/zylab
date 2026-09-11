@@ -530,6 +530,7 @@ def explore_doe(  # noqa: PLR0913
     opt_n_iter: int = 100,
     minimize: bool = True,
     cache: dict[str, Any] | None = None,
+    n_workers: int | None = None,
 ) -> ExploreResult:
     """一行走完 DOE 批量探索.
 
@@ -584,7 +585,7 @@ def explore_doe(  # noqa: PLR0913
     samples = ds.sample(method, n_samples, seed=seed)
     rows = ds.to_input_rows(samples)
     _shared_cache: dict[str, Any] | None = cache if cache is not None else {}
-    X, Y = run_batch_outputs(template, rows, cache=_shared_cache)
+    X, Y = run_batch_outputs(template, rows, cache=_shared_cache, n_workers=n_workers)
     result = ExploreResult(X=X, Y=Y)
 
     if not fit_surrogate and not sensitivity:
