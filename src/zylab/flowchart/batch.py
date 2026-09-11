@@ -299,6 +299,8 @@ def run_batch(
     param_rows: Sequence[Mapping[str, Any]],
     *,
     report: ReportFn | None = None,
+    use_cache: bool = True,
+    cache: dict[str, Any] | None = None,
 ) -> list[RunOutcome]:
     """批量参数化运行（Phase 4 入口）.
 
@@ -311,24 +313,41 @@ def run_batch(
         典型来源：:meth:`~zylab.doe.design_space.DesignSpace.to_input_rows`
         或用户手写的 What-if 表格。
     :param report: 总进度回调 ``(fraction, message)``，每次运行结束后调用。
+    :param use_cache: 是否开启节点级哈希缓存（默认 True）。开启后
+        内部维护一个 ``{content_hash: result}`` 共享字典。
+    :param cache: 外部传入的缓存字典——提供后 ``use_cache`` 自动置 True，
+        本次 batch 结果会回填到外部 dict，后续 batch / Sobol / optimize
+        可继续复用。典型场景是 :func:`explore_doe` 里 DOE 采样 + Sobol
+        子采样 + optimize 三次独立调用，共享同一个 cache dict 避免
+        重复 FE 求解。
     :return: 与 ``param_rows`` 等长的结果列表。
     :raises ValueError: ``param_rows`` 为空。
 
     使用示例::
 
-        ds = DesignSpace.from_variables([v1, v2])
-        rows = ds.to_input_rows(ds.sample(SamplingMethod.LATIN_HYPERCUBE, 12))
-        outcomes = run_batch(template, rows)
-        for outcome, row in zip(outcomes, rows):
-            print(outcome.succeeded, row)
+        # 同进程内多次 batch 共享 cache：
+        cache = {}
+        run_batch(template, rows_a, cache=cache)
+        run_batch(template, rows_b, cache=cache)  # row_b 里与 row_a 相同
+                                                   # 的节点配置自动命中缓存
+
+        # 关掉缓存（调试 / 内存敏感场景）：
+        run_batch(template, rows, use_cache=False)
     """
     if not param_rows:
         raise ValueError("run_batch: param_rows 不能为空")
+    effective_cache: dict[str, Any] | None
+    if cache is not None:
+        effective_cache = cache
+    elif use_cache:
+        effective_cache = {}
+    else:
+        effective_cache = None
     results: list[RunOutcome] = []
     n = len(param_rows)
     for i, row in enumerate(param_rows):
         overrides = _row_to_overrides(template, row)
-        outcome = run_workflow(template, overrides, report)
+        outcome = run_workflow(template, overrides, report, cache=effective_cache)
         results.append(outcome)
         if report is not None:
             report((i + 1) / n, f"批量运行 {i + 1}/{n}")
@@ -338,12 +357,18 @@ def run_batch(
 def run_batch_outputs(
     template: Template,
     param_rows: Sequence[Mapping[str, Any]],
+    *,
+    use_cache: bool = True,
+    cache: dict[str, Any] | None = None,
 ) -> tuple[np.ndarray, np.ndarray]:
     """批量运行 + 输出参数解析（Phase 5 探索层便捷入口）.
 
     内部调用 :func:`run_batch`，成功运行的每组结果通过
     :meth:`RunOutcome.resolve_outputs` 把 template 的 ``output_params``
     声明解析成 ``y`` 向量。
+
+    :param use_cache: 透传给 :func:`run_batch` 的缓存开关。
+    :param cache: 透传给 :func:`run_batch` 的外部缓存字典。
 
     :return: ``(X, y)`` 形状均为 ``(n_success, n_vars_or_outputs)``，
         其中 ``X`` 直接来自 ``param_rows`` 按顺序堆叠、``y`` 来自
@@ -353,11 +378,11 @@ def run_batch_outputs(
 
     使用示例::
 
-        X, y = run_batch_outputs(template, rows)
+        X, y = run_batch_outputs(template, rows)  # 默认自动开缓存
         surrogate.fit(X, y)
         result = optimize(surrogate, ds.variables)
     """
-    outcomes = run_batch(template, param_rows)
+    outcomes = run_batch(template, param_rows, use_cache=use_cache, cache=cache)
     succeeded_rows: list[np.ndarray] = []
     succeeded_ys: list[np.ndarray] = []
     for outcome, row in zip(outcomes, param_rows):
@@ -456,6 +481,7 @@ def explore_doe(  # noqa: PLR0913
     optimizer: Any = None,
     opt_n_iter: int = 100,
     minimize: bool = True,
+    cache: dict[str, Any] | None = None,
 ) -> ExploreResult:
     """一行走完 DOE 批量探索.
 
@@ -509,7 +535,8 @@ def explore_doe(  # noqa: PLR0913
 
     samples = ds.sample(method, n_samples, seed=seed)
     rows = ds.to_input_rows(samples)
-    X, Y = run_batch_outputs(template, rows)
+    _shared_cache: dict[str, Any] | None = cache if cache is not None else {}
+    X, Y = run_batch_outputs(template, rows, cache=_shared_cache)
     result = ExploreResult(X=X, Y=Y)
 
     if not fit_surrogate and not sensitivity:
@@ -569,7 +596,7 @@ def explore_doe(  # noqa: PLR0913
         # 在 best_x_int 处再跑一次真实求解，用真实值覆盖 best_y.
         rows_dict = [{dv.name: float(best_x_int[i]) for i, dv in enumerate(ds.variables)}]
         try:
-            _Xv, Yv = run_batch_outputs(template, rows_dict)
+            _Xv, Yv = run_batch_outputs(template, rows_dict, cache=_shared_cache)
             verified_y = float(Yv[0, 0])
         except Exception:  # 真实验证失败（如代理钻到非法区域） → 回退到代理值
             verified_y = float(best_y_raw)
