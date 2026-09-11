@@ -30,6 +30,7 @@ from zylab.sci import (
     TOPIC_WORKSPACE_CHANGED,
     PlotRequest,
     WorkspaceInfo,
+    apply_matplotlib_defaults,
     format_whos,
     make_plot_function,
     whos,
@@ -80,26 +81,6 @@ _HELP_TEXT = """内置命令:
   clear()         清除全部用户变量（保留内置符号与 ans）
   help()          显示本帮助
 另: np/numpy 模块与 arange/linspace/pi/sin 等常用符号可直接使用, 输入 help(np) 可查其文档."""
-
-# 跨平台中文字体候选列表（按优先级排序，前置到 matplotlib 默认 sans-serif 链）
-_CN_FONT_CANDIDATES: list[str] = [
-    "DengXian",
-    "Microsoft YaHei",
-    "Microsoft YaHei UI",
-    "SimHei",
-    "KaiTi",
-    "STKaiti",
-    "FangSong",
-    "STFangsong",
-    "PingFang SC",
-    "Heiti SC",
-    "Hiragino Sans GB",
-    "WenQuanYi Micro Hei",
-    "WenQuanYi Zen Hei",
-    "Noto Sans CJK SC",
-    "Noto Sans SC",
-    "Source Han Sans SC",
-]
 
 
 @dataclass(frozen=True)
@@ -192,7 +173,7 @@ class ReplKernel:
             self.namespace["cwd"] = info.path
 
     def _init_namespace(self) -> None:
-        """构建 REPL 命名空间：NumPy 符号 + whos/plot/run/cls/clear/help 命令."""
+        """构建 REPL 命名空间：NumPy 符号 + whos/plot/run/cls/clear/help 命令 + matplotlib 默认配置."""
         import numpy as np
 
         ns = self.namespace
@@ -254,43 +235,9 @@ class ReplKernel:
         ns["help"] = _help
         ns["cd"] = _cd
         ns["cwd"] = Path.cwd().resolve()
-        self._init_matplotlib_fonts(ns)
+        # matplotlib rcParams 默认配置（含中文字体）
+        apply_matplotlib_defaults(ns)
         self.builtin_names = frozenset(ns)
-
-    @staticmethod
-    def _init_matplotlib_fonts(ns: dict[str, Any]) -> None:
-        """在命名空间中注入 matplotlib 中文字体自动配置与 available_fonts 变量.
-
-        - 扫描系统已安装字体，按候选优先级将可用中文字体前置到
-          ``plt.rcParams['font.sans-serif']``（保留默认 fallback 链）；
-        - 设置 ``axes.unicode_minus = False`` 避免负号方块；
-        - 将 ``available_fonts``（系统已安装字体名集合）与
-          ``cn_font_candidates``（候选列表）注入命名空间供用户查看。
-        - matplotlib 不可用或字体扫描异常时静默跳过，不影响内核启动。
-        """
-        try:
-            import matplotlib.pyplot as plt
-            from matplotlib import font_manager
-        except ImportError:
-            logger.info("matplotlib 未安装，跳过中文字体配置")
-            return
-        # 收集系统已安装字体名
-        available: set[str] = {f.name for f in font_manager.fontManager.ttflist}
-        selected_cn = [name for name in _CN_FONT_CANDIDATES if name in available]
-        if selected_cn:
-            default_sans = plt.rcParams.get("font.sans-serif", [])
-            # 前置候选中文字体，去重保留默认 fallback 链
-            merged: list[str] = []
-            seen: set[str] = set()
-            for name in selected_cn + list(default_sans):
-                if name not in seen:
-                    merged.append(name)
-                    seen.add(name)
-            plt.rcParams["font.sans-serif"] = merged
-        plt.rcParams["axes.unicode_minus"] = False
-        # 注入命名空间供用户查看
-        ns["available_fonts"] = frozenset(available)
-        ns["cn_font_candidates"] = list(_CN_FONT_CANDIDATES)
 
     def set_workspace_manager(self, wm: Any) -> None:
         """注入外部 WorkspaceManager（MainWindow 在构建 WM 后调用）.

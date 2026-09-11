@@ -41,7 +41,12 @@ from .notebook import (
     new_cell,
     save_notebook,
 )
-from .plotting import TOPIC_PLOT_REQUESTED, PlotRequest, make_plot_function
+from .plotting import (
+    TOPIC_PLOT_REQUESTED,
+    PlotRequest,
+    apply_matplotlib_defaults,
+    make_plot_function,
+)
 from .workspace import (
     CURRENT_WORKSPACE_FILE,
     TOPIC_WORKSPACE_CHANGED,
@@ -68,6 +73,7 @@ __all__ = [
     "VarInfo",
     "WorkspaceInfo",
     "WorkspaceManager",
+    "apply_matplotlib_defaults",
     "arange",
     "array",
     "cos",
