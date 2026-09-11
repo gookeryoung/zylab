@@ -12,13 +12,21 @@
 
 这里的优化问题是 **minimization**——若用户有最大化目标，
 请把 ``y_train`` 先乘 ``-1``，拿到结果再翻回去。
+
+:func:`optimize_direct` 跳过代理训练，直接把 workflow 当目标函数
+跑 scipy 全局优化器。适合：
+- 设计变量少（≤5）、单次 FE 快（<1 s）
+- 追求真实最优、拒绝 surrogate 插值幻觉
+- 做参数扫描前的快速缩圈
+
+两种调用方式共用 :class:`Optimizer` 枚举和 :class:`OptimResult` 容器。
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass
 from enum import Enum
-from typing import Callable, Optional, Sequence
+from typing import TYPE_CHECKING, Any, Callable, Mapping, Optional, Sequence
 
 import numpy as np
 from scipy.optimize import basinhopping, differential_evolution, dual_annealing, shgo
@@ -26,7 +34,10 @@ from scipy.optimize import basinhopping, differential_evolution, dual_annealing,
 from .errors import OptimError
 from .surrogate import Surrogate
 
-__all__ = ["OptimResult", "Optimizer", "optimize"]
+if TYPE_CHECKING:
+    from zylab.flowchart import Template
+
+__all__ = ["OptimResult", "Optimizer", "optimize", "optimize_direct"]
 
 
 class Optimizer(str, Enum):
@@ -158,3 +169,145 @@ def optimize(  # noqa: PLR0913  优化器签名必须暴露所有 scipy 全局�
         std = None
 
     return OptimResult(best_x=best_x, best_y=best_y, best_std=std, optimizer=opt.value, raw_result=res)
+
+
+def optimize_direct(  # noqa: PLR0913, PLR0912
+    template: Template,
+    variables: Sequence[object],
+    *,
+    target: str = "",
+    optimizer: Optimizer | str = Optimizer.DIFFERENTIAL_EVOLUTION,
+    n_iter: int = 100,
+    seed: int = _DEFAULT_SEED,
+    penalty: float = 1e10,
+    maximize: bool = False,
+    callback: Optional[Callable[[np.ndarray, float], None]] = None,
+    report: Optional[Callable[..., Any]] = None,
+) -> OptimResult:
+    """直接把 workflow 当目标函数，在设计空间边界内跑 scipy 全局优化器.
+
+    与 :func:`optimize`（代理优化）对比：
+
+    | 维度 | :func:`optimize` | :func:`optimize_direct` |
+    |------|------------------|------------------------|
+    | 目标函数 | Surrogate.predict | run_workflow → resolve_outputs |
+    | 采样成本 | DOE 一次 | n_iter × popsize 次 FE |
+    | 最优性 | 代理上最优（有幻觉风险） | 真实最优 |
+    | 适用场景 | 变量多/FE 慢/探索空间 | 变量少/FE 快/验证代理 |
+
+    :param template: 工作流模板（须在 ``output_params`` 里声明至少一个
+        标量输出参数作为优化目标）。
+    :param variables: 设计变量序列（通常来自
+        :attr:`~zylab.doe.design_space.DesignSpace.variables`）。变量名
+        必须是 ``"node_id.param_key"`` dotted 格式——优化器内部会 partition
+        成 overrides 的 ``{node_id: {param_key: value}}`` 结构。
+    :param target: 输出参数名——从
+        :meth:`~zylab.flowchart.template.Template.resolve_outputs` 取哪个
+        标量当目标。空字符串时取 template 第一个 output_param。
+    :param optimizer: 优化器。
+    :param n_iter: 最大迭代/评估次数——含义随优化器（见 :func:`optimize`）。
+    :param penalty: workflow 运行失败时返回的惩罚值（正值，与 minimize
+        语义一致；若 ``maximize=True`` 则内部翻成 ``-penalty``）。
+    :param maximize: True 则把目标取负后喂给 scipy 最小化器，
+        返回值会翻回原始尺度。
+    :param callback: 每代回调 ``(x, f) → None``，用于记录轨迹。
+    :param report: 透传给 :func:`~zylab.flowchart.run_workflow` 的进度回调
+        （每单次 FE 评估调用一次）。
+    :raises OptimError: template 无 output_params / 目标参数缺失 / 变量名
+        不合法 / 优化器未知。
+    """
+    # 延迟导入——optim 是底层包，不依赖 flowchart
+    from zylab.flowchart import run_workflow
+
+    # 校验变量名
+    for i, v in enumerate(variables):
+        name = getattr(v, "name", str(i))
+        if "." not in name:
+            raise OptimError(f"variables[{i}].name={name!r} 应为 'node_id.param_key' dotted 格式")
+
+    # 确定 target 输出参数
+    out_params = getattr(template, "output_params", ())
+    if not out_params:
+        raise OptimError("template 未声明 output_params，无法确定优化目标")
+    if target:
+        if target not in {op.name for op in out_params}:
+            raise OptimError(f"template 无名为 {target!r} 的 output_param")
+    else:
+        target = out_params[0].name
+
+    bounds = _build_bounds(variables)
+    try:
+        opt = Optimizer(optimizer)
+    except ValueError as exc:
+        raise OptimError(f"未知优化器 {optimizer!r}（可选 {[e.value for e in Optimizer]}）") from exc
+
+    rng = np.random.default_rng(seed)
+    penalty_val = -penalty if maximize else penalty
+
+    def _round_discrete(x_arr: np.ndarray) -> np.ndarray:
+        """把优化器的实数向量 round 成变量实际取值（离散/整数边界）."""
+        fixed = np.asarray(x_arr, dtype=float).copy()
+        for i, v in enumerate(variables):
+            levels = getattr(v, "levels", ())
+            if levels:
+                fixed[i] = float(levels[int(np.argmin(np.abs(np.array(levels) - fixed[i])))])
+            # 连续变量也 round 到 int——变量名带 .nx/.ny 这类网格参数必是整数
+            elif "." in getattr(v, "name", ""):
+                # 只 round 看起来是整数型的（lower/upper 都是整数）
+                lo, hi = bounds[i]
+                if float(lo).is_integer() and float(hi).is_integer():
+                    fixed[i] = round(float(fixed[i]))
+        # 夹回边界
+        for i, (lo, hi) in enumerate(bounds):
+            fixed[i] = float(np.clip(fixed[i], lo, hi))
+        return fixed
+
+    def _build_overrides(x_fixed: np.ndarray) -> Mapping[str, Mapping[str, Any]]:
+        overrides: dict[str, dict[str, Any]] = {}
+        for v, xi in zip(variables, x_fixed):
+            nid, _, k = getattr(v, "name", "").partition(".")
+            val: Any = xi
+            lo, hi = bounds[list(variables).index(v)]
+            if float(lo).is_integer() and float(hi).is_integer():
+                val = round(float(xi))
+            overrides.setdefault(nid, {})[k] = val
+        return overrides
+
+    def objective(x: np.ndarray) -> float:
+        x_fixed = _round_discrete(x)
+        overrides = _build_overrides(x_fixed)
+        outcome = run_workflow(template, overrides=overrides, report=report)
+        if not outcome.succeeded:
+            if callback is not None:
+                callback(x_fixed.copy(), penalty_val)
+            return penalty_val
+        resolved = outcome.resolve_outputs(template)
+        if target not in resolved:
+            if callback is not None:
+                callback(x_fixed.copy(), penalty_val)
+            return penalty_val
+        val = float(resolved[target])
+        if maximize:
+            val = -val
+        if callback is not None:
+            callback(x_fixed.copy(), val if not maximize else -val)
+        return val
+
+    if opt == Optimizer.DIFFERENTIAL_EVOLUTION:
+        res = differential_evolution(objective, bounds=bounds, maxiter=n_iter, seed=seed, polish=True)
+    elif opt == Optimizer.SHGO:
+        res = shgo(objective, bounds=bounds, n=max(n_iter // 2, 1), iters=3, sampling_method="sobol")
+    elif opt == Optimizer.BASIN_HOPPING:
+        x0 = rng.uniform([b[0] for b in bounds], [b[1] for b in bounds])
+        res = basinhopping(objective, x0=x0, niter=n_iter, minimizer_kwargs={"bounds": bounds}, seed=seed)
+    elif opt == Optimizer.DUAL_ANNEALING:
+        res = dual_annealing(objective, bounds=bounds, maxiter=n_iter, seed=seed)
+    else:
+        raise OptimError(f"优化器 {opt} 未实现")
+
+    best_x = _round_discrete(res.x)
+    best_y = float(res.fun)
+    if maximize:
+        best_y = -best_y
+
+    return OptimResult(best_x=best_x, best_y=best_y, best_std=None, optimizer=opt.value, raw_result=res)

@@ -21,7 +21,7 @@
 from __future__ import annotations
 
 from .errors import OptimError, SurrogateError
-from .optimize import Optimizer, OptimResult, optimize
+from .optimize import Optimizer, OptimResult, optimize, optimize_direct
 from .sensitivity import (
     SaltelliSample,
     SobolIndices,
@@ -43,6 +43,7 @@ __all__ = [
     "SurrogateError",
     "build_saltelli_sample",
     "optimize",
+    "optimize_direct",
     "sobol_analysis",
     "sobol_indices",
 ]
