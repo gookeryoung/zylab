@@ -408,3 +408,53 @@ def test_table_column_format_and_align_passthrough() -> None:
     assert data.columns[1].title == "tip"
     assert data.columns[1].format == ""
     assert data.column_titles == ("L", "tip")
+
+
+# ------------------------------------------------ table: list ref / dict ref
+def test_table_column_ref_as_list_literal():
+    result = _result(
+        "table", {"columns": [{"title": "pos", "ref": ["A", "B", "C"]}, {"title": "val", "ref": "sweep.values"}]}
+    )
+    data = build_result(result, _outputs())
+    assert isinstance(data, TableData)
+    assert data.column_titles == ("pos", "val")
+    assert data.rows == (("A", 40.0), ("B", 60.0), ("C", 80.0))
+
+
+def test_table_column_entry_direct_list():
+    result = _result("table", {"columns": [["X", "Y", "Z"], "sweep.values"]})
+    data = build_result(result, _outputs())
+    assert isinstance(data, TableData)
+    assert data.column_titles == ("列", "values")
+    assert data.rows == (("X", 40.0), ("Y", 60.0), ("Z", 80.0))
+
+
+def test_table_column_ref_as_dict_values():
+    outputs = {"angles": {"m_upper": -170.0, "m_lower": -130.0}}
+    result = _result(
+        "table", {"columns": [{"title": "pos", "ref": ["top", "bot"]}, {"title": "angle", "ref": "angles"}]}
+    )
+    data = build_result(result, outputs)
+    assert isinstance(data, TableData)
+    assert len(data.rows) == 2
+
+
+def test_table_column_ref_list_literal_column_format():
+    result = _result("table", {"columns": [{"title": "label", "ref": ["A", "B", "C"]}, "sweep.values"]})
+    data = build_result(result, _outputs())
+    assert isinstance(data, TableData)
+    assert data.columns[0].format == ""
+    assert data.columns[0].align == ""
+
+
+def test_table_direct_list_entry_column_title():
+    result = _result("table", {"columns": [["one", "two", "three"], "sweep.values"]})
+    data = build_result(result, _outputs())
+    assert isinstance(data, TableData)
+    assert data.columns[0].title == "列"
+
+
+def test_resolve_sequence_non_sequence_rejected():
+    result = _result("table", {"columns": [{"title": "X", "ref": "tip"}]})
+    with pytest.raises(TemplateError, match="应为序列"):
+        build_result(result, _outputs())
