@@ -116,8 +116,11 @@ class DocsPanel(QWidget):
         root.setSpacing(0)
 
         # ---- 卡片容器（QSS docsCard 控制整体外观）----
+        # 卡片按内容高度、顶部对齐，剩余空间由 stretch 吸收，
+        # 避免 QScrollArea widgetResizable 将整卡撑满视口造成大片空白
         card = QFrame(objectName="docsCard")
-        root.addWidget(card)
+        root.addWidget(card, 0, Qt.AlignTop)
+        root.addStretch(1)
         layout = QVBoxLayout(card)
         # 内边距：左右留白与 ResultBlockCard 对齐，上下稍紧凑
         layout.setContentsMargins(theme.SPACING_MD, theme.SPACING_SM, theme.SPACING_MD, theme.SPACING_MD)
