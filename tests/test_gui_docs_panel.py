@@ -1,4 +1,4 @@
-"""gui.widgets.docs_panel 说明卡测试：渲染/折叠/缺图占位/相对路径解析."""
+"""gui.widgets.docs_panel 说明卡测试：渲染/缺图占位/相对路径解析."""
 
 from __future__ import annotations
 
@@ -6,7 +6,6 @@ from pathlib import Path
 
 import pytest
 
-from zylab.gui.qt_compat import QPoint, Qt
 from zylab.gui.widgets.docs_panel import DocsPanel, resolve_docs_image
 from zylab.studio.dsl import load_dsl
 
@@ -74,8 +73,8 @@ def test_docs_panel_text_and_missing_image_hint(qtbot, tmp_path: Path) -> None:
 
 
 @pytest.mark.gui
-def test_docs_panel_image_render_and_toggle(qtbot, tmp_path: Path) -> None:
-    """图片文件存在时等比渲染；折叠/展开正文切换."""
+def test_docs_panel_image_render(qtbot, tmp_path: Path) -> None:
+    """图片文件存在时等比渲染；正文始终可见（说明页已独立 tab，无需折叠）."""
     path = tmp_path / "docs.yaml"
     path.write_text(_YAML, encoding="utf-8")
     (tmp_path / "pic.svg").write_text(_SVG, encoding="utf-8")
@@ -87,11 +86,7 @@ def test_docs_panel_image_render_and_toggle(qtbot, tmp_path: Path) -> None:
     assert panel._pixmap is not None and not panel._pixmap.isNull()
     assert panel._image_label.isVisible()
     assert not panel._image_hint.isVisible()
-
-    panel._toggle()
-    assert panel._body.isHidden()
-    panel._toggle()
-    assert not panel._body.isHidden()
+    assert panel._body.isVisible()  # 正文始终展开
 
 
 def test_resolve_docs_image(tmp_path: Path) -> None:
@@ -103,23 +98,6 @@ def test_resolve_docs_image(tmp_path: Path) -> None:
     assert resolve_docs_image("pic.svg", str(source)) == (tmp_path / "pic.svg").resolve()
     absolute = tmp_path / "abs.svg"
     assert resolve_docs_image(str(absolute), str(source)) == absolute
-
-
-@pytest.mark.gui
-def test_docs_header_mouse_click_emits_toggle(qtbot, tmp_path: Path) -> None:
-    """标题行左键点击发射 toggled 信号."""
-    path = tmp_path / "docs.yaml"
-    path.write_text(_YAML, encoding="utf-8")
-    panel = DocsPanel()
-    qtbot.addWidget(panel)
-    panel.resize(400, 600)
-    panel.show()
-    panel.set_template(load_dsl(path))
-    toggled_received = []
-    panel._header.toggled.connect(lambda: toggled_received.append(True))
-    # 模拟左键点击标题行中心
-    qtbot.mouseClick(panel._header, Qt.LeftButton, pos=QPoint(10, 10))
-    assert toggled_received == [True]
 
 
 @pytest.mark.gui

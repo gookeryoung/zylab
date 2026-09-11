@@ -1,4 +1,4 @@
-"""参数化计算说明卡：图文引导面板（markdown 文本 + 示意图，可折叠）.
+"""参数化计算说明卡：图文引导面板（markdown 文本 + 示意图）.
 
 设计语言对齐 :class:`~zylab.gui.widgets.stream_view.ResultBlockCard`：
 默认透明背景、hover 微背景提示、主色左边框视觉锚点，与 Jupyter 式结果流
@@ -7,8 +7,7 @@
 布局（TemplatePage 左侧栏「说明」Tab 页内）：
 
 - 卡片容器 ``#docsCard``（透明 + 主色左边框 + hover 微背景）；
-- 标题行：问号图标 ``#docsIcon`` + 加粗标题 ``#docsTitle`` + 折叠箭头
-  ``#docsCaret``（整行可点击，折叠/展开正文）；
+- 标题行：问号图标 ``#docsIcon`` + 加粗标题 ``#docsTitle``；
 - 正文：markdown 文本（QTextBrowser 只读，高度随内容自适应展开，
   **无内部滚动条**）+ 示意图（圆角边框卡片式展示，等比缩放）。
 
@@ -40,7 +39,6 @@ from ..qt_compat import (
     QTextBrowser,
     QVBoxLayout,
     QWidget,
-    Signal,
 )
 
 __all__ = ["DocsPanel", "resolve_docs_image"]
@@ -69,19 +67,16 @@ def resolve_docs_image(image: str, source: str) -> Path | None:
 
 
 class _DocsHeader(QFrame):
-    """说明卡标题行（图标 + 加粗标题 + 折叠箭头，整行可点击折叠）."""
-
-    toggled = Signal()
+    """说明卡标题行（问号图标 + 加粗「说明」文字，纯装饰无交互）."""
 
     def __init__(self, parent: QWidget | None = None) -> None:
-        """初始化标题行：问号图标 + 「说明」粗体 + 右侧折叠箭头."""
+        """初始化标题行：问号图标 + 「说明」粗体."""
         super().__init__(parent, objectName="docsHeader")
-        self.setCursor(Qt.PointingHandCursor)
         layout = QHBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(theme.SPACING_XS)
 
-        # 问号图标（主题色着色，hover 时由 QSS 联动）
+        # 问号图标（主题色着色）
         self._icon = QLabel(objectName="docsIcon")
         self._icon.setFixedSize(_HEADER_ICON_SIZE, _HEADER_ICON_SIZE)
         layout.addWidget(self._icon)
@@ -89,11 +84,7 @@ class _DocsHeader(QFrame):
         # 标题（粗体，QSS docsTitle 控制字号/字重）
         self._title = QLabel("说明", objectName="docsTitle")
         layout.addWidget(self._title)
-
-        # 拉伸 + 折叠箭头（jupyter 式 ▾/▸）
         layout.addStretch()
-        self._caret = QLabel("▾", objectName="docsCaret")
-        layout.addWidget(self._caret)
 
         self._refresh_icon()
 
@@ -104,19 +95,9 @@ class _DocsHeader(QFrame):
         if not pix.isNull():
             self._icon.setPixmap(pix)
 
-    def set_collapsed(self, collapsed: bool) -> None:
-        """切换折叠箭头方向（▾ 展开 / ▸ 折叠）."""
-        self._caret.setText("▸" if collapsed else "▾")
-
-    def mousePressEvent(self, event) -> None:
-        """左键点击整行发射折叠切换信号."""
-        if event.button() == Qt.LeftButton:
-            self.toggled.emit()
-        super().mousePressEvent(event)
-
 
 class DocsPanel(QWidget):
-    """图文说明卡（标题行折叠 + markdown 正文 + 示意图）.
+    """图文说明卡（标题行 + markdown 正文 + 示意图）.
 
     设计语言：透明卡片 + 主色左边框 + hover 微背景，与 ResultBlockCard
     风格统一。详见模块文档。
@@ -128,7 +109,6 @@ class DocsPanel(QWidget):
     def __init__(self, parent: QWidget | None = None) -> None:
         """初始化空卡（无内容时整体隐藏，set_template 后按声明呈现）."""
         super().__init__(parent)
-        self._collapsed = False
         self._pixmap: QPixmap | None = None
         self._image_declared = ""
         root = QVBoxLayout(self)
@@ -145,7 +125,6 @@ class DocsPanel(QWidget):
 
         # ---- 标题行 ----
         self._header = _DocsHeader()
-        self._header.toggled.connect(self._toggle)
         layout.addWidget(self._header)
 
         # ---- 正文区 ----
@@ -214,9 +193,6 @@ class DocsPanel(QWidget):
 
         has_content = bool(text) or self._pixmap is not None or bool(self._image_declared)
         self.setVisible(has_content)
-        self._collapsed = False
-        self._body.setVisible(True)
-        self._header.set_collapsed(False)
         self._sync_sizes()
 
     def refresh_theme(self) -> None:
@@ -227,12 +203,6 @@ class DocsPanel(QWidget):
             self._text_browser.setStyleSheet(f"border: none; background: transparent; color: {palette.text_primary};")
 
     # ------------------------------------------------------------------ 内部
-
-    def _toggle(self) -> None:
-        """折叠/展开正文（无内容时不响应）."""
-        self._collapsed = not self._collapsed
-        self._body.setVisible(not self._collapsed)
-        self._header.set_collapsed(self._collapsed)
 
     def _sync_sizes(self) -> None:
         """按当前宽度同步正文高度与示意图缩放（resize/set_template 后调用）."""

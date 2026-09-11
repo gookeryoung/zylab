@@ -14,6 +14,21 @@ from zylab.gui.widgets.stream_view import (
 )
 from zylab.studio.results import CloudData, CurveData, CurveSeries, TableColumn, TableData, TextData
 
+
+def _badge_text(badge: object) -> str:
+    """从徽标 QWidget（QHBoxLayout: icon QLabel + text QLabel）提取文本 QLabel 的内容."""
+    from zylab.gui.qt_compat import QLabel
+
+    layout = badge.layout()  # type: ignore[union-attr]
+    assert layout is not None, "badge 应有 layout"
+    # layout.itemAt(0) 是 icon QLabel，itemAt(1) 是文字 QLabel
+    text_item = layout.itemAt(1)
+    assert text_item is not None
+    text_widget = text_item.widget()
+    assert isinstance(text_widget, QLabel)
+    return text_widget.text()
+
+
 # ---------------------------------------------------------------- 纯函数
 
 
@@ -34,16 +49,16 @@ def test_col_alignment_maps_to_qt_flags() -> None:
 
 
 def test_kind_badge_classification() -> None:
-    """_kind_badge 识别 ViewData 类型."""
-    assert _kind_badge(TextData(title="t", text="hi")) == "text"
-    assert _kind_badge(TableData(title="t", columns=(), rows=())) == "table"
+    """_kind_badge 返回 (图标文件基名, 中文显示文本) 元组."""
+    assert _kind_badge(TextData(title="t", text="hi")) == ("result_text", "文本")
+    assert _kind_badge(TableData(title="t", columns=(), rows=())) == ("result_table", "表格")
     # 构造 CurveData（通过 CurveSeries）
     from zylab.studio.results import CurveData
 
     curve = CurveData(title="c", series=(CurveSeries(name="s", x=(0,), y=(0,)),))
-    assert _kind_badge(curve) == "curve"
+    assert _kind_badge(curve) == ("result_curve", "曲线")
     cd = CloudData(title="c", node_id="n", field="temperature", payload=None, cmap="viridis", deform=0.0)
-    assert _kind_badge(cd) == "cloud"
+    assert _kind_badge(cd) == ("result_cloud", "云图")
 
 
 # ---------------------------------------------------------------- QWidget 构造
@@ -122,13 +137,13 @@ def test_stream_view_set_error(qtbot) -> None:
 
 
 def test_kind_badge_unknown_fallback() -> None:
-    """_kind_badge 遇到未知类型返回 '?'（L78）."""
+    """_kind_badge 遇到未知类型回落 error 徽标."""
 
     class UnknownData:
         pass
 
-    assert _kind_badge(UnknownData()) == "?"
-    assert _kind_badge(object()) == "?"
+    assert _kind_badge(UnknownData()) == ("result_error", "错误")
+    assert _kind_badge(object()) == ("result_error", "错误")
 
 
 def test_block_card_toggle_collapse_and_expand(qtbot) -> None:
@@ -164,8 +179,8 @@ def test_block_card_with_cloud_data_payload(qtbot) -> None:
     # body 应是包含 node_id 的 QLabel
     assert isinstance(card._body, QLabel)
     assert "node-01" in card._body.text()
-    # badge 应为 cloud
-    assert card._badge.text() == "cloud"
+    # badge 徽标应为云图
+    assert _badge_text(card._badge) == "云图"
 
 
 def test_block_card_with_table_data_payload(qtbot) -> None:
@@ -184,7 +199,7 @@ def test_block_card_with_table_data_payload(qtbot) -> None:
     assert card._body.rowCount() == 1
     # 验证 QTableWidget 被设置了最大高度（_STREAM_TABLE_MAX_HEIGHT=320）
     assert card._body.maximumHeight() == 320
-    assert card._badge.text() == "table"
+    assert _badge_text(card._badge) == "表格"
 
 
 def test_block_card_unknown_payload_fallback(qtbot) -> None:
@@ -210,7 +225,7 @@ def test_block_card_with_text_data_payload(qtbot) -> None:
     qtbot.addWidget(card)
     assert isinstance(card._body, QLabel)
     assert card._body.text() == "这是正文"
-    assert card._badge.text() == "text"
+    assert _badge_text(card._badge) == "文本"
 
 
 def test_block_card_with_curve_data_payload(qtbot) -> None:
@@ -222,4 +237,4 @@ def test_block_card_with_curve_data_payload(qtbot) -> None:
     qtbot.addWidget(card)
     assert card._body is not None
     assert card._body.height() in (_STREAM_CURVE_HEIGHT, 0)  # 未 layout 时可能是 0
-    assert card._badge.text() == "curve"
+    assert _badge_text(card._badge) == "曲线"

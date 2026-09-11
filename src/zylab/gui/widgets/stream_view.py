@@ -24,6 +24,7 @@ from zylab.studio.results import CloudData, CurveData, TableColumn, TableData, T
 from zylab.studio.richtext import markdown_to_html
 
 from .. import theme
+from ..icons import nav_icon
 from ..qt_compat import (
     QFrame,
     QHBoxLayout,
@@ -56,14 +57,23 @@ _SEMANTIC_BAR_COLORS: dict[str, str] = {
     "danger": "#EF4444",
 }
 
+#: 结果类型 → (图标文件基名, 中文显示文本) 映射.
+_KIND_BADGES: dict[str, tuple[str, str]] = {
+    "text": ("result_text", "文本"),
+    "table": ("result_table", "表格"),
+    "curve": ("result_curve", "曲线"),
+    "cloud": ("result_cloud", "云图"),
+    "error": ("result_error", "错误"),
+}
+
 
 # ------------------------------------------------------------------ 辅助函数
 
 
-def _kind_badge(payload: ViewData | str) -> str:
-    """类型徽标文本（块标题栏旁小标签）."""
+def _kind_name(payload: ViewData | str) -> str:
+    """提取 payload 的 kind 标识符."""
     if isinstance(payload, str):
-        return "错误"
+        return "error"
     if isinstance(payload, TextData):
         return "text"
     if isinstance(payload, TableData):
@@ -72,7 +82,13 @@ def _kind_badge(payload: ViewData | str) -> str:
         return "curve"
     if isinstance(payload, CloudData):
         return "cloud"
-    return "?"
+    return "error"
+
+
+def _kind_badge(payload: ViewData | str) -> tuple[str, str]:
+    """类型徽标：返回 (图标文件基名, 中文显示文本)."""
+    kind = _kind_name(payload)
+    return _KIND_BADGES.get(kind, ("result_error", "?"))
 
 
 def _build_table_widget(data: TableData) -> QTableWidget:
@@ -180,9 +196,18 @@ class ResultBlockCard(QFrame):
         self._title_label = QLabel(title, objectName="resultTitle")
         header_layout.addWidget(self._title_label)
 
-        # 类型徽标（胶囊样式由 QSS resultKindBadge 控制）
-        kind_name = _kind_badge(payload)
-        self._badge = QLabel(kind_name, objectName="resultKindBadge")
+        # 类型徽标：图标（按主题次要色着色）+ 中文文本，整体作为胶囊样式容器
+        icon_name, kind_text = _kind_badge(payload)
+        badge_color = theme.current_palette().text_secondary
+        self._badge = QWidget(objectName="resultKindBadge")
+        badge_layout = QHBoxLayout(self._badge)
+        badge_layout.setContentsMargins(6, 0, 6, 0)
+        badge_layout.setSpacing(3)
+        badge_icon = QLabel()
+        badge_icon.setPixmap(nav_icon(icon_name, badge_color).pixmap(14, 14))
+        badge_text = QLabel(kind_text)
+        badge_layout.addWidget(badge_icon)
+        badge_layout.addWidget(badge_text)
         header_layout.addWidget(self._badge)
 
         # 拉伸 + 折叠箭头（jupyter 式 ▾/▸）
