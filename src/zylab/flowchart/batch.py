@@ -139,12 +139,27 @@ def run_workflow(
     template: Template,
     overrides: Mapping[str, Mapping[str, Any]] | None = None,
     report: ReportFn | None = None,
+    cache: dict[str, Any] | None = None,
 ) -> RunOutcome:
     """进程内按拓扑序执行参数化计算全部节点（失败即中止）.
 
     :param template: 参数化计算。
     :param overrides: 节点参数覆盖表（节点 id -> 参数表，整体替换该节点 params）。
     :param report: 进度回调（透传给节点函数，``(progress, message)``）。
+    :param cache: 可选的 ``{content_hash: result}`` 字典——提供后会计算每个
+        节点的内容指纹（参数 + 上游依赖哈希链），命中则跳过真实求解、复用
+        上一次的结果。适合同一 template 多次运行（batch / DOE / 敏感性）
+        时跨调用共享节点级缓存。
+
+        用法::
+
+            cache = {}
+            for row in rows:
+                outcome = run_workflow(template, overrides=..., cache=cache)
+            # cache 现在包含所有节点的 (hash, result) 对，可继续复用
+
+    注意：缓存是**节点级**的——上游节点哈希变化会级联触发下游节点
+    重算（指纹公式天然包含上游哈希），不存在脏结果泄漏。
     """
     merged = template.with_params(dict(overrides)) if overrides else template
     graph = WorkflowGraph(merged)
@@ -157,17 +172,56 @@ def run_workflow(
             outcomes.append(NodeOutcome(node_id=node.id, name=node.name))
             continue
         inputs = {port: resolve_input(ref, results) for port, ref in node.inputs.items()}
+
+        # --- 缓存检查 ---
+        content_hash = graph.compute_node_hash(node.id)
+        hit = False
+        cached_result: Any = None
+        if cache is not None and content_hash in cache:
+            cached_result = cache[content_hash]
+            hit = True
+
         fn = resolve_target(node.spec.target)
         started = time.perf_counter()
         try:
-            results[node.id] = fn(inputs, dict(node.params), report)
-            elapsed = time.perf_counter() - started
-            outcomes.append(NodeOutcome(node_id=node.id, name=node.name, result=results[node.id], elapsed=elapsed))
-            logger.debug("批处理节点完成: %s (%.3fs)", node.id, elapsed)
+            if hit:
+                results[node.id] = cached_result
+                elapsed = time.perf_counter() - started
+                outcomes.append(
+                    NodeOutcome(
+                        node_id=node.id,
+                        name=node.name,
+                        result=cached_result,
+                        elapsed=elapsed,
+                    )
+                )
+                logger.debug("批处理节点命中缓存: %s (%.3fs)", node.id, elapsed)
+            else:
+                results[node.id] = fn(inputs, dict(node.params), report)
+                elapsed = time.perf_counter() - started
+                outcomes.append(
+                    NodeOutcome(
+                        node_id=node.id,
+                        name=node.name,
+                        result=results[node.id],
+                        elapsed=elapsed,
+                    )
+                )
+                logger.debug("批处理节点完成: %s (%.3fs)", node.id, elapsed)
+                if cache is not None:
+                    cache[content_hash] = results[node.id]
+            graph.mark_result(node.id, results[node.id], elapsed, content_hash=content_hash)
         except Exception as exc:
             elapsed = time.perf_counter() - started
             message = f"{type(exc).__name__}: {exc}"
-            outcomes.append(NodeOutcome(node_id=node.id, name=node.name, error=message, elapsed=elapsed))
+            outcomes.append(
+                NodeOutcome(
+                    node_id=node.id,
+                    name=node.name,
+                    error=message,
+                    elapsed=elapsed,
+                )
+            )
             logger.warning("批处理节点失败: %s: %s", node.id, message)
             failed = True
     return RunOutcome(tuple(outcomes))

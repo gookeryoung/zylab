@@ -467,3 +467,66 @@ class TestExploreDoe:
         assert result.best_y is not None
         # 最大化后仍应有真实正值（验证环节取真实求解值）
         assert result.best_y > 0
+
+
+class TestWorkflowCache:
+    def test_cache_hit_reuses_result(self) -> None:
+
+        from zylab.flowchart import TemplateRegistry, run_workflow
+
+        tpl = TemplateRegistry.with_builtin().get("structural.cantilever_static")
+        cache: dict[str, object] = {}
+
+        out1 = run_workflow(tpl, cache=cache)
+        assert out1.succeeded
+        assert len(cache) > 0
+        total_elapsed_1 = sum(o.elapsed for o in out1.outcomes)
+
+        out2 = run_workflow(tpl, cache=cache)
+        assert out2.succeeded
+        total_elapsed_2 = sum(o.elapsed for o in out2.outcomes)
+        assert total_elapsed_2 < total_elapsed_1 * 0.1
+
+    def test_cache_cascade_invalidation_on_param_change(self) -> None:
+        from zylab.flowchart import TemplateRegistry, run_workflow
+
+        tpl = TemplateRegistry.with_builtin().get("structural.cantilever_static")
+        cache: dict[str, object] = {}
+
+        run_workflow(tpl, overrides={"model": {"nx": 4, "ny": 2}}, cache=cache)
+        size_before = len(cache)
+        assert size_before >= 2
+
+        run_workflow(tpl, overrides={"model": {"nx": 8, "ny": 2}}, cache=cache)
+        size_after = len(cache)
+        assert size_after > size_before
+
+    def test_cache_none_backward_compat(self) -> None:
+        from zylab.flowchart import TemplateRegistry, run_workflow
+
+        tpl = TemplateRegistry.with_builtin().get("structural.cantilever_static")
+        out = run_workflow(tpl)
+        assert out.succeeded
+        assert out.outcomes[0].result is not None
+
+    def test_cache_shared_across_runs_in_run_batch(self) -> None:
+        import dataclasses
+
+        from zylab.doe import DesignSpace, DesignVariable, SamplingMethod
+        from zylab.flowchart import OutputParam, TemplateRegistry, run_workflow
+        from zylab.flowchart.batch import _row_to_overrides
+
+        tpl = TemplateRegistry.with_builtin().get("structural.cantilever_static")
+        tpl = dataclasses.replace(tpl, output_params=(OutputParam(name="E", source="solve.strain_energy"),))
+        ds = DesignSpace.from_variables(
+            [
+                DesignVariable(name="model.nx", lower=4, upper=8),
+                DesignVariable(name="model.ny", lower=2, upper=4),
+            ]
+        )
+        rows = ds.to_input_rows(ds.sample(n_samples=20, method=SamplingMethod.LATIN_HYPERCUBE, seed=0))
+
+        cache: dict[str, object] = {}
+        for row in rows:
+            run_workflow(tpl, overrides=_row_to_overrides(tpl, row), cache=cache)
+        assert len(cache) < 20 * 2
