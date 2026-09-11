@@ -6,10 +6,10 @@ from pathlib import Path
 
 import pytest
 
+from zylab.flowchart.dsl import dsl_from_yaml
 from zylab.gui.pages.template_page import TemplatePage
 from zylab.gui.widgets.dsl_param_form import DslParamForm
 from zylab.gui.widgets.stream_view import ResultStreamView
-from zylab.studio.dsl import dsl_from_yaml
 
 _YAML = """
 meta: {id: t.page, name: 页面参数化计算}
@@ -180,7 +180,7 @@ def test_page_load_template_file_syntax_error(qtbot, tmp_path: Path, monkeypatch
     # load_dsl 会因 DSL 验证失败抛 TemplateError（缺 pipeline 声明）
     # 我们 monkeypatch load_dsl 让它硬抛异常覆盖行 178-180
     import zylab.gui.pages.template_page as mod
-    from zylab.studio.errors import TemplateError
+    from zylab.flowchart.errors import TemplateError
 
     monkeypatch.setattr(mod, "load_dsl", lambda _p: (_ for _ in ()).throw(TemplateError("YAML 语法错误")))
     page = TemplatePage()

@@ -4,10 +4,10 @@ from __future__ import annotations
 
 import pytest
 
+from zylab.flowchart import NodeState, Template, WorkflowGraph
 from zylab.gui import qt_compat
 from zylab.gui.qt_compat import QContextMenuEvent, QEvent, QKeyEvent, QMouseEvent, QPointF, Qt
 from zylab.gui.widgets.node_canvas import _ARROW_LEN, NodeCanvasWidget, _NodeCard
-from zylab.studio import NodeState, Template, WorkflowGraph
 
 
 def _dbl_click_event(pos, widget=None) -> QMouseEvent:

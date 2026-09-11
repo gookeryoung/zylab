@@ -2,12 +2,12 @@
 
 参数化计算 ``ui.param_groups`` 声明暴露给用户的参数分组（``"node_id.param_key"`` 引用）；
 表单按组渲染 QGroupBox + QFormLayout，取值变化经 ``param_edited`` 信号上报
-（由工作台页写入 WorkflowGraph.set_param，级联失效由图负责）。
+（由流程图页写入 WorkflowGraph.set_param，级联失效由图负责）。
 """
 
 from __future__ import annotations
 
-from zylab.studio import ParamGroup, ParamSpec, ParamType, WorkflowGraph
+from zylab.flowchart import ParamGroup, ParamSpec, ParamType, WorkflowGraph
 
 from .. import theme
 from ..qt_compat import (

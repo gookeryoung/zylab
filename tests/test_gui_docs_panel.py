@@ -6,8 +6,8 @@ from pathlib import Path
 
 import pytest
 
+from zylab.flowchart.dsl import load_dsl
 from zylab.gui.widgets.docs_panel import DocsPanel, resolve_docs_image
-from zylab.studio.dsl import load_dsl
 
 _YAML = """
 meta: {id: t.docs, name: 说明参数化计算}

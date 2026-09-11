@@ -16,7 +16,7 @@
 
 ``DslDocs.image`` 声明非空但文件缺失时显示次级占位提示（帮助模板作者
 发现路径错误）；模板无 ``docs`` 声明或内容全空时整卡隐藏。文本渲染复用
-报告管线的 :func:`~zylab.studio.richtext.markdown_to_html`（受控子集，
+报告管线的 :func:`~zylab.flowchart.richtext.markdown_to_html`（受控子集，
 与结果流 markdown 块渲染语言统一）。
 """
 
@@ -24,8 +24,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from zylab.studio.dsl import DslTemplate
-from zylab.studio.richtext import markdown_to_html
+from zylab.flowchart.dsl import DslTemplate
+from zylab.flowchart.richtext import markdown_to_html
 
 from .. import theme
 from ..icons import tinted_pixmap

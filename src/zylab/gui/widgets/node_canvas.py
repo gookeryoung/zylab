@@ -14,7 +14,7 @@
 
 from __future__ import annotations
 
-from zylab.studio import NodeInstance, NodeState, WorkflowGraph
+from zylab.flowchart import NodeInstance, NodeState, WorkflowGraph
 
 from .. import theme
 from ..icons import tinted_pixmap

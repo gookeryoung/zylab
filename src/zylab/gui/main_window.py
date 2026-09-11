@@ -10,8 +10,8 @@ from zylab.sci import TOPIC_WORKSPACE_CHANGED, WorkspaceInfo, WorkspaceManager
 from . import theme
 from .app import apply_theme, save_theme_name
 from .icons import NAV_ICON_NAMES, nav_icon
+from .pages.flowchart_page import FlowchartPage
 from .pages.notebook_page import NotebookPage
-from .pages.studio_page import StudioPage
 from .pages.template_page import TemplatePage
 from .qt_compat import (
     QEvent,
@@ -43,7 +43,7 @@ __all__ = ["MainWindow"]
 _PAGE_CONSOLE = 0
 _PAGE_FEA = 1
 _PAGE_TEMPLATE = 2
-_NAV_LABELS = ("笔记本", "工作台", "参数化计算")
+_NAV_LABELS = ("笔记本", "流程图", "参数化计算")
 
 #: 侧边栏图标显示尺寸（像素）
 _NAV_ICON_SIZE = QSize(14, 14)
@@ -121,10 +121,10 @@ class MainWindow(QMainWindow):
 
         self._stack = QStackedWidget()
         self._notebook_page = NotebookPage(self._kernel, self._bus)
-        self._studio_page = StudioPage()
+        self._flowchart_page = FlowchartPage()
         self._template_page = TemplatePage()
         self._stack.addWidget(self._notebook_page)
-        self._stack.addWidget(self._studio_page)
+        self._stack.addWidget(self._flowchart_page)
         self._stack.addWidget(self._template_page)
 
         self._splitter.addWidget(self._sidebar_container)
@@ -222,7 +222,7 @@ class MainWindow(QMainWindow):
         self._refresh_sidebar_icons()
         self._refresh_workspace_ui()
         self._notebook_page.refresh_theme()
-        self._studio_page.refresh_theme()
+        self._flowchart_page.refresh_theme()
         self._template_page.refresh_theme()
         if persist:
             save_theme_name(default_data_dir(), name)
@@ -311,12 +311,12 @@ class MainWindow(QMainWindow):
         # 笔记本/参数化计算页状态提示统一进主窗口状态栏；参数化计算声明的主题按预览语义应用
         self._notebook_page.status_message.connect(self.statusBar().showMessage)
         self._template_page.status_message.connect(self.statusBar().showMessage)
-        self._studio_page.status_message.connect(self.statusBar().showMessage)
+        self._flowchart_page.status_message.connect(self.statusBar().showMessage)
         self._template_page.theme_requested.connect(lambda name: self._set_theme(name, persist=False))
         # 参数化计算运行生命周期 → 主窗口右下 indicator（加载/运行/完成/失败统一承载）
         self._template_page.run_state_changed.connect(self.set_run_status)
-        # 工作台运行成功/失败 → 主窗口右下 indicator
-        self._studio_page.run_status_changed.connect(self.set_run_status)
+        # 流程图运行成功/失败 → 主窗口右下 indicator
+        self._flowchart_page.run_status_changed.connect(self.set_run_status)
         # 工作区变更事件 → 头部/状态栏刷新
         self._bus.subscribe(TOPIC_WORKSPACE_CHANGED, self._on_workspace_changed)
         # 状态栏永久 widget：完整路径（左对齐，双击切换）
@@ -336,7 +336,7 @@ class MainWindow(QMainWindow):
         self._indicator_text = QLabel("就绪")
         self._indicator_text.setAlignment(Qt.AlignCenter)
         self._indicator_text.setStyleSheet(f"color: {pal.text_secondary};")
-        self._run_indicator_widget.setToolTip("运行状态（工作台/参数化计算运行完成后在此统一显示）")
+        self._run_indicator_widget.setToolTip("运行状态（流程图/参数化计算运行完成后在此统一显示）")
         indicator_layout.addWidget(self._indicator_icon)
         indicator_layout.addWidget(self._indicator_text)
         self.set_run_status("idle")  # 初始化 icon + 颜色
@@ -416,7 +416,7 @@ class MainWindow(QMainWindow):
         """F5 全局运行：按当前激活页分发到对应 run 方法.
 
         - 笔记本页：run_all()（顺序执行全部单元）
-        - 工作台页：暂不支持直接运行
+        - 流程图页：暂不支持直接运行
         - 参数化计算页：run()（运行当前 DSL 参数化计算）
         """
         row = self._sidebar.currentRow()
@@ -424,7 +424,7 @@ class MainWindow(QMainWindow):
             self.statusBar().showMessage("笔记本：运行全部单元（F5）…")
             self._notebook_page.run_all()
         elif row == _PAGE_FEA:
-            self.statusBar().showMessage("工作台：请通过参数化计算或笔记本 F5 触发运行")
+            self.statusBar().showMessage("流程图：请通过参数化计算或笔记本 F5 触发运行")
         elif row == _PAGE_TEMPLATE:
             self.statusBar().showMessage("参数化计算：运行当前 DSL（F5）…")
             self._template_page.run()
@@ -444,7 +444,7 @@ class MainWindow(QMainWindow):
         register(
             Command(
                 "go.analysis",
-                "转到：工作台",
+                "转到：流程图",
                 lambda: self._sidebar.setCurrentRow(_PAGE_FEA),
                 keywords="goto analysis fea",
             )
@@ -570,7 +570,7 @@ class MainWindow(QMainWindow):
     # ------------------------------------------------------------------ 运行状态 indicator
 
     def set_run_status(self, state: str, detail: str = "") -> None:
-        """设置右下角运行状态 indicator（工作台/参数化计算运行完成后由主窗口统一呈现）.
+        """设置右下角运行状态 indicator（流程图/参数化计算运行完成后由主窗口统一呈现）.
 
         :param state: "idle"（就绪）/ "running"（运行中）/ "success"（成功）/ "error"（失败）.
         :param detail: 失败时的错误详情（tooltip 承载，不超过 200 字）。
@@ -594,4 +594,4 @@ class MainWindow(QMainWindow):
         elif detail:
             self._run_indicator_widget.setToolTip(detail[:200])
         else:
-            self._run_indicator_widget.setToolTip("运行状态（工作台/参数化计算运行完成后在此统一显示）")
+            self._run_indicator_widget.setToolTip("运行状态（流程图/参数化计算运行完成后在此统一显示）")

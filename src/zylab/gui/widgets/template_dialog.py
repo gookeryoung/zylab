@@ -10,7 +10,7 @@ from __future__ import annotations
 
 from typing import Sequence
 
-from zylab.studio import Template
+from zylab.flowchart import Template
 
 from .. import theme
 from ..qt_compat import (

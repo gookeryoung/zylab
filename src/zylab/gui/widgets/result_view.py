@@ -36,8 +36,8 @@ from zylab.fea.viewdata import (
     project3d,
     scalar_colors,
 )
-from zylab.studio import ConductionBundle, ModelBundle
-from zylab.studio.nodes import tip_node
+from zylab.flowchart import ConductionBundle, ModelBundle
+from zylab.flowchart.nodes import tip_node
 
 from .. import theme
 from ..icons import nav_icon

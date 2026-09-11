@@ -21,16 +21,16 @@ import threading
 from pathlib import Path
 from typing import Any
 
-from zylab.studio import (
+from zylab.flowchart import (
     ConductionBundle,
     ModelBundle,
     build_html,
     build_markdown,
     run_workflow,
 )
-from zylab.studio.dsl import DslTemplate, load_dsl
-from zylab.studio.errors import StudioError, TemplateError
-from zylab.studio.results import CloudData, build_result
+from zylab.flowchart.dsl import DslTemplate, load_dsl
+from zylab.flowchart.errors import FlowchartError, TemplateError
+from zylab.flowchart.results import CloudData, build_result
 
 from .. import theme
 from ..icons import nav_icon
@@ -71,7 +71,7 @@ _TAB_DOCS = 1
 def _builtin_dsl_templates() -> list[DslTemplate]:
     """注册表中的 DSL 参数化计算（内置资产 + 用户目录，供下拉快捷加载）."""
     from zylab.core.config import default_data_dir
-    from zylab.studio.registry import TemplateRegistry
+    from zylab.flowchart.registry import TemplateRegistry
 
     registry = TemplateRegistry.with_builtin()
     registry.load_dir(default_data_dir() / "templates")
@@ -230,7 +230,7 @@ class TemplatePage(QWidget):
         try:
             values = self._template.evaluate(self._param_form.values())
             executable = self._template.bind_params(values)
-        except StudioError as exc:  # 参数/派生表达式错误
+        except FlowchartError as exc:  # 参数/派生表达式错误
             self.status_message.emit(f"参数错误: {exc}")
             return
         self._running = True

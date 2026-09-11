@@ -20,12 +20,12 @@ from pathlib import Path
 from typing import Sequence
 
 from zylab.core.project import Project, ProjectFileError
-from zylab.studio.batch import RunOutcome, run_scan, run_workflow, summarize
-from zylab.studio.dsl import DslTemplate, load_dsl
-from zylab.studio.errors import StudioError
-from zylab.studio.registry import TemplateRegistry
-from zylab.studio.report import build_html, build_markdown
-from zylab.studio.template import Template, load_template
+from zylab.flowchart.batch import RunOutcome, run_scan, run_workflow, summarize
+from zylab.flowchart.dsl import DslTemplate, load_dsl
+from zylab.flowchart.errors import FlowchartError
+from zylab.flowchart.registry import TemplateRegistry
+from zylab.flowchart.report import build_html, build_markdown
+from zylab.flowchart.template import Template, load_template
 
 __all__ = ["build_parser", "main"]
 
@@ -81,7 +81,7 @@ def _cmd_run(target: str, params: list[str], scan: str | None, export: str | Non
     """``run`` 子命令：加载目标 → 覆盖/扫描 → 进程内求解 → 打印摘要."""
     try:
         template = _load_target(target)
-    except (ValueError, StudioError, ProjectFileError) as exc:
+    except (ValueError, FlowchartError, ProjectFileError) as exc:
         print(f"目标加载失败: {exc}", file=sys.stderr)
         return 2
     if isinstance(template, DslTemplate):
@@ -120,7 +120,7 @@ def _run_dsl(template: DslTemplate, params: list[str], report: str | None) -> in
     try:
         values = _parse_dsl_params(params)
         executable = template.bind_params(template.evaluate(values))
-    except (ValueError, StudioError) as exc:
+    except (ValueError, FlowchartError) as exc:
         print(f"参数错误: {exc}", file=sys.stderr)
         return 2
     outcome = run_workflow(executable, {}, _report_progress)

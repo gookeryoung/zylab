@@ -9,7 +9,7 @@ import pytest
 
 from zylab.cli import _parse_dsl_params, _parse_params, _parse_scan, _parse_value, main
 from zylab.core.project import Project
-from zylab.studio import TemplateRegistry, save_template
+from zylab.flowchart import TemplateRegistry, save_template
 
 __all__ = []
 
@@ -114,7 +114,7 @@ class TestRunCommand:
 
     def test_run_dsl_yaml_file_with_report(self, tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
         """DSL YAML 目标：-p 覆盖 DSL 参数运行并导出 Markdown 报告."""
-        from zylab.studio.builtin import builtin_templates_dir
+        from zylab.flowchart.builtin import builtin_templates_dir
 
         yaml_path = builtin_templates_dir() / "math" / "dsl.math_compare.yaml"
         report = tmp_path / "对比.md"

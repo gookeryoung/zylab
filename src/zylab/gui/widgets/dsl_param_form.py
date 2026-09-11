@@ -16,7 +16,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from zylab.studio.dsl import DslParam, DslTemplate
+from zylab.flowchart.dsl import DslParam, DslTemplate
 
 from .. import theme
 from ..qt_compat import (

@@ -5,8 +5,8 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
+from zylab.flowchart import nodes
 from zylab.gui.widgets.result_view import ColorBarWidget, ResultView
-from zylab.studio import nodes
 
 
 def _beam_bundle():

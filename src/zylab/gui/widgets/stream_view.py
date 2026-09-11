@@ -20,8 +20,8 @@ from __future__ import annotations
 
 from typing import Any
 
-from zylab.studio.results import CloudData, CurveData, TableColumn, TableData, TextData, ViewData
-from zylab.studio.richtext import markdown_to_html
+from zylab.flowchart.results import CloudData, CurveData, TableColumn, TableData, TextData, ViewData
+from zylab.flowchart.richtext import markdown_to_html
 
 from .. import theme
 from ..icons import nav_icon

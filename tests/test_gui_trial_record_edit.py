@@ -4,9 +4,9 @@ from __future__ import annotations
 
 import pytest
 
+from zylab.flowchart import BUILTIN_TEMPLATES
 from zylab.gui.widgets.dsl_param_form import DslParamForm
 from zylab.gui.widgets.trial_record_edit import TrialRecordEdit
-from zylab.studio import BUILTIN_TEMPLATES
 
 
 @pytest.fixture

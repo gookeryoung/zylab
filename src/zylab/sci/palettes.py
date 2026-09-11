@@ -2,9 +2,9 @@
 
 全链路唯一取色源：matplotlib/seaborn 主题（sci.plotting）、pyqtgraph 曲线
 （gui.pages.notebook_page / gui.widgets.dsl_result_view）与报告 SVG 曲线
-（studio.report）共用同一循环色与语义色，保证三条渲染路径视觉一致。
+（flowchart.report）共用同一循环色与语义色，保证三条渲染路径视觉一致。
 
-本模块只含纯常量与纯函数，不 import seaborn/matplotlib/Qt —— studio 报告
+本模块只含纯常量与纯函数，不 import seaborn/matplotlib/Qt —— flowchart 报告
 构建路径必须保持轻量。
 """
 

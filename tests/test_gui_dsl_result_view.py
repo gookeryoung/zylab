@@ -5,8 +5,7 @@ from __future__ import annotations
 import pyqtgraph as pg
 import pytest
 
-from zylab.gui.widgets.dsl_result_view import DslResultView, _format_cell
-from zylab.studio.results import (
+from zylab.flowchart.results import (
     CloudData,
     CurveData,
     CurveSeries,
@@ -14,6 +13,7 @@ from zylab.studio.results import (
     TableData,
     TextData,
 )
+from zylab.gui.widgets.dsl_result_view import DslResultView, _format_cell
 
 
 @pytest.mark.gui
@@ -99,8 +99,8 @@ def test_render_cloud_placeholder(qtbot) -> None:
 
 def test_build_curve_widget_log_and_peak(qtbot) -> None:
     """build_curve_widget 覆盖对数轴、mark_peak 极值标注分支."""
+    from zylab.flowchart.results import CurveData, CurveSeries
     from zylab.gui.widgets.dsl_result_view import build_curve_widget
-    from zylab.studio.results import CurveData, CurveSeries
 
     curve = CurveData(
         title="对数峰值",

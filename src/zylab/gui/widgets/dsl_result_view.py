@@ -2,7 +2,7 @@
 
 与 :class:`~zylab.gui.widgets.result_view.ResultView`（解对象 -> 云图/
 振型等类型化渲染）互补：本视图消费 DSL ``results`` 声明解析出的
-:data:`~zylab.studio.results.ViewData`（曲线/表格/文本），供参数化计算应用页
+:data:`~zylab.flowchart.results.ViewData`（曲线/表格/文本），供参数化计算应用页
 （P6）按结果页签组装；云图声明（CloudData）由参数化计算应用页路由到既有
 ResultView，本视图仅显示占位说明。
 
@@ -17,8 +17,8 @@ from typing import Any
 
 import pyqtgraph as pg
 
+from zylab.flowchart.results import CloudData, CurveData, TableData, TextData, ViewData
 from zylab.sci.palettes import CURVE_PALETTE, resolve_curve_color
-from zylab.studio.results import CloudData, CurveData, TableData, TextData, ViewData
 
 from .. import theme
 from ..qt_compat import (

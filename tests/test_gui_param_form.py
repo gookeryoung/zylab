@@ -4,8 +4,8 @@ from __future__ import annotations
 
 import pytest
 
+from zylab.flowchart import Template, WorkflowGraph
 from zylab.gui.widgets.param_form import ParamForm
-from zylab.studio import Template, WorkflowGraph
 
 _MODAL_TEMPLATE = {
     "id": "t.modal",

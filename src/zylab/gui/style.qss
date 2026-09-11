@@ -1,4 +1,4 @@
-/* zylab 全局样式表（语义令牌，string.Template 替换；禁止硬编码色值）。
+﻿/* zylab 全局样式表（语义令牌，string.Template 替换；禁止硬编码色值）。
    令牌来源：theme.Palette（QSS_ 前缀）+ 非色令牌（FONT、RADIUS、CONTROL 系列）。
    注意：注释内严禁出现星号紧跟斜杠的写法，否则会提前闭合 CSS 注释导致整表解析失败。 */
 
@@ -513,7 +513,7 @@ QTabWidget#resultSubTabs > QTabBar::tab:hover:!selected {
     background-color: ${QSS_SELECTION_BG};
 }
 
-/* 工作台顶部工具栏与底部状态栏（与内容区以边框分隔） */
+/* 流程图顶部工具栏与底部状态栏（与内容区以边框分隔） */
 QFrame#toolBar {
     background-color: ${QSS_BG_APP};
     border: none;

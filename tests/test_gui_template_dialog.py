@@ -4,10 +4,10 @@ from __future__ import annotations
 
 import pytest
 
+from zylab.flowchart import BUILTIN_TEMPLATES
+from zylab.flowchart.dsl import DslTemplate
 from zylab.gui.qt_compat import Qt
 from zylab.gui.widgets.template_dialog import TemplateDialog, discipline_label
-from zylab.studio import BUILTIN_TEMPLATES
-from zylab.studio.dsl import DslTemplate
 
 # 对话框承载经典节点图模板；DSL 模板由模板应用页下拉加载，须排除
 _CLASSIC_TEMPLATES = [t for t in BUILTIN_TEMPLATES if not isinstance(t, DslTemplate)]

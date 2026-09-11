@@ -36,7 +36,7 @@ class PluginKind(Enum):
     SOLVER = "solver"
     POSTPROCESS = "postprocess"
     FILE_FORMAT = "file_format"
-    TEMPLATE = "template"  # 参数化计算（studio.Template 或其字典表示）
+    TEMPLATE = "template"  # 参数化计算（flowchart.Template 或其字典表示）
 
 
 @dataclass(frozen=True)

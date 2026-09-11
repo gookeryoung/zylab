@@ -29,7 +29,7 @@ def test_main_window_builds(qtbot, isolated_data_dir: Path) -> None:
     win = MainWindow()
     qtbot.addWidget(win)
     assert "zylab" in win.windowTitle()
-    assert win._stack.count() == 3  # 笔记本/工作台/模板（关于已降级为头部帮助按钮）
+    assert win._stack.count() == 3  # 笔记本/流程图/模板（关于已降级为头部帮助按钮）
     assert win._sidebar.currentRow() == 0
 
 
@@ -294,7 +294,7 @@ def test_main_window_f5_global_run_dispatches(qtbot, isolated_data_dir: Path, mo
     assert calls["tp"] == 0
     assert any("笔记本" in m for m in calls["msg"])
 
-    # 工作台页 → 提示不支持
+    # 流程图页 → 提示不支持
     calls["nb"] = 0
     calls["tp"] = 0
     calls["msg"].clear()
@@ -302,7 +302,7 @@ def test_main_window_f5_global_run_dispatches(qtbot, isolated_data_dir: Path, mo
     win._global_run()
     assert calls["nb"] == 0
     assert calls["tp"] == 0
-    assert any("工作台" in m for m in calls["msg"])
+    assert any("流程图" in m for m in calls["msg"])
 
     # 模板页 → run()
     calls["nb"] = 0

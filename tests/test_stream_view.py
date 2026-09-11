@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from zylab.flowchart.results import CloudData, CurveData, CurveSeries, TableColumn, TableData, TextData
 from zylab.gui.qt_compat import Qt
 from zylab.gui.widgets.stream_view import (
     ResultBlockCard,
@@ -12,7 +13,6 @@ from zylab.gui.widgets.stream_view import (
     _format_cell_with_format,
     _kind_badge,
 )
-from zylab.studio.results import CloudData, CurveData, CurveSeries, TableColumn, TableData, TextData
 
 
 def _badge_text(badge: object) -> str:
@@ -53,7 +53,7 @@ def test_kind_badge_classification() -> None:
     assert _kind_badge(TextData(title="t", text="hi")) == ("result_text", "文本")
     assert _kind_badge(TableData(title="t", columns=(), rows=())) == ("result_table", "表格")
     # 构造 CurveData（通过 CurveSeries）
-    from zylab.studio.results import CurveData
+    from zylab.flowchart.results import CurveData
 
     curve = CurveData(title="c", series=(CurveSeries(name="s", x=(0,), y=(0,)),))
     assert _kind_badge(curve) == ("result_curve", "曲线")
