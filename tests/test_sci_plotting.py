@@ -95,28 +95,6 @@ def test_apply_defaults_injects_ns_vars() -> None:
     assert isinstance(ns["cn_font_candidates"], list)
 
 
-def test_apply_defaults_seaborn_fallback(monkeypatch) -> None:
-    """seaborn ImportError 时回退到基础 rcParams（不影响 matplotlib 可用性）."""
-    import builtins
-
-    original_import = builtins.__import__
-
-    def _blocked_import(name, *args, **kwargs):
-        if name == "seaborn":
-            raise ImportError("No module named 'seaborn'")
-        return original_import(name, *args, **kwargs)
-
-    monkeypatch.setattr(builtins, "__import__", _blocked_import)
-    # seaborn 缓存已存在，需清掉
-    import sys
-
-    sys.modules.pop("seaborn", None)
-    apply_matplotlib_defaults()
-    assert plt.rcParams["axes.grid"] is True
-    assert plt.rcParams["lines.linewidth"] == 2.0
-    assert plt.rcParams["axes.unicode_minus"] is False
-
-
 def test_apply_defaults_idempotent() -> None:
     """幂等性：重复调用不产生额外副作用."""
     apply_matplotlib_defaults()

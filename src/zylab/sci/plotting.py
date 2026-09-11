@@ -95,30 +95,22 @@ def apply_matplotlib_defaults(ns: dict[str, Any] | None = None) -> frozenset[str
     :returns: matplotlib 不可用时返回 ``None``；可用时返回系统已安装字体集.
     """
     try:
-        import matplotlib.pyplot as plt
-        from matplotlib import font_manager
-    except ImportError:
+        import matplotlib.pyplot as plt  # pragma: no cover - 硬依赖
+        from matplotlib import font_manager  # pragma: no cover - 硬依赖
+    except ImportError:  # pragma: no cover - 硬依赖永不触发
         logger.info("matplotlib 未安装，跳过 rcParams 配置")
         return None
-    # --- 1. seaborn 主题 ---
-    try:
-        import seaborn as sns
-    except ImportError:
-        logger.info("seaborn 未安装，回退到基础 rcParams")
-        plt.rcParams.update(_MPL_RC_OVERRIDES)
-        plt.rcParams["axes.grid"] = True
-        plt.rcParams["grid.alpha"] = 0.3
-        plt.rcParams["grid.color"] = "#cccccc"
-        plt.rcParams["grid.linewidth"] = 0.8
-    else:
-        sns.set_theme(
-            style="whitegrid",
-            context="notebook",
-            palette=list(CURVE_PALETTE),
-            color_codes=False,  # 保持 matplotlib 单字母色码经典行为
-        )
-        # --- 2. 叠加 zylab 保障项（含 unicode_minus） ---
-        plt.rcParams.update(_MPL_RC_OVERRIDES)
+    # --- 1. seaborn 主题（硬依赖，pyproject.toml 已声明） ---
+    import seaborn as sns
+
+    sns.set_theme(
+        style="whitegrid",
+        context="notebook",
+        palette=list(CURVE_PALETTE),
+        color_codes=False,  # 保持 matplotlib 单字母色码经典行为
+    )
+    # --- 2. 叠加 zylab 保障项（含 unicode_minus） ---
+    plt.rcParams.update(_MPL_RC_OVERRIDES)
     # --- 3. 中文字体（最后合并，set_theme 会重写 font.sans-serif） ---
     available: set[str] = {f.name for f in font_manager.fontManager.ttflist}
     selected_cn = [name for name in _CN_FONT_CANDIDATES if name in available]

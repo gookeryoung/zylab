@@ -61,3 +61,43 @@ def test_palette_consistency_gui_report() -> None:
     assert resolve_curve_color("success", 0) == "#10B981"
     # 索引 1 应为 success 同色
     assert resolve_curve_color(None, 1) == "#10B981"
+
+
+def test_resolve_curve_color_index_wrap_around() -> None:
+    """索引溢出时正确取模（防止越界）."""
+    for i in range(20):
+        assert resolve_curve_color(None, i) == CURVE_PALETTE[i % len(CURVE_PALETTE)]
+
+
+def test_resolve_curve_color_all_semantic_keys() -> None:
+    """全部语义键解析都返回 #RRGGBB 格式."""
+    for key in ("primary", "success", "warning", "danger", "info"):
+        val = resolve_curve_color(key, 0)
+        assert val.startswith("#") and len(val) == 7
+
+
+def test_semantic_colors_align_with_palette_first5() -> None:
+    """primary=palette[0], success=palette[1], warning=palette[2], danger=palette[3]."""
+    assert SEMANTIC_CURVE_COLORS["primary"] == CURVE_PALETTE[0]
+    assert SEMANTIC_CURVE_COLORS["success"] == CURVE_PALETTE[1]
+    assert SEMANTIC_CURVE_COLORS["warning"] == CURVE_PALETTE[2]
+    assert SEMANTIC_CURVE_COLORS["danger"] == CURVE_PALETTE[3]
+
+
+def test_palette_used_in_seaborn_prop_cycle() -> None:
+    """palette 可直接传给 seaborn.set_theme 的 palette 参数."""
+    list(CURVE_PALETTE)  # 可迭代
+    assert len(list(CURVE_PALETTE)) == 6
+
+
+def test_notebook_page_uses_shared_palette():
+    """notebook_page 不再有本地 _CURVE_KEYS 循环常量，改用 CURVE_PALETTE."""
+    import ast
+    from pathlib import Path
+
+    src = Path(r"src/zylab/gui/pages/notebook_page.py").read_text(encoding="utf-8")
+    tree = ast.parse(src)
+    names = {node.id for node in ast.walk(tree) if isinstance(node, ast.Name)}
+    assert "_CURVE_KEYS" not in names, "notebook_page 不应再有本地 _CURVE_KEYS"
+    # 确认用的是共享 CURVE_PALETTE
+    assert "CURVE_PALETTE" in src
