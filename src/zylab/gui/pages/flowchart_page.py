@@ -262,6 +262,7 @@ class FlowchartPage(QWidget):
         self._canvas.node_context_menu.connect(self._on_node_context_menu)
         self._canvas.background_context_menu.connect(self._on_background_context_menu)
         self._canvas.all_selected.connect(self._on_all_selected)
+        self._canvas.node_delete_requested.connect(self._on_node_delete_requested)
         self._param_form.param_edited.connect(self._on_param_edited)
         self._bridge.node_started.connect(self._on_node_started)
         self._bridge.node_progress.connect(self._on_node_progress)
@@ -557,6 +558,16 @@ class FlowchartPage(QWidget):
 
     def _on_all_selected(self) -> None:
         """全选（Ctrl+A / 组合框标题栏）：参数面板显示全部参数."""
+        self._param_form.show_all()
+
+    def _on_node_delete_requested(self, node_id: str) -> None:
+        """Delete/Backspace 删除选中节点：从 graph 移除 + 画布重绘."""
+        if self._graph is None:
+            return
+        if len(self._graph.nodes()) <= 1:
+            return  # 至少保留一个节点
+        self._graph.remove_node(node_id)
+        self._canvas.set_graph(self._graph)
         self._param_form.show_all()
 
     def _on_node_double_clicked(self, node_id: str) -> None:
