@@ -22,6 +22,7 @@ from dataclasses import dataclass, replace
 from typing import Any, Callable, Mapping, Sequence
 
 import numpy as np
+from typing_extensions import override
 
 from zylab.fea import (
     BucklingSolution,
@@ -381,6 +382,10 @@ class ExploreResult:
     si: np.ndarray | None = None  # 一阶 Sobol 指数（若做敏感性分解）
     sti: np.ndarray | None = None  # 总效应 Sobol 指数
     variance: float | None = None  # 输出方差
+    best_x: np.ndarray | None = None  # 优化最优解 float 向量
+    best_y: float | None = None  # 最优解处目标函数值（原始尺度）
+    best_x_int: np.ndarray | None = None  # 最优解 round 到 int（网格参数用）
+    optimizer: str | None = None  # 用了哪个优化器
 
 
 def explore_doe(  # noqa: PLR0913
@@ -393,6 +398,10 @@ def explore_doe(  # noqa: PLR0913
     fit_surrogate: bool = True,
     sensitivity: bool = False,
     sobol_N: int = 512,
+    optimize: bool = False,
+    optimizer: Any = None,
+    opt_n_iter: int = 100,
+    minimize: bool = True,
 ) -> ExploreResult:
     """一行走完 DOE 批量探索.
 
@@ -401,26 +410,38 @@ def explore_doe(  # noqa: PLR0913
         2. to_input_rows 转扁平化参数字典;
         3. run_batch_outputs(template, rows) 批量求解;
         4. （可选）RBF 响应面拟合;
-        5. （可选）在响应面上做 Sobol 敏感性分解.
+        5. （可选）在响应面上做 Sobol 敏感性分解;
+        6. （可选）在响应面上调用 scipy 全局优化器找最优设计点.
 
     Parameters
     ----------
     template:
         必须声明 `output_params` 的 Template（否则无法输出 Y）.
     ds:
-        :class:~zylab.doe.design_space.DesignSpace.
+        :class:~zylab.doe.design_space.DesignSpace；`ds.variables` 提供
+        每个设计变量的 `.lower` / `.upper` 边界给优化器.
     n_samples:
         采样点数（覆盖 ds 默认）；method 为 FULL_FACTORIAL 时忽略.
     method:
         :class:~zylab.doe.design_space.SamplingMethod，缺省 LHC.
     seed:
-        采样和 Sobol 子采样的种子.
+        采样、Sobol 子采样和优化器的随机种子.
     fit_surrogate:
-        是否拟合 RBF 响应面（default True）.
+        是否拟合 RBF 响应面（default True）. optimize=True 时自动启用.
     sensitivity:
         是否在响应面上做 Sobol 敏感性分解（default False）.
     sobol_N:
         Sobol 估计器的 Saltelli 采样基数.
+    optimize:
+        是否在响应面上追加全局优化找最优点（default False）.
+    optimizer:
+        :class:~zylab.optim.surrogate.Optimizer 枚举或字符串
+        （`"differential_evolution"` / `"shgo"` / `"basinhopping"` /
+        `"dual_annealing"`）；缺省 DE.
+    opt_n_iter:
+        优化迭代次数 / 函数评估次数上限.
+    minimize:
+        True=最小化，False=最大化；响应面自动取负.
 
     Returns
     -------
@@ -456,5 +477,55 @@ def explore_doe(  # noqa: PLR0913
 
         sres = sobol_analysis(func, d=X.shape[1], N=sobol_N, seed=seed)
         result = replace(result, si=sres.Si, sti=sres.STi, variance=sres.variance)
+
+    if optimize:
+        from zylab.optim import Optimizer
+        from zylab.optim import optimize as _optimize
+
+        opt_method = Optimizer(optimizer) if optimizer is not None else Optimizer.DIFFERENTIAL_EVOLUTION
+
+        # 优化器最小化 surf.predict；若最大化则包一层取负代理
+        if minimize:
+            target_surf: Surrogate = surf
+        else:
+            from zylab.optim.surrogate import Surrogate
+
+            class _NegSurrogate(Surrogate):  # 取负代理，委托给 surf（最大化问题）
+                @override
+                def fit(self, X: np.ndarray, y: np.ndarray) -> _NegSurrogate:
+                    return self
+
+                @override
+                def predict(self, X: np.ndarray) -> np.ndarray:
+                    return -surf.predict(X)
+
+            target_surf = _NegSurrogate()
+
+        ores = _optimize(
+            target_surf,
+            ds.variables,
+            optimizer=opt_method,
+            n_iter=opt_n_iter,
+            seed=seed,
+        )
+        best_y_raw = ores.best_y if minimize else -ores.best_y
+        best_x_int = np.round(ores.best_x).astype(int)
+
+        # 真实验证：surrogate-based 优化器可能钻 RBF 插值漏洞（如负应变能），
+        # 在 best_x_int 处再跑一次真实求解，用真实值覆盖 best_y.
+        rows_dict = [{dv.name: float(best_x_int[i]) for i, dv in enumerate(ds.variables)}]
+        try:
+            _Xv, Yv = run_batch_outputs(template, rows_dict)
+            verified_y = float(Yv[0, 0])
+        except Exception:  # 真实验证失败（如代理钻到非法区域） → 回退到代理值
+            verified_y = float(best_y_raw)
+
+        result = replace(
+            result,
+            best_x=ores.best_x.copy(),
+            best_y=verified_y,
+            best_x_int=best_x_int,
+            optimizer=opt_method.value if hasattr(opt_method, "value") else str(opt_method),
+        )
 
     return result

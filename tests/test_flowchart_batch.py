@@ -411,3 +411,59 @@ class TestExploreDoe:
         assert result.si is None
         assert result.sti is None
         assert result.variance is None
+
+    def test_optimize_true_minimize_returns_best(self) -> None:
+        """optimize=True（默认 minimize）→ 返回 best_x / best_y / best_x_int / optimizer."""
+        from zylab.doe import DesignSpace, DesignVariable, SamplingMethod
+
+        ds = DesignSpace.from_variables(
+            [DesignVariable(name="model.nx", lower=4, upper=12), DesignVariable(name="model.ny", lower=2, upper=6)]
+        )
+        tpl = _template("structural.cantilever_static")
+        new_tpl = dataclasses.replace(
+            tpl,
+            output_params=(OutputParam(name="strain_energy", source="solve.strain_energy"),),
+        )
+        result = explore_doe(
+            new_tpl,
+            ds,
+            n_samples=12,
+            method=SamplingMethod.LATIN_HYPERCUBE,
+            optimize=True,
+            opt_n_iter=30,
+            seed=42,
+        )
+        assert result.best_x is not None
+        assert result.best_y is not None
+        assert result.best_x_int is not None
+        assert result.optimizer == "differential_evolution"
+        # best_x_int 在边界内
+        assert 4 <= result.best_x_int[0] <= 12
+        assert 2 <= result.best_x_int[1] <= 6
+        # best_y 是真实应变能（正的、物理合理）
+        assert result.best_y > 0
+
+    def test_optimize_true_maximize_uses_neg_surrogate(self) -> None:
+        """minimize=False → 内部用 _NegSurrogate 包装代理，返回的 best_y 取原始尺度."""
+        from zylab.doe import DesignSpace, DesignVariable
+
+        ds = DesignSpace.from_variables(
+            [DesignVariable(name="model.nx", lower=4, upper=12), DesignVariable(name="model.ny", lower=2, upper=6)]
+        )
+        tpl = _template("structural.cantilever_static")
+        new_tpl = dataclasses.replace(
+            tpl,
+            output_params=(OutputParam(name="strain_energy", source="solve.strain_energy"),),
+        )
+        result = explore_doe(
+            new_tpl,
+            ds,
+            n_samples=12,
+            optimize=True,
+            opt_n_iter=30,
+            minimize=False,
+            seed=42,
+        )
+        assert result.best_y is not None
+        # 最大化后仍应有真实正值（验证环节取真实求解值）
+        assert result.best_y > 0
