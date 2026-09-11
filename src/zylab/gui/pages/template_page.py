@@ -121,8 +121,13 @@ class TemplatePage(QWidget):
         # 左侧 Tab 分页：参数（默认） | 说明
         self._side_tabs = QTabWidget(objectName="sideTabs")
         self._param_form = DslParamForm()
-        self._side_tabs.addTab(self._param_form, "参数")
         self._docs_panel = DocsPanel()
+        # 关键：每个 tab widget 自身设不透明背景。QTabWidget 内部用 QStackedWidget
+        # 叠放所有 tab，非激活 tab 依赖 pane 背景擦除；若 widget 自身允许透明
+        # 或 QSS 链路某环节失效，就会出现文字穿透重叠。
+        self._param_form.setAutoFillBackground(True)
+        self._docs_panel.setAutoFillBackground(True)
+        self._side_tabs.addTab(self._param_form, "参数")
         self._side_tabs.addTab(self._docs_panel, "说明")
         # 初始隐藏说明页（加载模板后按 docs 声明决定显隐）
         self._side_tabs.setTabVisible(_TAB_DOCS, False)

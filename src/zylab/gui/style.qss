@@ -826,7 +826,9 @@ QFrame#sidePanel {
 QTabWidget#sideTabs::pane {
     border: none;
     top: -1px;
-    background-color: transparent;
+    /* 必须设不透明背景：QTabWidget pane 内部用 QStackedWidget 叠放 tab；
+       透明背景会导致非激活 tab 内容穿透显示，两个页面重叠。 */
+    background-color: ${QSS_BG_APP};
 }
 QTabWidget#sideTabs > QTabBar::tab {
     background-color: transparent;
