@@ -407,6 +407,8 @@ class NodeCanvasWidget(QGraphicsView):
     background_context_menu = Signal(object)
     #: 单元拖拽后位置变化（节点 id, 新 x, 新 y）
     node_moved = Signal(str, float, float)
+    #: 删除选中节点（节点 id）——页面据此调 graph.remove_node + set_graph 重绘
+    node_delete_requested = Signal(str)
 
     def __init__(self, parent=None) -> None:
         """初始化空画布（场景/视图配置 + 旋转动画定时器）."""
@@ -645,9 +647,13 @@ class NodeCanvasWidget(QGraphicsView):
         event.accept()
 
     def keyPressEvent(self, event: QKeyEvent) -> None:  # Qt 命名约定
-        """Ctrl+A 全选单元."""
+        """Ctrl+A 全选 / Delete/Backspace 删除选中节点."""
         if event.key() == Qt.Key_A and event.modifiers() == Qt.ControlModifier and self._cards:
             self.select_all()
+            event.accept()
+            return
+        if event.key() in (Qt.Key_Delete, Qt.Key_Backspace) and self._selected_id:
+            self.node_delete_requested.emit(self._selected_id)
             event.accept()
             return
         super().keyPressEvent(event)
