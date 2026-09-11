@@ -498,3 +498,44 @@ def test_load_project_bad_file(qtbot, tmp_path) -> None:
     page._load_project(bad)
     assert any("打开失败" in m for m in msgs)
     page.shutdown()
+
+
+@pytest.mark.gui
+def test_node_delete_requested_removes_node(qtbot) -> None:
+    """node_delete_requested 信号处理：graph.remove_node + canvas 重绘."""
+    page = FlowchartPage()
+    qtbot.addWidget(page)
+    _select_template(page, "structural.cantilever_static")
+    # cantilever_static 有 model + solve 两个节点
+    assert [n.id for n in page._graph.nodes()] == ["model", "solve"]
+    assert page._canvas.card_rect("solve") is not None
+
+    page._on_node_delete_requested("solve")
+    assert [n.id for n in page._graph.nodes()] == ["model"]
+    assert page._canvas.card_rect("solve") is None  # 画布已重绘
+    page.shutdown()
+
+
+@pytest.mark.gui
+def test_node_delete_requested_last_node_bailout(qtbot) -> None:
+    """只剩一个节点时 Delete 键被忽略（保底不抛异常）."""
+    page = FlowchartPage()
+    qtbot.addWidget(page)
+    _select_template(page, "structural.cantilever_static")
+    page._on_node_delete_requested("solve")  # 删 solve，只剩 model
+    assert len(page._graph.nodes()) == 1
+    page._on_node_delete_requested("model")  # 再删 model → 触发 bailout
+    assert len(page._graph.nodes()) == 1  # 数量不变
+    page.shutdown()
+
+
+@pytest.mark.gui
+def test_node_delete_signal_connected(qtbot) -> None:
+    """画布 node_delete_requested signal 已正确连接到页面 handler."""
+    page = FlowchartPage()
+    qtbot.addWidget(page)
+    _select_template(page, "structural.cantilever_static")
+    # 直接发 signal，相当于用户按 Delete
+    page._canvas.node_delete_requested.emit("solve")
+    assert [n.id for n in page._graph.nodes()] == ["model"]
+    page.shutdown()

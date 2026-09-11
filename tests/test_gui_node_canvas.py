@@ -348,3 +348,43 @@ def test_background_context_menu_emits(qtbot) -> None:
     event = QContextMenuEvent(QContextMenuEvent.Mouse, pos, global_pos)
     canvas.contextMenuEvent(event)
     assert len(received) == 1
+
+
+@pytest.mark.gui
+def test_delete_key_emits_node_delete_requested(qtbot) -> None:
+    """选中节点后按 Delete 键 → 发射 node_delete_requested 信号."""
+    canvas, _graph = _canvas_with_graph(qtbot)
+    canvas.select_node("model")
+    assert canvas.selected_node_id == "model"
+
+    received: list[str] = []
+    canvas.node_delete_requested.connect(received.append)
+
+    event = QKeyEvent(QEvent.KeyPress, Qt.Key_Delete, Qt.NoModifier)
+    canvas.keyPressEvent(event)
+    assert received == ["model"]
+
+
+@pytest.mark.gui
+def test_backspace_key_emits_node_delete_requested(qtbot) -> None:
+    """选中节点后按 Backspace 键 → 发射 node_delete_requested 信号."""
+    canvas, _graph = _canvas_with_graph(qtbot)
+    canvas.select_node("static")
+
+    received: list[str] = []
+    canvas.node_delete_requested.connect(received.append)
+
+    event = QKeyEvent(QEvent.KeyPress, Qt.Key_Backspace, Qt.NoModifier)
+    canvas.keyPressEvent(event)
+    assert received == ["static"]
+
+
+@pytest.mark.gui
+def test_delete_without_selection_noop(qtbot) -> None:
+    """无选中节点时 Delete 键不发信号."""
+    canvas, _graph = _canvas_with_graph(qtbot)
+    received: list[str] = []
+    canvas.node_delete_requested.connect(received.append)
+    event = QKeyEvent(QEvent.KeyPress, Qt.Key_Delete, Qt.NoModifier)
+    canvas.keyPressEvent(event)
+    assert received == []
