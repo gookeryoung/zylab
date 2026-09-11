@@ -816,3 +816,47 @@ QLabel#aboutInfoValue {
     font-size: ${FONT_BODY};
     font-weight: bold;
 }
+
+/* ------------------------------------------------ 参数化计算应用页：侧栏说明卡与运行条 */
+QFrame#sidePanel {
+    background-color: ${QSS_BG_APP};
+    border: none;
+}
+QFrame#docsCard {
+    background-color: ${QSS_BG_APP};
+    border: 1px solid ${QSS_BORDER};
+    border-radius: ${RADIUS_MD};
+}
+QFrame#docsHeader {
+    background-color: transparent;
+    border: none;
+    border-radius: ${RADIUS_MD};
+}
+QFrame#docsHeader:hover {
+    background-color: ${QSS_BG_MUTED};
+}
+QLabel#sectionHeader {
+    color: ${QSS_TEXT_SECONDARY};
+    font-size: ${FONT_CAPTION};
+    font-weight: bold;
+    letter-spacing: 1px;
+}
+QLabel#docsCaret {
+    color: ${QSS_TEXT_SECONDARY};
+    font-size: ${FONT_BODY};
+}
+QTextBrowser#docsText {
+    background-color: transparent;
+    border: none;
+}
+QLabel#docsImage {
+    background-color: ${QSS_BG_MUTED};
+    border: 1px solid ${QSS_BORDER};
+    border-radius: ${RADIUS_SM};
+    padding: 4px;
+}
+QFrame#runBar {
+    background-color: ${QSS_BG_APP};
+    border: none;
+    border-top: 1px solid ${QSS_BORDER};
+}

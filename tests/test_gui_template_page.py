@@ -85,7 +85,8 @@ def test_page_load_and_run(qtbot, template) -> None:
     assert page._run_btn.isEnabled()
     assert page._tabs.count() == 1  # curve + text 两结果页
     assert page._tabs.tabText(0) == "结果"
-    assert page._docs_label.isVisibleTo(page) and "扫描范围" in page._docs_label.text()
+    assert page._docs_panel.isVisibleTo(page)
+    assert "扫描范围" in page._docs_panel._text_browser.toPlainText()
 
     with qtbot.waitSignal(page.run_finished, timeout=10000) as blocker:
         page.run()

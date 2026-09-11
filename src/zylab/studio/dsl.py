@@ -19,7 +19,7 @@ from __future__ import annotations
 
 import json
 import logging
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Any, Mapping
 
@@ -157,6 +157,8 @@ class DslTemplate(Template):
     #: 原始节点参数表（保留 ``$name`` 引用；构造期代入默认值会销毁引用，
     #: 重绑定须以本表为源），格式 ``(节点id, 原始参数表)`` 序列
     raw_params: tuple[tuple[str, dict[str, Any]], ...] = ()
+    #: 模板来源文件绝对路径（GUI 解析 docs 示意图相对路径用；空 = 非文件加载构造）
+    source: str = ""
 
     # ------------------------------------------------------------------ DSL 查询
 
@@ -577,6 +579,11 @@ def _expect_list(data: Any, key: str, where: str) -> list[Any]:
 # ---------------------------------------------------------------------- 载入
 
 
+def _with_source(template: DslTemplate, path: Path) -> DslTemplate:
+    """记录模板来源文件绝对路径（source 字段，docs 相对路径解析基准）."""
+    return replace(template, source=str(path.resolve()))
+
+
 def dsl_from_yaml(text: str) -> DslTemplate:
     """由 YAML 文本解析 DSL 参数化计算（YAML 是 JSON 超集，两类文本均可）."""
     try:
@@ -589,7 +596,7 @@ def dsl_from_yaml(text: str) -> DslTemplate:
 
 
 def load_dsl(path: Path) -> DslTemplate:
-    """由文件加载 DSL 参数化计算（按扩展名分派 YAML/JSON 解析）."""
+    """由文件加载 DSL 参数化计算（按扩展名分派 YAML/JSON 解析；记录来源路径）."""
     path = Path(path)
     try:
         text = path.read_text(encoding="utf-8")
@@ -602,8 +609,8 @@ def load_dsl(path: Path) -> DslTemplate:
             raise TemplateError(f"DSL 参数化计算 JSON 解析失败: {exc}") from exc
         if not isinstance(data, Mapping):
             raise TemplateError("DSL 参数化计算顶层应为对象")
-        return DslTemplate.from_mapping(data)
+        return _with_source(DslTemplate.from_mapping(data), path)
     try:
-        return dsl_from_yaml(text)
+        return _with_source(dsl_from_yaml(text), path)
     except TemplateError as exc:
         raise TemplateError(f"DSL 参数化计算文件 {path.name} 非法: {exc}") from exc

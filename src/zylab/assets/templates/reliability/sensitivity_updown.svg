@@ -1,0 +1,30 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 240" font-family="'Segoe UI', 'Microsoft YaHei', sans-serif">
+  <!-- 坐标轴 -->
+  <line x1="60" y1="30" x2="60" y2="190" stroke="#475569" stroke-width="1.5"/>
+  <line x1="60" y1="190" x2="580" y2="190" stroke="#475569" stroke-width="1.5"/>
+  <polygon points="60,24 55,36 65,36" fill="#475569"/>
+  <polygon points="586,190 574,185 574,195" fill="#475569"/>
+  <text x="36" y="36" font-size="13" fill="#475569">刺激量</text>
+  <text x="548" y="212" font-size="13" fill="#475569">试验序号</text>
+  <!-- 升降阶梯路径（响应则降、不响应则升） -->
+  <path d="M70 118 h58 v-34 h58 v34 h58 v-30 h58 v30 h58 v-34 h58 v30 h58" fill="none" stroke="#3B82F6" stroke-width="2"/>
+  <!-- 响应点：实心圆 = 响应(降)，空心圆 = 未响应(升) -->
+  <g>
+    <circle cx="128" cy="84" r="5" fill="#10B981"/>
+    <circle cx="186" cy="118" r="5" fill="none" stroke="#EF4444" stroke-width="1.8"/>
+    <circle cx="244" cy="84" r="5" fill="none" stroke="#EF4444" stroke-width="1.8"/>
+    <circle cx="302" cy="118" r="5" fill="#10B981"/>
+    <circle cx="360" cy="88" r="5" fill="#10B981"/>
+    <circle cx="418" cy="118" r="5" fill="none" stroke="#EF4444" stroke-width="1.8"/>
+    <circle cx="476" cy="84" r="5" fill="none" stroke="#EF4444" stroke-width="1.8"/>
+    <circle cx="534" cy="114" r="5" fill="#10B981"/>
+  </g>
+  <!-- 50% 响应水平线（水平在真值附近振荡） -->
+  <line x1="60" y1="101" x2="580" y2="101" stroke="#94A3B8" stroke-width="1.2" stroke-dasharray="6 5"/>
+  <text x="486" y="95" font-size="12" fill="#64748B">50% 响应点 μ</text>
+  <!-- 图例 -->
+  <circle cx="90" cy="222" r="5" fill="#10B981"/>
+  <text x="102" y="226" font-size="12" fill="#475569">响应 → 降一个步长</text>
+  <circle cx="260" cy="222" r="5" fill="none" stroke="#EF4444" stroke-width="1.8"/>
+  <text x="272" y="226" font-size="12" fill="#475569">未响应 → 升一个步长</text>
+</svg>

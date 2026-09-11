@@ -1,8 +1,9 @@
 """参数化计算应用页：加载 DSL 参数化计算 -> 定制化计算界面 -> 运行 -> 结果/报告导出.
 
-布局（左右分栏 + 底部运行条）：
+布局（左右分栏 + 底部运行条，三区边界以 1px 分隔线与卡片化面板呈现）：
 
-- 左：参数化计算说明（docs 声明）+ DSL 参数表单（:class:`DslParamForm`）；
+- 左：图文说明卡（docs 声明：markdown 文本 + 示意图，可折叠）+
+  DSL 参数表单（:class:`DslParamForm`），同置滚动侧栏；
 - 右：结果多 TAB（普通结果默认合并「结果」流页；显式 ``group`` 为单独页签；
   cloud 路由到既有解算视图 :class:`~zylab.gui.widgets.result_view.ResultView`）；
 - 底：加载参数化计算 / 运行（主色）/ 导出报告（按 ``report.exports`` 声明
@@ -34,6 +35,7 @@ from .. import theme
 from ..icons import nav_icon
 from ..qt_compat import (
     QFileDialog,
+    QFrame,
     QHBoxLayout,
     QLabel,
     QPushButton,
@@ -46,6 +48,7 @@ from ..qt_compat import (
     Signal,
     exec_dialog,
 )
+from ..widgets.docs_panel import DocsPanel
 from ..widgets.dsl_param_form import DslParamForm
 from ..widgets.result_view import ResultView
 from ..widgets.stream_view import ResultStreamView
@@ -99,24 +102,23 @@ class TemplatePage(QWidget):
     # ------------------------------------------------------------------ 布局
 
     def _build_body(self) -> QWidget:
-        """左右分栏：左参数滚动区 | 右结果多 TAB."""
+        """左右分栏：左侧说明卡+参数面板 | 右侧结果多 TAB."""
         splitter = QSplitter(Qt.Horizontal)
         self._param_scroll = QScrollArea()
         self._param_scroll.setWidgetResizable(True)
         self._param_scroll.setFrameShape(QScrollArea.NoFrame)
-        self._param_panel = QWidget()
+        self._param_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        self._param_panel = QFrame(objectName="sidePanel")
         self._param_layout = QVBoxLayout(self._param_panel)
         self._param_layout.setContentsMargins(theme.SPACING_MD, theme.SPACING_MD, theme.SPACING_MD, theme.SPACING_MD)
         self._param_layout.setSpacing(theme.SPACING_MD)
-        self._docs_label = QLabel("", objectName="secondaryText")
-        self._docs_label.setWordWrap(True)
-        self._docs_label.setVisible(False)
-        self._param_layout.addWidget(self._docs_label)
+        self._docs_panel = DocsPanel()
+        self._param_layout.addWidget(self._docs_panel)
         self._param_form = DslParamForm()
         self._param_layout.addWidget(self._param_form)
         self._param_layout.addStretch()
         self._param_scroll.setWidget(self._param_panel)
-        self._param_scroll.setMinimumWidth(280)
+        self._param_scroll.setMinimumWidth(300)
         splitter.addWidget(self._param_scroll)
 
         self._tabs = QTabWidget(objectName="resultTabs")
@@ -127,14 +129,17 @@ class TemplatePage(QWidget):
         splitter.addWidget(self._tabs)
         splitter.setStretchFactor(0, 0)
         splitter.setStretchFactor(1, 1)
-        splitter.setSizes([340, 900])
+        splitter.setCollapsible(0, False)
+        splitter.setCollapsible(1, False)
+        splitter.setSizes([360, 900])
         return splitter
 
     def _build_run_bar(self) -> QWidget:
         """底部运行条：参数化计算市场/加载/运行/导报告 + 状态提示."""
-        bar = QWidget(objectName="runBar")
+        bar = QFrame(objectName="runBar")
         layout = QHBoxLayout(bar)
         layout.setContentsMargins(theme.SPACING_MD, theme.SPACING_SM, theme.SPACING_MD, theme.SPACING_SM)
+        layout.setSpacing(theme.SPACING_SM)
         self._market_btn = QPushButton("参数化计算市场")
         self._market_btn.clicked.connect(self.open_market)
         self._load_btn = QPushButton("加载参数化计算")
@@ -148,6 +153,7 @@ class TemplatePage(QWidget):
         self._export_btn.setEnabled(False)
         layout.addWidget(self._market_btn)
         layout.addWidget(self._load_btn)
+        layout.addSpacing(theme.SPACING_MD)
         layout.addWidget(self._run_btn)
         layout.addWidget(self._export_btn)
         layout.addStretch()
@@ -181,14 +187,10 @@ class TemplatePage(QWidget):
         self.load_template(template)
 
     def load_template(self, template: DslTemplate) -> None:
-        """应用参数化计算：重建参数表单与结果页（运行前置就绪）."""
+        """应用参数化计算：重建说明卡/参数表单与结果页（运行前置就绪）."""
         self._template = template
         self._outputs = {}
-        if template.docs is not None and template.docs.text:
-            self._docs_label.setText(template.docs.text)
-            self._docs_label.setVisible(True)
-        else:
-            self._docs_label.setVisible(False)
+        self._docs_panel.set_template(template)
         self._param_form.set_template(template)
         self._rebuild_tabs()
         self._run_btn.setEnabled(True)
@@ -367,5 +369,6 @@ class TemplatePage(QWidget):
     # ------------------------------------------------------------------ 主题/生命周期
 
     def refresh_theme(self) -> None:
-        """主题切换后刷新运行按钮图标."""
+        """主题切换后刷新运行按钮图标与说明卡正文配色."""
         self._run_btn.setIcon(nav_icon("play", theme.current_palette().text_on_primary))
+        self._docs_panel.refresh_theme()

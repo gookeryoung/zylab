@@ -73,4 +73,13 @@ report:
       figure: freq_curve
       text: "扫频上限 {f_max} rad/s、{n_freq} 个频率点，Rayleigh 阻尼 α={alpha}。"
 docs:
-  intro: {text: 频响曲线在固有频率附近出现共振峰，阻尼增大时峰高降低、带宽展宽。}
+  intro:
+    text: |
+      ### 悬臂梁谐响应
+
+      左端**固定**、右端受简谐力 F(t)=F₀sinωt 的 Q4 悬臂梁频率扫描。
+
+      - 调整几何 / 材料 / 载荷与扫频参数后点击「运行」；
+      - 频响曲线在**固有频率**附近出现共振峰；
+      - 阻尼（α / β）增大时峰高降低、带宽展宽。
+    image: cantilever_harmonic.svg
