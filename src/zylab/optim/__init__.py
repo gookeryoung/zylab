@@ -24,7 +24,7 @@
 from __future__ import annotations
 
 from .errors import OptimError, SurrogateError
-from .optimize import Optimizer, OptimResult, optimize, optimize_direct
+from .optimize import Optimizer, OptimResult, ParetoOptResult, optimize, optimize_direct, optimize_pareto
 from .pareto import (
     ParetoSummary,
     crowding_distance,
@@ -47,6 +47,7 @@ __all__ = [
     "OptimError",
     "OptimResult",
     "Optimizer",
+    "ParetoOptResult",
     "ParetoSummary",
     "RbfSurrogate",
     "SaltelliSample",
@@ -57,6 +58,7 @@ __all__ = [
     "crowding_distance",
     "optimize",
     "optimize_direct",
+    "optimize_pareto",
     "pareto_front",
     "pareto_ranks",
     "pareto_summary",
