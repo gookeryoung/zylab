@@ -822,27 +822,34 @@ QFrame#sidePanel {
     background-color: ${QSS_BG_APP};
     border: none;
 }
+/* 说明卡：Jupyter 式轻盈卡片，与 resultCell 风格对齐 */
 QFrame#docsCard {
-    background-color: ${QSS_BG_APP};
-    border: 1px solid ${QSS_BORDER};
-    border-radius: ${RADIUS_MD};
+    background-color: transparent;
+    border: 1px solid transparent;
+    border-left: 3px solid ${QSS_PRIMARY};
+    border-radius: ${RADIUS_SM};
+}
+QFrame#docsCard:hover {
+    background-color: ${QSS_BG_MUTED};
 }
 QFrame#docsHeader {
     background-color: transparent;
     border: none;
-    border-radius: ${RADIUS_MD};
+    border-radius: ${RADIUS_SM};
 }
 QFrame#docsHeader:hover {
     background-color: ${QSS_BG_MUTED};
 }
-QLabel#sectionHeader {
-    color: ${QSS_TEXT_SECONDARY};
-    font-size: ${FONT_CAPTION};
+QLabel#docsIcon {
+    /* 图标颜色由 tinted_pixmap 在代码层按 primary 着色 */
+}
+QLabel#docsTitle {
+    color: ${QSS_PRIMARY};
+    font-size: ${FONT_BODY};
     font-weight: bold;
-    letter-spacing: 1px;
 }
 QLabel#docsCaret {
-    color: ${QSS_TEXT_SECONDARY};
+    color: ${QSS_PRIMARY};
     font-size: ${FONT_BODY};
 }
 QTextBrowser#docsText {
@@ -852,9 +859,10 @@ QTextBrowser#docsText {
 QLabel#docsImage {
     background-color: ${QSS_BG_MUTED};
     border: 1px solid ${QSS_BORDER};
-    border-radius: ${RADIUS_SM};
-    padding: 4px;
+    border-radius: ${RADIUS_MD};
+    padding: 6px;
 }
+
 QFrame#runBar {
     background-color: ${QSS_BG_APP};
     border: none;
