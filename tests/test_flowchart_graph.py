@@ -256,3 +256,85 @@ class TestLinkEditing:
         graph = _graph()
         with pytest.raises(LinkError, match="端口类型不匹配"):
             graph.add_link("modal", "model", "static.solution")
+
+
+class TestContentHash:
+    """NodeInstance.content_hash 与 WorkflowGraph.compute_node_hash."""
+
+    def test_initial_hash_none(self) -> None:
+        """实例化后 content_hash 为空."""
+        graph = _graph()
+        for node in graph.nodes():
+            assert node.content_hash is None
+
+    def test_invalidate_clears_hash(self) -> None:
+        """级联失效清空全部下游哈希."""
+        graph = _graph()
+        for node in graph.nodes():
+            graph.mark_result(node.id, result=object(), elapsed=0.1, content_hash="fake_hash")
+        graph.invalidate("model")
+        for node in graph.nodes():
+            assert node.content_hash is None
+
+    def test_mark_result_stores_hash(self) -> None:
+        """mark_result 写入 content_hash."""
+        graph = _graph()
+        graph.mark_result("model", result=object(), elapsed=0.1, content_hash="abc123")
+        assert graph.node("model").content_hash == "abc123"
+
+    def test_mark_result_none_hash_preserves(self) -> None:
+        """mark_result(content_hash=None) 不清空已有哈希."""
+        graph = _graph()
+        graph.mark_result("model", result=object(), elapsed=0.1, content_hash="abc")
+        graph.mark_result("model", result=object(), elapsed=0.2)  # 默认 None
+        assert graph.node("model").content_hash == "abc"
+
+    def test_compute_node_hash_source_deterministic(self) -> None:
+        """源节点（无输入）指纹仅由 params 决定."""
+        graph = _graph()
+        h1 = graph.compute_node_hash("model")
+        h2 = graph.compute_node_hash("model")
+        assert h1 == h2
+
+    def test_compute_node_hash_changes_with_params(self) -> None:
+        """参数变更改变指纹."""
+        graph = _graph()
+        h1 = graph.compute_node_hash("model")
+        graph.set_param("model", "nx", 8)
+        h2 = graph.compute_node_hash("model")
+        assert h1 != h2
+
+    def test_compute_node_hash_propagates_upstream(self) -> None:
+        """上游哈希链纳入下游指纹."""
+        graph = _graph()
+        # 上游无内容哈希时计算下游
+        h_no_up = graph.compute_node_hash("static")
+        # 给上游填入内容哈希
+        graph.node("model").content_hash = "upstream_hash_value"
+        h_with_up = graph.compute_node_hash("static")
+        assert h_no_up != h_with_up
+
+    def test_compute_node_hash_full_cycle(self) -> None:
+        """完整 cycle：执行 -> 哈希记录 -> 重算 -> 哈希相同."""
+        graph = _graph()
+        # 模拟执行
+        for node_id in graph.execution_order():
+            h = graph.compute_node_hash(node_id)
+            graph.mark_result(node_id, result=object(), elapsed=0.1, content_hash=h)
+        # 哈希应全部非空且一致
+        for node in graph.nodes():
+            assert node.content_hash is not None
+            assert node.content_hash == graph.compute_node_hash(node.id)
+
+    def test_compute_node_hash_change_invalidates_downstream(self) -> None:
+        """参数变更后下游哈希自动不同（触发重算语义）."""
+        graph = _graph()
+        for node_id in graph.execution_order():
+            h = graph.compute_node_hash(node_id)
+            graph.mark_result(node_id, result=object(), elapsed=0.1, content_hash=h)
+        # 改上游参数
+        graph.set_param("model", "nx", 8)
+        # model 和 downstream 的指纹都应变化
+        assert graph.node("model").content_hash != graph.compute_node_hash("model")
+        assert graph.node("static").content_hash != graph.compute_node_hash("static")
+        assert graph.node("modal").content_hash != graph.compute_node_hash("modal")

@@ -1,6 +1,7 @@
 """zylab.flowchart - 参数化计算配置化多学科分析流程图内核（Qt-free）.
 
 模块划分：
+- :mod:`zylab.flowchart.cache`：内容哈希层（content_hash + node_fingerprint，缓存命中判断）；
 - :mod:`zylab.flowchart.module`：模块类型系统（端口/参数 schema/内置模块表）；
 - :mod:`zylab.flowchart.bundle`：MODEL 端口载荷（模型四要素）；
 - :mod:`zylab.flowchart.meshing3d`：三维 HEX8 网格生成器（圆柱电阻 + V 形薄膜电阻）；
@@ -8,8 +9,8 @@
 - :mod:`zylab.flowchart.template`：参数化计算定义与 JSON 加载/校验；
 - :mod:`zylab.flowchart.registry`：参数化计算注册表（内置 + 用户目录）；
 - :mod:`zylab.flowchart.builtin`：内置参数化计算表；
-- :mod:`zylab.flowchart.graph`：工作流图（节点状态机 + 级联脏传播 + 拓扑执行计划）；
-- :mod:`zylab.flowchart.runner`：编排执行（拓扑序驱动 ProcessExecutor，缓存命中跳过）；
+- :mod:`zylab.flowchart.graph`：工作流图（节点状态机 + 级联脏传播 + 拓扑执行计划 + 内容哈希）；
+- :mod:`zylab.flowchart.runner`：编排执行（拓扑序驱动 ProcessExecutor，哈希缓存命中跳过）；
 - :mod:`zylab.flowchart.batch`：批处理执行（进程内拓扑序求解 + 参数覆盖/扫描 + 摘要）；
 - :mod:`zylab.flowchart.project_io`：工程文件持久化（人类可读 JSON，兼容旧 HDF5）；
 - :mod:`zylab.flowchart.dsl`：DSL 参数化计算（YAML 声明式参数化计算解析/校验/参数绑定）；
@@ -23,6 +24,7 @@ from __future__ import annotations
 from .batch import NodeOutcome, ReportFn, RunOutcome, resolve_target, run_scan, run_workflow, summarize
 from .builtin import BUILTIN_TEMPLATES
 from .bundle import ConductionBundle, ModelBundle
+from .cache import content_hash, node_fingerprint
 from .errors import (
     FlowchartError,
     LinkError,
@@ -91,9 +93,11 @@ __all__ = [
     "build_html",
     "build_markdown",
     "build_result",
+    "content_hash",
     "load_template",
     "load_workflow",
     "module_spec",
+    "node_fingerprint",
     "resolve_target",
     "run_scan",
     "run_workflow",

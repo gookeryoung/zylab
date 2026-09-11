@@ -764,17 +764,55 @@ BUILTIN_MODULES: tuple[ModuleSpec, ...] = (
     ),
 )
 
-_MODULES_BY_ID: dict[str, ModuleSpec] = {spec.type_id: spec for spec in BUILTIN_MODULES}
+# ------------------------------------------------------------------ 求解器模块（fea.solvers.SolverSpec 自动生成，并存保留旧 analysis.* 类型）
+
+
+def _build_solver_modules() -> tuple[ModuleSpec, ...]:
+    """延迟导入 solver_adapter 避免循环依赖，返回 FE/ET 求解器生成的 ModuleSpec 元组."""
+    from .solver_adapter import build_all_module_specs
+
+    specs = build_all_module_specs()
+    return tuple(specs.values())
+
+
+SOLVER_MODULES: tuple[ModuleSpec, ...] = _build_solver_modules()
+
+
+_MODULES_BY_ID: dict[str, ModuleSpec] = {spec.type_id: spec for spec in (*BUILTIN_MODULES, *SOLVER_MODULES)}
 
 
 def module_spec(type_id: str) -> ModuleSpec:
-    """按类型 id 取模块规格；未注册抛 :class:`ModuleNotFoundError_`."""
-    try:
-        return _MODULES_BY_ID[type_id]
-    except KeyError:
-        raise ModuleNotFoundError_(f"未知模块类型: {type_id!r}") from None
+    """按类型 id 取模块规格；未注册抛 :class:`ModuleNotFoundError_`.
+
+    查找顺序：内置字典 → PluginRegistry 的 SOLVER 插件（第三方求解器）.
+    """
+    cached = _MODULES_BY_ID.get(type_id)
+    if cached is not None:
+        return cached
+    # 延迟导入 PluginRegistry 避免启动时扫描 entry points
+    from zylab.core.registry import PluginKind, PluginRegistry
+
+    registry = PluginRegistry()
+    registry.load_entry_points()
+    for spec in registry.list(kind=PluginKind.SOLVER):
+        obj = registry.resolve(spec.name)
+        # 允许插件返回 SolverSpec 或直接返回 ModuleSpec
+        try:
+            from zylab.fea.solvers import SolverSpec
+        except ImportError:  # pragma: no cover（fea 不可用场景）
+            SolverSpec = None  # type: ignore[assignment]
+        if SolverSpec is not None and isinstance(obj, SolverSpec):
+            from .solver_adapter import build_module_spec
+
+            ms = build_module_spec(obj)
+            _MODULES_BY_ID[obj.type_id] = ms
+            return ms
+        if isinstance(obj, ModuleSpec):
+            _MODULES_BY_ID[obj.type_id] = obj
+            return obj
+    raise ModuleNotFoundError_(f"未知模块类型: {type_id!r}") from None
 
 
 def all_modules() -> tuple[ModuleSpec, ...]:
-    """返回全部内置模块规格（定义序）."""
-    return BUILTIN_MODULES
+    """返回全部内置模块规格（定义序 + 求解器序）."""
+    return (*BUILTIN_MODULES, *SOLVER_MODULES)

@@ -174,4 +174,6 @@ class TestBuiltinModules:
 
     def test_all_modules_returns_builtin(self) -> None:
         """all_modules 返回内置表."""
-        assert all_modules() is BUILTIN_MODULES
+        result = all_modules()
+        assert all(m in result for m in BUILTIN_MODULES)
+        assert len(result) >= len(BUILTIN_MODULES)  # 同时包含 SOLVER_MODULES

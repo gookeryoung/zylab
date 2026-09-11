@@ -16,6 +16,7 @@ from dataclasses import dataclass
 from enum import Enum, unique
 from typing import Any, Mapping
 
+from .cache import node_fingerprint
 from .errors import FlowchartError, LinkError, TemplateError
 from .module import ModuleSpec, module_spec
 from .template import Template
@@ -46,6 +47,8 @@ class NodeInstance:
     :param error: 上次执行错误消息（空串表示无错误）。
     :param running: 执行中标志（runner 管理）。
     :param elapsed: 上次执行耗时（秒）。
+    :param content_hash: 上次执行时的内容哈希（参数 + 上游哈希的指纹），
+        失效时清空；runner 执行前用此字段判断缓存是否命中。
     """
 
     id: str
@@ -56,6 +59,7 @@ class NodeInstance:
     error: str = ""
     running: bool = False
     elapsed: float = 0.0
+    content_hash: str | None = None
 
     @property
     def state(self) -> NodeState:
@@ -219,12 +223,13 @@ class WorkflowGraph:
         self._invalidate(node_id)
 
     def _invalidate(self, node_id: str) -> None:
-        """本节点与全部下游：清空结果/错误/耗时（回到 READY 或 UNFULFILLED）."""
+        """本节点与全部下游：清空结果/错误/耗时/内容哈希（回到 READY 或 UNFULFILLED）."""
         for nid in (node_id, *self.descendants(node_id)):
             node = self._nodes[nid]
             node.result = None
             node.error = ""
             node.elapsed = 0.0
+            node.content_hash = None
 
     # ------------------------------------------------------------- 状态迁移（runner 调用）
 
@@ -232,12 +237,17 @@ class WorkflowGraph:
         """标记执行中."""
         self.node(node_id).running = True
 
-    def mark_result(self, node_id: str, result: Any, elapsed: float) -> None:
-        """登记执行结果（-> UP_TO_DATE）并记录耗时."""
+    def mark_result(self, node_id: str, result: Any, elapsed: float, content_hash: str | None = None) -> None:
+        """登记执行结果（-> UP_TO_DATE）并记录耗时与内容哈希.
+
+        :param content_hash: 本次执行的内容指纹；None 时不从外部写入（保持原值）。
+        """
         node = self.node(node_id)
         node.result = result
         node.elapsed = elapsed
         node.running = False
+        if content_hash is not None:
+            node.content_hash = content_hash
 
     def mark_failed(self, node_id: str, error: str) -> None:
         """登记执行失败（-> FAILED）."""
@@ -248,3 +258,20 @@ class WorkflowGraph:
     def mark_reset(self, node_id: str) -> None:
         """取消后清除运行标志（FAILED 重跑中被取消则回到 FAILED，否则 READY）."""
         self.node(node_id).running = False
+
+    # ------------------------------------------------------------- 内容哈希（缓存层）
+
+    def compute_node_hash(self, node_id: str) -> str:
+        """计算节点当前内容指纹（参数 + 上游输入引用 + 上游哈希链）.
+
+        上游哈希链只收集已执行节点的 ``content_hash``；未执行的上游不纳入，
+        此时该节点的指纹必然与上一次执行时不同（上一次上游已有哈希），
+        从而正确触发重算。
+        """
+        node = self.node(node_id)
+        upstream_hashes: dict[str, str] = {}
+        for up_id in self.upstream_ids(node_id):
+            up = self._nodes.get(up_id)
+            if up is not None and up.content_hash is not None:
+                upstream_hashes[up_id] = up.content_hash
+        return node_fingerprint(node.params, node.inputs, upstream_hashes)

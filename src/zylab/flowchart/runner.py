@@ -112,6 +112,9 @@ class WorkflowRunner:
 
         STARTED 先于 submit 派发：保证同步执行器（事件在 add_listener 内重入）下
         事件序仍为 STARTED -> PROGRESS -> RESULT。
+
+        缓存命中逻辑：若当前内容指纹与 ``node.content_hash`` 一致（且 result 有效），
+        则跳过执行直接派发 RESULT，将该节点标记为 UP_TO_DATE。
         """
         with self._lock:
             if not self._queue:
@@ -120,6 +123,14 @@ class WorkflowRunner:
                 return
             node_id = self._queue.pop(0)
             node = self._graph.node(node_id)
+            # ---- 缓存命中检查 ----
+            current_hash = self._graph.compute_node_hash(node_id)
+            if node.content_hash is not None and node.content_hash == current_hash and node.result is not None:
+                # 内容未变且已有结果：跳过执行，直接派发缓存命中事件
+                self._emit(NodeRunEvent(node_id, EventKind.RESULT, node.result))
+                self._submit_next()
+                return
+            # ---- 正常执行路径 ----
             outputs = {n.id: n.result for n in self._graph.nodes()}
             inputs = {port: resolve_input(ref, outputs) for port, ref in node.inputs.items()}
             self._graph.mark_running(node_id)
@@ -136,15 +147,15 @@ class WorkflowRunner:
                 self._handle = None
                 self._current = None
                 return
-            self._handle.add_listener(lambda event: self._on_task_event(node_id, started_at, event))
+            self._handle.add_listener(lambda event: self._on_task_event(node_id, started_at, current_hash, event))
 
-    def _on_task_event(self, node_id: str, started_at: float, event: TaskEvent) -> None:
-        """executor 事件处理（监控线程）：PROGRESS 透传；RESULT 登记缓存并续跑；ERROR 中止队列."""
+    def _on_task_event(self, node_id: str, started_at: float, content_hash: str, event: TaskEvent) -> None:
+        """executor 事件处理（监控线程）：PROGRESS 透传；RESULT 登记缓存与哈希并续跑；ERROR 中止队列."""
         if event.kind is EventKind.PROGRESS:
             self._emit(NodeRunEvent(node_id, EventKind.PROGRESS, event.payload))
             return
         if event.kind is EventKind.RESULT:
-            self._graph.mark_result(node_id, event.payload, time.perf_counter() - started_at)
+            self._graph.mark_result(node_id, event.payload, time.perf_counter() - started_at, content_hash=content_hash)
             self._emit(NodeRunEvent(node_id, EventKind.RESULT, event.payload))
             with self._lock:
                 self._handle = None
