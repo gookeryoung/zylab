@@ -4,7 +4,9 @@
   方法102 OSTR 法、方法103 升降法、方法104 D-优化法、方法201 概率单位法、
   方法202 完全步进法；
 - **FORM / SORM**：HLRF 迭代 + Breitung 曲率修正，处理正态/对数正态/Gumbel/
-  Weibull/指数/均匀等独立随机变量的极限状态函数求解.
+  Weibull/指数/均匀等独立随机变量的极限状态函数求解；
+- **ReliabilityBridge**：把 :class:`~zylab.flowchart.Template` 工作流直接绑定到
+  FORM / SORM / MC，无需手写极限状态函数。
 """
 
 from __future__ import annotations
@@ -21,6 +23,7 @@ from .analysis import (
     response_points,
     run_sensitivity_test,
 )
+from .bridge import ReliabilityBridge
 from .errors import ReliabilityError
 from .form import (
     Distribution,
@@ -45,6 +48,7 @@ __all__ = [
     "FORMResult",
     "MCResult",
     "RandomVariable",
+    "ReliabilityBridge",
     "ReliabilityError",
     "ResponsePoints",
     "SORMResult",
