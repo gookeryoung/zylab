@@ -14,7 +14,7 @@ import logging
 from functools import cached_property
 
 import numpy as np
-from scipy.optimize import OptimizeResult, minimize
+from scipy.optimize import lsq_linear
 
 __all__ = ["LSCCurve", "solve_lsc_curve"]
 
@@ -253,7 +253,7 @@ class LSCCurve:
 
     @cached_property
     def i(self) -> np.ndarray:
-        """内部段采样向量：linspace(m1, 0, 100)."""
+        """内部段采样向量：linspace(m, 0, 100)."""
         return np.linspace(self.m1, 0, 100)
 
     @cached_property
@@ -336,53 +336,14 @@ class LSCCurve:
     # ------------------------------------------------------------------ 求解
 
     @cached_property
-    def R(self) -> OptimizeResult:
-        """用 SLSQP 求解带等式+不等式约束的最小二乘."""
-
-        def _obj(x: np.ndarray) -> float:
-            r = self.C @ x - self.d
-            return float(np.dot(r, r))
-
-        def _jac(x: np.ndarray) -> np.ndarray:
-            r = self.C @ x - self.d
-            return 2.0 * self.C.T @ r
-
-        constraints: list[dict] = []
-        for i in range(self.A_eq.shape[0]):
-            constraints.append(
-                {
-                    "type": "eq",
-                    "fun": lambda x, i=i: self.A_eq[i] @ x - self.b_eq[i],
-                    "jac": lambda _x, i=i: self.A_eq[i].copy(),
-                }
-            )
-        for i in range(self.A_ineq.shape[0]):
-            constraints.append(
-                {
-                    "type": "ineq",
-                    "fun": lambda x, i=i: self.b_ineq[i] - self.A_ineq[i] @ x,
-                    "jac": lambda _x, i=i: -self.A_ineq[i].copy(),
-                }
-            )
-
-        from scipy.optimize import lsq_linear as _lsq
-
-        x0 = _lsq(self.C, self.d, bounds=(-np.inf, np.inf), lsmr_tol="auto", verbose=0).x
-
-        result = minimize(
-            _obj,
-            x0,
-            method="SLSQP",
-            jac=_jac,
-            constraints=constraints,
-            options={"maxiter": 10000, "ftol": 1e-15},
-        )
-        return OptimizeResult(
-            x=result.x,
-            fun=result.fun,
-            cost=result.fun,
-            success=result.success,
-            message=result.message,
+    def R(self):
+        """用 lsq_linear 求解 C@x=d 的最小范数解."""
+        return lsq_linear(
+            self.C,
+            self.d,
+            bounds=(-np.inf, np.inf),
+            lsmr_tol="auto",
+            verbose=0,
         )
 
     @cached_property
