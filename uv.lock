@@ -5845,7 +5845,7 @@ wheels = [
 
 [[package]]
 name = "zylab"
-version = "0.1.7"
+version = "0.1.8"
 source = { editable = "." }
 dependencies = [
     { name = "h5py", version = "3.11.0", source = { registry = "https://mirrors.aliyun.com/pypi/simple/" }, marker = "python_full_version < '3.9'" },
