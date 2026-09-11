@@ -428,7 +428,7 @@ def solve_lsc_curve(  # noqa: PLR0913, PLR0917
     - x: 16 维系数数组（list 形式，pickle 安全）
     - cost: 残差
     - curves: 四段曲线采样数据
-    - breakpoints: 断点坐标
+    - breakpoints: 断点坐标，含 inner/outer 详情 + x/y_upper/y_lower 扁平序列
     - angles: 四角度
     """
     curve = LSCCurve(m=m, m1=m1, s=s, s1=s1, H=H, m2=m2, H1=H1, H2=H2, J=J, J1=J1)
@@ -438,11 +438,20 @@ def solve_lsc_curve(  # noqa: PLR0913, PLR0917
         name: {"x": seg["x"].tolist(), "y": seg["y"].tolist()} for name, seg in segments.items()
     }
     angles = curve.calculate_angles()
+    bps = curve.breakpoint_points()
+    # 构造断点扁平序列（方便 DSL 表格引用取列值）
+    breakpoints = {
+        "inner": bps["inner"],
+        "outer": bps["outer"],
+        "x": [bps["inner"]["x"], bps["outer"]["x"]],
+        "y_upper": [bps["inner"]["y_upper"], bps["outer"]["y_upper"]],
+        "y_lower": [bps["inner"]["y_lower"], bps["outer"]["y_lower"]],
+    }
     return {
         "x": curve.x.tolist(),
         "cost": float(curve.R.cost),
         "curves": curves,
-        "breakpoints": curve.breakpoint_points(),
+        "breakpoints": breakpoints,
         "angles": {
             "m_upper": angles[0],
             "m_lower": angles[1],

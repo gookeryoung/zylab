@@ -212,41 +212,63 @@ def _build_curve(result: DslResult, outputs: Mapping[str, Any]) -> CurveData:
     )
 
 
+def _resolve_table_column(entry: Any, outputs: Mapping[str, Any]) -> tuple[str, tuple[Any, ...]]:
+    """解析单列声明为 ``(标题, 值序列)``.
+
+    ref 可以是字符串引用、list/tuple 字面量、或 Mapping 内嵌的 ref.
+    """
+    if isinstance(entry, Mapping):
+        ref_raw = entry.get("ref")
+        if isinstance(ref_raw, (list, tuple)):
+            title = str(entry.get("title", "列"))
+            values = tuple(_plain(v) for v in ref_raw)
+        else:
+            ref = str(ref_raw)
+            title = str(entry.get("title", ref.rpartition(".")[2]))
+            values = _resolve_sequence(ref, outputs)
+    elif isinstance(entry, (list, tuple)):
+        title = "列"
+        values = tuple(_plain(v) for v in entry)
+    else:
+        ref = str(entry)
+        title = ref.rpartition(".")[2]
+        values = _resolve_sequence(ref, outputs)
+    return title, values
+
+
+def _make_table_column(entry: Any) -> TableColumn:
+    """由列声明构建 :class:`TableColumn`（含 format/align 元信息）."""
+    if isinstance(entry, Mapping):
+        ref_raw = entry.get("ref")
+        if isinstance(ref_raw, (list, tuple)):
+            return TableColumn(title=str(entry.get("title", "列")))
+        ref = str(ref_raw)
+        return TableColumn(
+            title=str(entry.get("title", ref.rpartition(".")[2])),
+            format=str(entry.get("format", "")),
+            align=str(entry.get("align", "")),
+        )
+    if isinstance(entry, (list, tuple)):
+        return TableColumn(title="列")
+    ref = str(entry)
+    return TableColumn(title=ref.rpartition(".")[2])
+
+
 def _build_table(result: DslResult, outputs: Mapping[str, Any]) -> TableData:
     """解析表格声明：columns 引用各列序列，转置为行."""
     spec = result.spec
     columns_raw = spec["columns"]
     if not isinstance(columns_raw, list) or not columns_raw:
         raise TemplateError(f"表格结果 {result.id!r} 的 columns 应为非空列表")
-    titles: list[str] = []
-    column_values: list[tuple[Any, ...]] = []
-    for entry in columns_raw:
-        if isinstance(entry, Mapping):
-            ref = str(entry["ref"])
-            titles.append(str(entry.get("title", ref.rpartition(".")[2])))
-        else:
-            ref = str(entry)
-            titles.append(ref.rpartition(".")[2])
-        column_values.append(_resolve_sequence(ref, outputs))
+    resolved = [_resolve_table_column(entry, outputs) for entry in columns_raw]
+    column_values = [values for _, values in resolved]
     lengths = {len(values) for values in column_values}
     if len(lengths) > 1:
         raise TemplateError(f"表格结果 {result.id!r} 各列长度不一致: {sorted(lengths)}")
-    rows = tuple(tuple(values[i] for values in column_values) for i in range(lengths.pop()))
-    columns_list: list[TableColumn] = []
-    for entry in columns_raw:
-        if isinstance(entry, Mapping):
-            ref = str(entry["ref"])
-            columns_list.append(
-                TableColumn(
-                    title=str(entry.get("title", ref.rpartition(".")[2])),
-                    format=str(entry.get("format", "")),
-                    align=str(entry.get("align", "")),
-                )
-            )
-        else:
-            ref = str(entry)
-            columns_list.append(TableColumn(title=ref.rpartition(".")[2]))
-    return TableData(title=result.title, columns=tuple(columns_list), rows=rows)
+    n_rows = lengths.pop()
+    rows = tuple(tuple(values[i] for values in column_values) for i in range(n_rows))
+    columns_list = tuple(_make_table_column(entry) for entry in columns_raw)
+    return TableData(title=result.title, columns=columns_list, rows=rows)
 
 
 def _build_text(result: DslResult, outputs: Mapping[str, Any]) -> TextData:
@@ -329,14 +351,17 @@ def _index_text(segment: str) -> bool:
 
 
 def _resolve_sequence(ref: str, outputs: Mapping[str, Any]) -> tuple[Any, ...]:
-    """按引用取序列值（数组/列表收敛为元组）.
+    """按引用取序列值（数组/列表/dict 收敛为元组）.
 
     载荷已经 :func:`_resolve_path` 的 :func:`_plain` 收敛（ndarray ->
-    list），此处只需处理 tuple/list，元素再做一次标量收敛。
+    list），此处处理 tuple/list/dict，元素再做一次标量收敛。
+    dict 按 values() 展开（键序保留插入顺序）。
     """
     value = _resolve_path(ref, outputs)
     if isinstance(value, (tuple, list)):
         return tuple(_plain(item) for item in value)
+    if isinstance(value, Mapping):
+        return tuple(_plain(v) for v in value.values())
     raise TemplateError(f"结果引用 {ref!r} 应为序列，得到 {type(value).__name__}")
 
 

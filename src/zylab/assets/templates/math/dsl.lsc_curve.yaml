@@ -1,7 +1,7 @@
 meta:
   id: dsl.lsc_curve
   name: LSC 曲线优化
-  discipline: reliability
+  discipline: math
   description: 带几何约束的三断点四曲线最小二乘拟合（LSC 曲线优化器），用于刃口轮廓、刀具设计等需要多段曲线平滑过渡的工程场景。
   tags: [曲线拟合, 优化, 刃口轮廓]
 params:
@@ -83,7 +83,9 @@ results:
     title: 断点坐标
     columns:
       - {title: 点, ref: ["内部断点", "外部断点"]}
-      - {title: X, ref: lsc.breakpoints}
+      - {title: X, ref: lsc.breakpoints.x}
+      - {title: Y上, ref: lsc.breakpoints.y_upper}
+      - {title: Y下, ref: lsc.breakpoints.y_lower}
 report:
   exports: [md, html]
   sections:
