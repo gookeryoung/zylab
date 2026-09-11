@@ -15,6 +15,7 @@ from zylab.flowchart import (
     RunOutcome,
     Template,
     TemplateRegistry,
+    explore_doe,
     resolve_target,
     run_batch,
     run_batch_outputs,
@@ -351,3 +352,62 @@ class TestRunBatch:
         assert not failed.succeeded
         with pytest.raises(Exception, match="失败节点"):
             failed.resolve_outputs(new_tpl)
+
+
+class TestExploreDoe:
+    """explore_doe 一行走完 DOE → batch → surrogate → Sobol 敏感性分解."""
+
+    def test_full_pipeline_lhc(self) -> None:
+        """完整链路：LHC 采样 24 点 + RBF surrogate + Sobol 敏感性."""
+        from zylab.doe import DesignSpace, DesignVariable, SamplingMethod
+
+        ds = DesignSpace.from_variables(
+            [
+                DesignVariable(name="model.nx", lower=4, upper=16),
+                DesignVariable(name="model.ny", lower=2, upper=8),
+            ]
+        )
+        tpl = _template("structural.cantilever_static")
+        new_tpl = dataclasses.replace(
+            tpl,
+            output_params=(OutputParam(name="strain_energy", source="solve.strain_energy"),),
+        )
+        result = explore_doe(
+            new_tpl,
+            ds,
+            n_samples=24,
+            method=SamplingMethod.LATIN_HYPERCUBE,
+            fit_surrogate=True,
+            sensitivity=True,
+            sobol_N=512,
+            seed=42,
+        )
+        # X/Y 维度
+        assert result.X.shape == (24, 2)
+        assert result.Y.shape == (24, 1)
+        # surrogate 已拟合
+        assert result.surrogate is not None
+        # Sobol 指数归一化在 [0,1]
+        assert result.si is not None
+        assert result.sti is not None
+        assert np.all(result.si >= -0.1) and np.all(result.si <= 1.1)
+        assert np.all(result.sti >= -0.1) and np.all(result.sti <= 1.1)
+        assert result.variance is not None and result.variance > 0
+
+    def test_basic_no_surrogate(self) -> None:
+        """最小配置：只做 DOE 批量求解，不拟合 surrogate 也不做敏感性."""
+        from zylab.doe import DesignSpace, DesignVariable
+
+        ds = DesignSpace.from_variables([DesignVariable(name="model.nx", lower=4, upper=12)])
+        tpl = _template("structural.cantilever_static")
+        new_tpl = dataclasses.replace(
+            tpl,
+            output_params=(OutputParam(name="strain_energy", source="solve.strain_energy"),),
+        )
+        result = explore_doe(new_tpl, ds, n_samples=8, fit_surrogate=False, sensitivity=False)
+        assert result.X.shape == (8, 1)
+        assert result.Y.shape == (8, 1)
+        assert result.surrogate is None
+        assert result.si is None
+        assert result.sti is None
+        assert result.variance is None

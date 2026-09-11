@@ -23,9 +23,11 @@
 from __future__ import annotations
 
 from .batch import (
+    ExploreResult,
     NodeOutcome,
     ReportFn,
     RunOutcome,
+    explore_doe,
     resolve_target,
     run_batch,
     run_batch_outputs,
@@ -81,6 +83,7 @@ __all__ = [
     "ConductionBundle",
     "CurveData",
     "CurveSeries",
+    "ExploreResult",
     "FlowchartError",
     "LinkError",
     "ModelBundle",
@@ -118,6 +121,7 @@ __all__ = [
     "build_markdown",
     "build_result",
     "content_hash",
+    "explore_doe",
     "load_template",
     "load_workflow",
     "module_spec",

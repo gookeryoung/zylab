@@ -18,7 +18,7 @@ from __future__ import annotations
 import importlib
 import logging
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Any, Callable, Mapping, Sequence
 
 import numpy as np
@@ -364,3 +364,97 @@ def _describe(result: Any) -> str:  # noqa: PLR0911  各类解各一行指标，
     if isinstance(result, ElectroThermalSolution):
         return f"电热: 峰值温度 {result.t_max:.6g}，总电功率 {result.total_power:.6g} W"
     return f"完成: {type(result).__name__}"
+
+
+# ---------------------------------------------------------------------------
+# Phase 6: DOE 探索便捷入口（DOE → batch → surrogate → sensitivity）
+# ---------------------------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class ExploreResult:
+    """单函数 DOE 探索结果."""
+
+    X: np.ndarray  # (N, D_in) 采样点
+    Y: np.ndarray  # (N, D_out) 观测值
+    surrogate: object | None = None  # RBF/GPR 响应面（若拟合）
+    si: np.ndarray | None = None  # 一阶 Sobol 指数（若做敏感性分解）
+    sti: np.ndarray | None = None  # 总效应 Sobol 指数
+    variance: float | None = None  # 输出方差
+
+
+def explore_doe(  # noqa: PLR0913
+    template: Any,
+    ds: Any,
+    *,
+    n_samples: int | None = None,
+    method: Any = None,
+    seed: int = 0,
+    fit_surrogate: bool = True,
+    sensitivity: bool = False,
+    sobol_N: int = 512,
+) -> ExploreResult:
+    """一行走完 DOE 批量探索.
+
+    流程：
+        1. DesignSpace.sample(method, N, seed) 生成拉丁超立方 / 全因子 / Sobol 采样;
+        2. to_input_rows 转扁平化参数字典;
+        3. run_batch_outputs(template, rows) 批量求解;
+        4. （可选）RBF 响应面拟合;
+        5. （可选）在响应面上做 Sobol 敏感性分解.
+
+    Parameters
+    ----------
+    template:
+        必须声明 `output_params` 的 Template（否则无法输出 Y）.
+    ds:
+        :class:~zylab.doe.design_space.DesignSpace.
+    n_samples:
+        采样点数（覆盖 ds 默认）；method 为 FULL_FACTORIAL 时忽略.
+    method:
+        :class:~zylab.doe.design_space.SamplingMethod，缺省 LHC.
+    seed:
+        采样和 Sobol 子采样的种子.
+    fit_surrogate:
+        是否拟合 RBF 响应面（default True）.
+    sensitivity:
+        是否在响应面上做 Sobol 敏感性分解（default False）.
+    sobol_N:
+        Sobol 估计器的 Saltelli 采样基数.
+
+    Returns
+    -------
+    ExploreResult
+    """
+    # 延迟 import 避免循环依赖
+    from zylab.doe.design_space import SamplingMethod
+
+    if method is None:
+        method = SamplingMethod.LATIN_HYPERCUBE
+
+    samples = ds.sample(method, n_samples, seed=seed)
+    rows = ds.to_input_rows(samples)
+    X, Y = run_batch_outputs(template, rows)
+    result = ExploreResult(X=X, Y=Y)
+
+    if not fit_surrogate and not sensitivity:
+        return result
+
+    from zylab.optim.surrogate import RbfSurrogate
+
+    surf = RbfSurrogate()
+    surf.fit(X.astype(float), Y.ravel())
+    result = replace(result, surrogate=surf)
+
+    if sensitivity:
+        from zylab.optim.sensitivity import sobol_analysis
+
+        # RBF.predict 接受 (n, d) → (n,)；包装一个接受 (d,) 或 (n, d) 的 func
+        def func(x: np.ndarray) -> np.ndarray:
+            arr = np.atleast_2d(x)
+            return surf.predict(arr)
+
+        sres = sobol_analysis(func, d=X.shape[1], N=sobol_N, seed=seed)
+        result = replace(result, si=sres.Si, sti=sres.STi, variance=sres.variance)
+
+    return result
