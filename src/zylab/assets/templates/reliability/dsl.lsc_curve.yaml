@@ -58,6 +58,11 @@ results:
         name: outer_lower
     x_label: X
     y_label: Y
+    series:
+      - {color: info, dash: dashed}
+      - {color: info, dash: dashed}
+      - {color: info}
+      - {color: info}
   - id: summary
     group: 计算摘要
     kind: text
