@@ -98,8 +98,19 @@ ARRAY_MATH_NAMESPACE: dict[str, Any] = {
     "floor": np.floor,
     "ceil": np.ceil,
     "hypot": np.hypot,
+    # reduce 类 —— 输出参数 expr 最常用的降维函数
     "amax": np.amax,
     "amin": np.amin,
+    "sum": np.sum,
+    "mean": np.mean,
+    "std": np.std,
+    "var": np.var,
+    "norm": np.linalg.norm,
+    # shape 类 —— 配合 solve.displacements 一维数组 → (n_nodes, 3) 等重排
+    "reshape": np.reshape,
+    "ravel": np.ravel,
+    "size": np.size,
+    # 构造类
     "linspace": np.linspace,
     "arange": np.arange,
     "zeros": np.zeros,
@@ -112,7 +123,9 @@ ARRAY_MATH_NAMESPACE: dict[str, Any] = {
     "nan": np.nan,
 }
 
-#: 白名单 AST 节点（表达式外层；Subscript/Tuple 支持只读下标与多维索引）
+#: 白名单 AST 节点（表达式外层；Subscript/Tuple 支持只读下标与多维索引；
+#: ast.keyword 单独放行——Call.kwds 里的 keyword 节点（`axis=1` 等）是合法
+#: 命名参数，无注入/副作用，必须允许 numpy/scipy 函数完整签名）
 _ALLOWED_NODES = (
     ast.Expression,
     ast.BinOp,
@@ -124,6 +137,7 @@ _ALLOWED_NODES = (
     ast.Constant,
     ast.Subscript,
     ast.Tuple,
+    ast.keyword,
 )
 #: 白名单双目运算符
 _ALLOWED_BINOPS = (ast.Add, ast.Sub, ast.Mult, ast.Div, ast.FloorDiv, ast.Mod, ast.Pow)
