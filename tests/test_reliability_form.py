@@ -275,3 +275,52 @@ class TestMC:
         assert res.beta == float("-inf")
         assert res.n_fail == 10_000
         assert res.pf_ci_95[1] == 1.0
+
+
+# ---------------------------------------------------------------------------
+# 内部辅助函数边界条件（不支持的分布、CUSTOM fallback）
+# ---------------------------------------------------------------------------
+
+
+def test_standard_to_physical_unsupported_dist() -> None:
+    """_standard_to_physical 在遇到不支持的 dist 时抛 ReliabilityError."""
+    # 构造一个伪造的 rv，dist 是无效枚举值
+    import types
+
+    from zylab.reliability.form import _standard_to_physical
+
+    rv = types.SimpleNamespace(dist="NOT_A_DIST", params={})
+    with pytest.raises(ReliabilityError, match="不支持的分布"):
+        _standard_to_physical(0.0, rv)
+
+
+def test_physical_to_standard_unsupported_dist() -> None:
+    """_physical_to_standard 在遇到不支持的 dist 时抛 ReliabilityError."""
+    import types
+
+    from zylab.reliability.form import _physical_to_standard
+
+    rv = types.SimpleNamespace(dist="NOT_A_DIST", params={})
+    with pytest.raises(ReliabilityError, match="不支持的分布"):
+        _physical_to_standard(0.0, rv)
+
+
+def test_pdf_physical_custom_no_pdf_fallback() -> None:
+    """_pdf_physical 对 CUSTOM 分布无 pdf 时返回标准正态 pdf."""
+    from zylab.reliability.form import _pdf_physical
+
+    # CUSTOM 分布但不传 pdf → fallback 到 norm.pdf
+    rv = RandomVariable("c", Distribution.CUSTOM, {"ppf": lambda p: p})
+    result = _pdf_physical(0.0, rv)
+    # 标准正态在 0 点的 pdf ≈ 0.3989
+    assert abs(result - stats.norm.pdf(0.0)) < 1e-10
+
+
+def test_pdf_physical_unknown_dist_returns_zero() -> None:
+    """_pdf_physical 对未知 dist 返回 0."""
+    import types
+
+    from zylab.reliability.form import _pdf_physical
+
+    rv = types.SimpleNamespace(dist="NOT_A_DIST", params={})
+    assert _pdf_physical(0.0, rv) == 0.0

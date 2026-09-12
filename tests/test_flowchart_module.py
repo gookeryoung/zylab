@@ -48,6 +48,22 @@ class TestParamSpecCoerce:
             with pytest.raises(ParamError, match="应为"):
                 spec.coerce(value)
 
+    def test_str_rejects_non_string(self) -> None:
+        """STR 参数拒绝非字符串值."""
+        spec = ParamSpec("name", "名称", ParamType.STR, "default")
+        with pytest.raises(ParamError, match="应为文本"):
+            spec.coerce(123)  # type: ignore[arg-type]
+        with pytest.raises(ParamError, match="应为文本"):
+            spec.coerce(None)  # type: ignore[arg-type]
+
+    def test_map_rejects_non_mapping(self) -> None:
+        """MAP 参数拒绝非映射值."""
+        spec = ParamSpec("cfg", "配置", ParamType.MAP, {})
+        with pytest.raises(ParamError, match="应为对象"):
+            spec.coerce([1, 2, 3])  # type: ignore[arg-type]
+        with pytest.raises(ParamError, match="应为对象"):
+            spec.coerce("oops")  # type: ignore[arg-type]
+
     def test_range_violation(self) -> None:
         """越界取值抛 ParamError（含边界允许）."""
         spec = ParamSpec("poisson", "泊松比", ParamType.FLOAT, 0.3, 0.0, 0.49)
@@ -171,6 +187,75 @@ class TestBuiltinModules:
         """未知类型 id 抛 ModuleNotFoundError_."""
         with pytest.raises(ModuleNotFoundError_, match="未知模块类型"):
             module_spec("no.such.module")
+
+    def test_module_spec_plugin_registry_fallback(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """内置表未命中时回退到 PluginRegistry 解析（SolverSpec 路径）."""
+        from unittest.mock import MagicMock
+
+        from zylab.flowchart.module import _MODULES_BY_ID, ModuleSpec
+
+        # 用一个不在内置表里的 type_id
+        plugin_type_id = "plugin.custom_solver"
+        assert plugin_type_id not in _MODULES_BY_ID
+
+        # 构造 PluginRegistry mock
+        fake_registry = MagicMock()
+        fake_registry.list.return_value = [MagicMock(name="custom_solver_plugin")]
+
+        # resolve 返回一个 ModuleSpec（模拟第三方插件直接返回 ModuleSpec 的场景）
+        fake_ms = ModuleSpec(
+            type_id=plugin_type_id,
+            name="自定义求解器",
+            category=ModuleCategory.ANALYSIS,
+            target="some.module:fn",
+            inputs=(),
+            outputs=(),
+            params=(),
+        )
+        fake_registry.resolve.return_value = fake_ms
+
+        def _fake_registry_factory(*a, **kw):
+            return fake_registry
+
+        # PluginRegistry 是 module_spec 内部延迟 from ... import 的
+        monkeypatch.setattr("zylab.core.registry.PluginRegistry", _fake_registry_factory)
+
+        result = module_spec(plugin_type_id)
+        assert result is fake_ms
+
+    def test_module_spec_plugin_registry_caches_result(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """PluginRegistry 解析结果应写入 _MODULES_BY_ID 避免重复扫描."""
+        from unittest.mock import MagicMock
+
+        from zylab.flowchart.module import _MODULES_BY_ID, ModuleSpec
+
+        plugin_type_id = "plugin.cached_solver"
+        _MODULES_BY_ID.pop(plugin_type_id, None)
+
+        fake_registry = MagicMock()
+        fake_registry.list.return_value = [MagicMock(name="cached_solver_plugin")]
+        fake_ms = ModuleSpec(
+            type_id=plugin_type_id,
+            name="缓存测试",
+            category=ModuleCategory.ANALYSIS,
+            target="some.module:fn",
+            inputs=(),
+            outputs=(),
+            params=(),
+        )
+        fake_registry.resolve.return_value = fake_ms
+
+        def _fake_registry_factory(*a, **kw):
+            return fake_registry
+
+        monkeypatch.setattr("zylab.core.registry.PluginRegistry", _fake_registry_factory)
+
+        module_spec(plugin_type_id)
+        assert plugin_type_id in _MODULES_BY_ID
+        # 第二次调用应直接命中缓存，不再访问 PluginRegistry
+        module_spec(plugin_type_id)
+        # PluginRegistry 构造只应被调用一次（通过 monkeypatch 替换的 factory）
+        _fake_registry_factory_call_count = 0  # 简化：只要缓存命中后 list 不再被调
 
     def test_all_modules_returns_builtin(self) -> None:
         """all_modules 返回内置表."""

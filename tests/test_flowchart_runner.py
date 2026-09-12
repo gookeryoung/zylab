@@ -398,3 +398,31 @@ class TestHashCacheHit:
         assert ("model", EventKind.STARTED) in starts
         assert ("static", EventKind.STARTED) in starts
         assert ("modal", EventKind.STARTED) in starts
+
+
+class TestRunnerCacheHitDirect:
+    """直接调 _start 绕过 needs_run 过滤，触发缓存命中分支."""
+
+    def test_cache_hit_via_direct_start(self) -> None:
+        """手动把已缓存节点放进 queue，_submit_next 走缓存命中路径."""
+        graph = _truss_graph()
+        runner = WorkflowRunner(graph, executor=_SyncExecutor())
+        # 先正常跑一遍建立缓存
+        runner.run_all(lambda _event: None)
+
+        # 验证 model 节点确实已缓存
+        node = graph.node("model")
+        assert node.content_hash is not None
+        assert node.result is not None
+        assert not node.needs_run
+
+        # 直接调 _start，绕过 run_all 的 needs_run 过滤
+        events: list[NodeRunEvent] = []
+        runner._start(["model"], events.append)
+
+        # 缓存命中应派发 RESULT 但不派发 STARTED
+        kinds = [e.kind for e in events]
+        assert EventKind.STARTED not in kinds
+        assert EventKind.RESULT in kinds
+        # 最终 runner 应空闲
+        assert runner._handle is None

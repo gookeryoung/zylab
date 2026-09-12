@@ -263,6 +263,8 @@ class FlowchartPage(QWidget):
         self._canvas.background_context_menu.connect(self._on_background_context_menu)
         self._canvas.all_selected.connect(self._on_all_selected)
         self._canvas.node_delete_requested.connect(self._on_node_delete_requested)
+        self._canvas.node_add_requested.connect(self._on_node_add_requested_canvas)
+        self._canvas.link_requested.connect(self._on_link_requested)
         self._param_form.param_edited.connect(self._on_param_edited)
         self._bridge.node_started.connect(self._on_node_started)
         self._bridge.node_progress.connect(self._on_node_progress)
@@ -673,6 +675,36 @@ class FlowchartPage(QWidget):
             return
         self._canvas.set_graph(self._graph)  # 画布按最新图重建（保留现有节点位置）
         self.status_message.emit(f"已添加节点: {nid}")
+
+    def _on_node_add_requested_canvas(self, type_id: str, x: float, y: float) -> None:
+        """画布拖入工具箱模块 → 添加节点并记录画布位置."""
+        if self._graph is None:
+            self.status_message.emit("请先选择参数化计算模板")
+            return
+        try:
+            nid = self._graph.add_node(type_id)
+        except Exception as exc:
+            logger.warning("画布拖入添加节点失败 %s: %s", type_id, exc)
+            self.status_message.emit(f"添加节点失败: {exc}")
+            return
+        # 设置节点手动布局位置（用户拖放位置）
+        node = self._graph.node(nid)
+        node.position = (x, y)
+        self._canvas.set_graph(self._graph)
+        self.status_message.emit(f"已添加节点: {nid}")
+
+    def _on_link_requested(self, src_id: str, src_port: str, dst_id: str, dst_port: str) -> None:
+        """画布端口拉线完成 → 建立连接 + 画布重绘."""
+        if self._graph is None:
+            return
+        try:
+            self._graph.add_link(dst_id, dst_port, f"{src_id}.{src_port}")
+        except Exception as exc:
+            logger.warning("连接建立失败 %s.%s → %s.%s: %s", src_id, src_port, dst_id, dst_port, exc)
+            self.status_message.emit(f"连接失败: {exc}")
+            return
+        self._canvas.set_graph(self._graph)
+        self.status_message.emit(f"已连接: {src_id}.{src_port} → {dst_id}.{dst_port}")
 
     def _refresh_preview_async(self) -> None:
         """后台线程重建过期源节点的模型预览（画布转圈 + 状态提示，不阻塞 UI）."""

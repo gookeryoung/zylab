@@ -458,3 +458,49 @@ def test_resolve_sequence_non_sequence_rejected():
     result = _result("table", {"columns": [{"title": "X", "ref": "tip"}]})
     with pytest.raises(TemplateError, match="应为序列"):
         build_result(result, _outputs())
+
+
+def test_curve_y_entry_as_mapping_with_custom_name():
+    """曲线 y entry 为 Mapping（带 ref/x/name）时正确识别."""
+    from zylab.flowchart.results import build_result
+
+    result = _result(
+        "curve",
+        {
+            "x": "disp.x",
+            "y": [
+                {"ref": "disp.y", "x": "disp.z", "name": "自定义名"},
+            ],
+        },
+    )
+    # 需要有 x/y/z 数据的节点输出
+    outputs = {
+        "disp": {
+            "x": [0.0, 1.0, 2.0],
+            "y": [10.0, 20.0, 30.0],
+            "z": [100.0, 200.0, 300.0],
+        }
+    }
+    data = build_result(result, outputs)
+    assert data.series[0].name == "自定义名"
+    assert list(data.series[0].x) == [100.0, 200.0, 300.0]  # 用 entry 自定义的 x 源
+    assert list(data.series[0].y) == [10.0, 20.0, 30.0]
+
+
+def test_resolve_input_missing_node_returns_none():
+    """resolve_input 对尚未运行的上游节点（不在 outputs）应返回 None."""
+    from zylab.flowchart.results import resolve_input
+
+    # 引用 "ghost.model.solution" 但 ghost 不在 outputs
+    assert resolve_input("ghost.model.solution", {}) is None
+    # 引用存在节点但端口段跳过后下行
+    assert resolve_input("model.port.field", {"model": {"field": 42}}) == 42
+
+
+def test_descend_list_index_access():
+    """_descend 对 list/tuple 按数字段取下标."""
+    from zylab.flowchart.results import _descend
+
+    data = [10, 20, 30, 40, 50]
+    assert _descend(data, "2", "test") == 30
+    assert _descend(data, "-1", "test") == 50

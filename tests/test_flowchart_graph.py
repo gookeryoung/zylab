@@ -380,3 +380,37 @@ class TestAddRemoveNode:
         graph = _graph()
         with pytest.raises(TemplateError, match="无节点"):
             graph.remove_node("ghost")
+
+
+class TestDescendantsDiamond:
+    """descendants 在 diamond 依赖（同一节点多次 push）时应正确跳过."""
+
+    def test_diamond_deps_dedup(self) -> None:
+        """手动构造 diamond 拓扑后 descendants 不应重复包含 D."""
+        from unittest.mock import MagicMock
+
+        from zylab.flowchart.graph import WorkflowGraph
+
+        g = MagicMock(spec=WorkflowGraph)
+        # downstream_ids: A→[B,C], B→[D], C→[D], D→[]
+        downstream_map = {
+            "a": ["b", "c"],
+            "b": ["d"],
+            "c": ["d"],
+            "d": [],
+        }
+        g.downstream_ids = lambda nid: frozenset(downstream_map[nid])
+        # 直接调原始实现：WorkflowGraph.descendants
+        result = WorkflowGraph.descendants(g, "a")
+        assert result == frozenset({"b", "c", "d"})  # D 只出现一次
+
+
+class TestGraphCanConnect:
+    """WorkflowGraph.can_connect 委托给 ports.can_connect."""
+
+    def test_can_connect_delegates(self) -> None:
+        """graph.can_connect 应返回 (True, '') 对合法 MODEL→MODEL."""
+        g = _graph()
+        ok, reason = g.can_connect("model", "model", "static", "model")
+        assert ok
+        assert reason == ""

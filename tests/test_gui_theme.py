@@ -390,3 +390,32 @@ class TestMainWindowThemeSwitch:
             assert theme.current_palette().name == "light"
         finally:
             theme.set_current_theme(theme.DEFAULT_THEME)
+
+
+# ---------------------------------------------------------------------------
+# _palette_from_json 异常路径
+# ---------------------------------------------------------------------------
+
+
+def test_palette_from_json_invalid_color() -> None:
+    """非法色值（非 #RRGGBB）抛 ValueError."""
+    from zylab.gui.theme import _PALETTE_FIELDS, _palette_from_json
+
+    data: dict[str, str] = {"name": "bad", "display_name": "Bad"}
+    for k in sorted(_PALETTE_FIELDS):
+        if k in ("name", "display_name"):
+            continue
+        data[k] = "#112233"
+    data["bg_app"] = "not-a-color"  # 故意设非法值
+    with pytest.raises(ValueError, match="非法色值"):
+        _palette_from_json(data)
+
+
+def test_palette_from_json_missing_field() -> None:
+    """缺少必填色板字段抛 ValueError."""
+    from zylab.gui.theme import _palette_from_json
+
+    data = {"name": "incomplete", "display_name": "Incomplete"}
+    # 故意不填任何色板字段
+    with pytest.raises(ValueError, match="缺少色板字段"):
+        _palette_from_json(data)

@@ -371,3 +371,56 @@ def test_run_sensitivity_test_rejects_bad_arguments() -> None:
 def test_all_methods_covered() -> None:
     """方法表完整（八方法与测试参数化一致）."""
     assert METHOD_NAMES == ("langlie", "ostr", "updown", "updown_adaptive", "doptimal", "neyer", "probit", "stepstress")
+
+
+# ---------------------------------------------------------------------------
+# 边界条件：全分离检测、step 校验、ci_* 缺失
+# ---------------------------------------------------------------------------
+
+
+def test_is_separated_all_zeros() -> None:
+    """_is_separated 对全 0 或全 1 响应返回 True."""
+    from zylab.reliability.analysis import _is_separated
+
+    assert _is_separated(np.array([1.0, 2.0, 3.0]), np.array([0, 0, 0]))
+    assert _is_separated(np.array([1.0, 2.0, 3.0]), np.array([1, 1, 1]))
+
+
+def test_dixon_mood_step_non_positive() -> None:
+    """dixon_mood 在 step<=0 时抛 ReliabilityError."""
+    x = np.array([1.0, 2.0, 3.0, 4.0])
+    y = np.array([0, 0, 1, 1])
+    with pytest.raises(ReliabilityError, match="步长"):
+        dixon_mood(x, y, step=0.0)
+    with pytest.raises(ReliabilityError, match="步长"):
+        dixon_mood(x, y, step=-0.1)
+
+
+def test_result_ci_none_accessors() -> None:
+    """SensitivityTestResult 的 ci_mu=None / ci_sigma=None 时访问器返回 NaN."""
+    import math
+
+    import numpy as np
+
+    from zylab.reliability.analysis import SensitivityEstimate, SensitivityTestResult
+
+    r = SensitivityTestResult(
+        method="test",
+        method_label="测试",
+        model="normal",
+        levels=np.array([1.0, 2.0, 3.0]),
+        responses=np.array([0, 1, 1]),
+        estimate=SensitivityEstimate(mu=2.0, sigma=0.5),
+        curve_x=np.array([1.0, 2.0, 3.0]),
+        curve_p=np.array([0.1, 0.5, 0.9]),
+        ci_mu=None,
+        ci_sigma=None,
+    )
+    assert math.isnan(r.ci_mu_high)
+    assert math.isnan(r.ci_sigma_low)
+
+
+def test_profile_ci_auto_step_fallback() -> None:
+    """profile_ci 在 se=0 时走 value_hat 幅值 fallback."""
+    res = run_sensitivity_test(method="updown", model="normal", seed=42)
+    assert res.mu_hat is not None

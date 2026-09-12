@@ -152,3 +152,25 @@ class TestParameterStoreGetErrorPaths:
         store = ParameterStore()
         with pytest.raises(FlowchartError, match="尚未解析"):
             store.get_resolved("unparsed")
+
+
+class TestParameterStoreGetSuccessPaths:
+    """get_input / get_output_decl / get_resolved 成功返回路径."""
+
+    def test_get_input_found(self) -> None:
+        store = ParameterStore.from_template(_FakeTemplate())
+        assert store.get_input("m1.nx") == 4
+        assert store.get_input("m2.p") == 1.5
+
+    def test_get_output_decl_found(self) -> None:
+        ops = (OutputParam(name="mass", source="m1.mass"),)
+        store = ParameterStore.from_template(_FakeTemplate(output_params=ops))
+        decl = store.get_output_decl("mass")
+        assert decl.name == "mass"
+        assert decl.source == "m1.mass"
+
+    def test_get_resolved_found(self) -> None:
+        ops = (OutputParam(name="mass", source="m1.mass"),)
+        store = ParameterStore.from_template(_FakeTemplate(output_params=ops))
+        store.resolve_all({"m1": {"mass": 42.0}})
+        assert store.get_resolved("mass") == 42.0

@@ -114,3 +114,25 @@ class TestLoadErrors:
             proj.write_json("model", "workflow", {"id": "x"})
         with pytest.raises(ProjectIOError, match="内嵌参数化计算非法"):
             load_workflow(tmp_path / "legacy.zprj")
+
+    def test_read_text_unicode_decode_error(self, tmp_path: Path) -> None:
+        """JSON 路径 read_text 遇非法 UTF-8 字节 → ProjectIOError."""
+        bad = tmp_path / "bad_encoding.zprj"
+        bad.write_bytes(b"\x80\x81\x82not utf-8")
+        # 不是 HDF5 magic，会走 JSON 路径 → read_text 抛 UnicodeDecodeError
+        with pytest.raises(ProjectIOError, match="工程文件读取失败"):
+            load_workflow(bad)
+
+    def test_legacy_hdf5_open_fails(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        """旧版 HDF5 工程打开失败 → ProjectFileError → ProjectIOError."""
+        bad = tmp_path / "broken.zprj"
+        bad.write_bytes(b"\x89HDF\r\n\x1a\n")  # 伪造 HDF5 magic header
+
+        def _boom_open(cls, p):
+            from zylab.core.errors import ProjectFileError
+
+            raise ProjectFileError("文件损坏")
+
+        monkeypatch.setattr(Project, "open", classmethod(_boom_open))
+        with pytest.raises(ProjectIOError, match="旧版工程文件打开失败"):
+            load_workflow(bad)

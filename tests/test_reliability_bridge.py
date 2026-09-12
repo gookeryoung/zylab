@@ -461,3 +461,25 @@ class TestMcParallel:
         assert np.isfinite(res.pf_ci_95[0])
         assert np.isfinite(res.pf_ci_95[1])
         assert res.pf_ci_95[0] < res.pf_ci_95[1]
+
+
+class TestBridgeEdgeCases:
+    """Bridge 边界条件测试：参数校验、FE 失败哨兵."""
+
+    def test_build_overrides_dim_mismatch(self, bridge: ReliabilityBridge) -> None:
+        """_build_overrides 在 x 维度与 rv_mapping 不匹配时抛 ValueError."""
+        wrong = np.array([1.0])  # 只有 1 个元素，但 rv_mapping 有多个
+        with pytest.raises(ValueError, match="维度"):
+            bridge._build_overrides(wrong)
+
+    def test_limit_state_fe_failed_returns_sentinel(self, bridge: ReliabilityBridge, monkeypatch) -> None:
+        """make_limit_state 闭包在 run_workflow 返回 succeeded=False 时返回 1e10."""
+        from types import SimpleNamespace
+
+        fake_outcome = SimpleNamespace(succeeded=False)
+        # run_workflow 在闭包内 from zylab.flowchart import run_workflow
+        monkeypatch.setattr("zylab.flowchart.run_workflow", lambda *_a, **_kw: fake_outcome)
+
+        g = bridge.make_limit_state()
+        x = np.array([0.0, 0.0])  # bridge fixture 的 rv_mapping 有 2 个键
+        assert g(x) == 1e10
