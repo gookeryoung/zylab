@@ -10,7 +10,7 @@ __all__ = []
 
 def test_toolbox_group_modules() -> None:
     """catalog_tree 按五大类正确分组（Phase 1 起替代旧 _group_modules）."""
-    from zylab.flowchart.catalog import catalog_tree, catalog_path_of
+    from zylab.flowchart.catalog import catalog_path_of, catalog_tree
     from zylab.flowchart.module import ModuleCategory, ModuleSpec
 
     def _mk(type_id, category):
