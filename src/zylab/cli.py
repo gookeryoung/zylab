@@ -16,8 +16,8 @@ from __future__ import annotations
 import argparse
 import contextlib
 import sys
+from collections.abc import Sequence
 from pathlib import Path
-from typing import Sequence
 
 from zylab.core.project import Project, ProjectFileError
 from zylab.flowchart.batch import RunOutcome, run_scan, run_workflow, summarize

@@ -24,7 +24,7 @@ from __future__ import annotations
 
 import html
 import re
-from typing import Iterable
+from collections.abc import Iterable
 
 __all__ = ["SemanticColorResolver", "markdown_to_html"]
 

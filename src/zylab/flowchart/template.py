@@ -8,9 +8,10 @@
 from __future__ import annotations
 
 import json
+from collections.abc import Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Mapping
+from typing import Any
 
 from .errors import FlowchartError, LinkError, ParamError, TemplateError
 from .expressions import ARRAY_MATH_NAMESPACE, safe_eval

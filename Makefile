@@ -4,7 +4,7 @@
 PACKAGE := zylab
 COV_THRESHOLD := 95
 
-.PHONY: help sync build b clean c test cov lint typecheck typecheck-ci check doc tox bump patch minor major push
+.PHONY: help sync build b clean c test cov lint typecheck typecheck-ci check doc tox pub bump patch minor major push
 
 help: ## 显示帮助信息
 	@uv run python -c "import re,sys;ms=[(m.group(1),m.group(2).strip()) for f in sys.argv[1:] for l in open(f,encoding='utf-8') if (m:=re.match(r'^([a-zA-Z][\w -]*):.*?##\s*(.*)',l))];[print(f'  {n:<14} {d}') for n,d in ms]" $(MAKEFILE_LIST)

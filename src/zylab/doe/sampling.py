@@ -11,8 +11,8 @@
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from enum import Enum
-from typing import Sequence
 
 import numpy as np
 from scipy.stats import qmc

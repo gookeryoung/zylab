@@ -14,9 +14,10 @@ import importlib
 import importlib.metadata
 import logging
 import threading
+from collections.abc import Iterator
 from dataclasses import dataclass
 from enum import Enum, unique
-from typing import Any, Iterator
+from typing import Any
 
 from .errors import PluginError, PluginNotFoundError
 

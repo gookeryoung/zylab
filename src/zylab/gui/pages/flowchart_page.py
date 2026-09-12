@@ -17,8 +17,8 @@ import importlib
 import logging
 import re
 import threading
+from collections.abc import Callable
 from pathlib import Path
-from typing import Callable
 
 import numpy as np
 

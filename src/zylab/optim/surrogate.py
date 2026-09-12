@@ -17,8 +17,9 @@ lower/upper 区间内）进行，而非 [0,1] 单位超立方体，用户无需
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
+from collections.abc import Callable
 from dataclasses import dataclass
-from typing import Callable, Optional
+from typing import Optional
 
 import numpy as np
 from sklearn.gaussian_process import GaussianProcessRegressor

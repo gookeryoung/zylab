@@ -7,9 +7,10 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass
 from enum import Enum, unique
-from typing import Any, Mapping
+from typing import Any
 
 from .errors import ModuleNotFoundError_, ParamError
 

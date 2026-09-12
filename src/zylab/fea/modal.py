@@ -7,8 +7,8 @@ shift-invert Lanczos（``eigsh(sigma=0)``），振型按 ``φ^T M φ = 1`` 归�
 
 from __future__ import annotations
 
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass
-from typing import Callable, Sequence
 
 import numpy as np
 from scipy.sparse.linalg import eigsh

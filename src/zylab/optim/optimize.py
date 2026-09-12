@@ -20,9 +20,10 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from enum import Enum
-from typing import TYPE_CHECKING, Any, Callable, Mapping, Optional, Sequence
+from typing import TYPE_CHECKING, Any, Optional
 
 import numpy as np
 from scipy.optimize import basinhopping, differential_evolution, dual_annealing, shgo

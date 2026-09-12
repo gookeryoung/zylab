@@ -14,9 +14,10 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass
 from enum import Enum, unique
-from typing import Any, Callable
+from typing import Any
 
 from .buckling import BucklingSolution, solve_buckling
 from .electrothermal import (

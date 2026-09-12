@@ -90,15 +90,19 @@ class TestSafeEvalErrorPaths:
             safe_eval("+x", {"x": 1})
 
     def test_compare_disallowed_via_patch(self) -> None:
-        with patch(
-            "zylab.flowchart.expressions._ALLOWED_CMPOPS",
-            (ast.Lt,),
-        ), pytest.raises(ParamError, match="不支持的比较运算"):
+        with (
+            patch(
+                "zylab.flowchart.expressions._ALLOWED_CMPOPS",
+                (ast.Lt,),
+            ),
+            pytest.raises(ParamError, match="不支持的比较运算"),
+        ):
             safe_eval("x == 1", {"x": 1})
 
     def test_boolop_disallowed_via_patch(self) -> None:
-        with patch("zylab.flowchart.expressions._ALLOWED_BOOLOPS", ()), pytest.raises(
-            ParamError, match="不支持的布尔运算"
+        with (
+            patch("zylab.flowchart.expressions._ALLOWED_BOOLOPS", ()),
+            pytest.raises(ParamError, match="不支持的布尔运算"),
         ):
             safe_eval("x and y", {"x": 1, "y": 2})
 

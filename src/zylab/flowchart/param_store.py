@@ -13,8 +13,9 @@ Workbench 风格的「参数是一等公民」基础设施——输入参数按 
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass, field
-from typing import Any, Mapping
+from typing import Any
 
 from .errors import FlowchartError, ParamError, TemplateError
 from .expressions import ARRAY_MATH_NAMESPACE, safe_eval

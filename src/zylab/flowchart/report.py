@@ -20,8 +20,9 @@ from __future__ import annotations
 
 import base64
 import math
+from collections.abc import Mapping
 from html import escape
-from typing import Any, Mapping
+from typing import Any
 
 import numpy as np
 

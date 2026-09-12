@@ -23,10 +23,11 @@ import queue
 import threading
 import traceback
 import uuid
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from enum import Enum, unique
 from importlib import import_module
-from typing import TYPE_CHECKING, Any, Callable
+from typing import TYPE_CHECKING, Any
 
 import psutil
 

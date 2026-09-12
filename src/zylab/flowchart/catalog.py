@@ -15,8 +15,8 @@ GUI 工具箱直接消费 :func:`catalog_tree` 返回的树。
 
 from __future__ import annotations
 
+from collections.abc import Iterable
 from dataclasses import dataclass, field
-from typing import Iterable
 
 from .module import ModuleCategory, ModuleSpec, all_modules
 

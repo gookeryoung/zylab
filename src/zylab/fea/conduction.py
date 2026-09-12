@@ -9,8 +9,8 @@ TRIA3 常梯度解析公式，QUAD4 二点高斯全积分，HEX8 二点×二点�
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from dataclasses import dataclass
-from typing import Sequence
 
 import numpy as np
 from scipy.sparse import csr_matrix

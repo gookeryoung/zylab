@@ -33,8 +33,9 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
-from typing import Callable, Optional, Sequence
+from typing import Optional
 
 import numpy as np
 

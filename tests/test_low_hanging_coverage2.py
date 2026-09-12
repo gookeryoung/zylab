@@ -58,7 +58,9 @@ class TestModuleSpecPluginPath:
     def test_module_not_found_error(self) -> None:
         reg = MagicMock()
         reg.list.return_value = []
-        with patch("zylab.core.registry.PluginRegistry", return_value=reg), patch.dict(
-            mod._MODULES_BY_ID, clear=True
-        ), pytest.raises(ModuleNotFoundError_):
+        with (
+            patch("zylab.core.registry.PluginRegistry", return_value=reg),
+            patch.dict(mod._MODULES_BY_ID, clear=True),
+            pytest.raises(ModuleNotFoundError_),
+        ):
             mod.module_spec("definitely.unknown")

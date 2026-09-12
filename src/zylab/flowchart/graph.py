@@ -13,9 +13,10 @@
 from __future__ import annotations
 
 import uuid
+from collections.abc import Mapping
 from dataclasses import dataclass
 from enum import Enum, unique
-from typing import Any, Mapping
+from typing import Any
 
 from .cache import node_fingerprint
 from .errors import LinkError, TemplateError

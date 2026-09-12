@@ -1,5 +1,5 @@
 # Changes here will be overwritten by Copier
-_commit: v0.9.8
+_commit: v0.9.9
 _src_path: https://gitee.com/gooker_young/coopie.git
 author_email: gooker_young@qq.com
 author_name: gookeryoung
@@ -7,7 +7,7 @@ coverage_fail_under: 95
 description: 通用科学计算仿真分析平台。
 license: MIT
 max_python_version: '3.14'
-min_python_version: '3.11'
+min_python_version: '3.10'
 package_name: zylab
 project_name: zylab
 project_type: gui

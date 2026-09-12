@@ -17,9 +17,10 @@ SORM（Second-Order Reliability Method）在 FORM 基础上捕获设计点处的
 from __future__ import annotations
 
 import math
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from enum import Enum
-from typing import Any, Callable, Mapping, Sequence
+from typing import Any
 
 import numpy as np
 from scipy import stats

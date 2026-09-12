@@ -16,7 +16,8 @@ runner 的统一调用协议是 ``fn(inputs: Mapping[str, Any], params: Mapping[
 
 from __future__ import annotations
 
-from typing import Any, Callable, Mapping
+from collections.abc import Callable, Mapping
+from typing import Any
 
 from .bundle import ConductionBundle, ModelBundle
 from .errors import FlowchartError

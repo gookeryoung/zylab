@@ -7,8 +7,9 @@ Template 实例或参数化计算字典），经 :meth:`TemplateRegistry.load_en
 from __future__ import annotations
 
 import logging
+from collections.abc import Mapping
 from pathlib import Path
-from typing import Any, Mapping
+from typing import Any
 
 from zylab.core.registry import PluginKind, PluginRegistry
 

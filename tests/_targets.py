@@ -4,7 +4,8 @@ from __future__ import annotations
 
 import os
 import time
-from typing import Any, Callable, Optional
+from collections.abc import Callable
+from typing import Any, Optional
 
 __all__ = ["SAMPLE_TEMPLATE", "add", "crash", "echo_report", "failing", "long_running"]
 

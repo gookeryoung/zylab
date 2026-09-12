@@ -19,9 +19,10 @@ import importlib
 import logging
 import os
 import time
+from collections.abc import Callable, Mapping, Sequence
 from concurrent.futures import ProcessPoolExecutor
 from dataclasses import dataclass, replace
-from typing import Any, Callable, Mapping, Sequence
+from typing import Any
 
 import numpy as np
 from typing_extensions import override

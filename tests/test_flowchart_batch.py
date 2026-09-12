@@ -318,8 +318,9 @@ class TestRunBatch:
         ok = RunOutcome((NodeOutcome(node_id="solve", name="s", result=object()),))
         bad = RunOutcome((NodeOutcome(node_id="solve", name="s", error="SolverError: failed"),))
 
-        with patch.object(RunOutcome, "resolve_outputs", return_value={"e": 0.5}), patch(
-            "zylab.flowchart.batch.run_batch", return_value=[ok, bad]
+        with (
+            patch.object(RunOutcome, "resolve_outputs", return_value={"e": 0.5}),
+            patch("zylab.flowchart.batch.run_batch", return_value=[ok, bad]),
         ):
             X, Y = run_batch_outputs(new_tpl, [{"model.nx": 4}, {"model.nx": 5}])
             assert X.shape[0] == 1  # 只保留成功行
@@ -336,8 +337,9 @@ class TestRunBatch:
         )
         bad = RunOutcome((NodeOutcome(node_id="solve", name="s", error="failed"),))
 
-        with patch("zylab.flowchart.batch.run_batch", return_value=[bad, bad]), pytest.raises(
-            Exception, match="所有运行均失败"
+        with (
+            patch("zylab.flowchart.batch.run_batch", return_value=[bad, bad]),
+            pytest.raises(Exception, match="所有运行均失败"),
         ):
             run_batch_outputs(new_tpl, [{"model.nx": 4}, {"model.nx": 5}])
 

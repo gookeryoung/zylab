@@ -19,8 +19,9 @@ class TestReportCloudFieldAndCoords:
     def test_cloud_field_unsupported_raises(self) -> None:
         """_cloud_field 收到未知 field → TemplateError."""
         fake = MagicMock()
-        with patch.object(report, "_auto_field", return_value="unsupported_field"), pytest.raises(
-            TemplateError, match="不受支持"
+        with (
+            patch.object(report, "_auto_field", return_value="unsupported_field"),
+            pytest.raises(TemplateError, match="不受支持"),
         ):
             report._cloud_field(fake, "", 3)
 

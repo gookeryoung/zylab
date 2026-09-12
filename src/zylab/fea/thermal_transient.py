@@ -11,8 +11,8 @@ Robin 项）。常物性、常载荷假设下采用均匀步长 backward Euler�
 
 from __future__ import annotations
 
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass
-from typing import Callable, Sequence
 
 import numpy as np
 from scipy.sparse.linalg import splu
