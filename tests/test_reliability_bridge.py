@@ -347,3 +347,117 @@ class TestMiscExtractors:
         g = bridge.make_limit_state()
         with pytest.raises(ValueError, match="一维"):
             g(np.array([[1.0]]))  # 2-d → 触发 ndim 检查
+
+
+class TestMcParallel:
+    """Bridge.run_mc n_workers 并行化验证."""
+
+    def test_serial_parallel_consistency(self, bridge: ReliabilityBridge):
+        """相同 seed + n_samples 下，串行和并行结果完全一致."""
+        res_s = bridge.run_mc(n_samples=100, method="crude", seed=7, n_workers=1)
+        res_p = bridge.run_mc(n_samples=100, method="crude", seed=7, n_workers=2)
+        assert res_s.pf == res_p.pf
+        assert res_s.n_fail == res_p.n_fail
+        assert res_s.beta == res_p.beta
+        assert res_s.cov == res_p.cov
+        assert res_s.pf_ci_95 == res_p.pf_ci_95
+
+    def test_parallel_lhc(self, bridge: ReliabilityBridge):
+        """LHC + 并行通畅."""
+        res = bridge.run_mc(n_samples=64, method="lhc", seed=42, n_workers=2)
+        assert 0 <= res.pf <= 1
+        assert res.n_samples == 64
+
+    def test_parallel_sobol(self, bridge: ReliabilityBridge):
+        """Sobol + 并行通畅."""
+        res = bridge.run_mc(n_samples=32, method="sobol", seed=42, n_workers=2)
+        assert 0 <= res.pf <= 1
+
+    def test_workers_below_2_is_serial(self, bridge: ReliabilityBridge):
+        """n_workers=None/1 默认走串行分支（和不指定一致）."""
+        res_default = bridge.run_mc(n_samples=50, seed=11)
+        res_w1 = bridge.run_mc(n_samples=50, seed=11, n_workers=1)
+        res_w2 = bridge.run_mc(n_samples=50, seed=11, n_workers=None)
+        assert res_default.pf == res_w1.pf == res_w2.pf
+
+    def test_parallel_all_fail(self):
+        """pf=1.0 branch + Wilson CI upper bound (n_fail==n_samples)."""
+        from zylab.reliability import Distribution, RandomVariable
+
+        tpl = TemplateRegistry.with_builtin().get("structural.cantilever_static")
+        b = ReliabilityBridge(
+            template=tpl,
+            rv_mapping={
+                "model.height": RandomVariable(
+                    name="h",
+                    dist=Distribution.NORMAL,
+                    params={"loc": 100.0, "scale": 10.0},
+                ),
+            },
+            limit_state_expr="-1",
+        )
+        res = b.run_mc(n_samples=50, method="crude", seed=1, n_workers=2)
+        assert res.pf == 1.0
+        assert res.beta == -float("inf")
+        assert res.n_fail == 50
+        assert res.pf_ci_95 == (0.05 / 50, 1.0)
+
+    def test_worker_direct_call(self):
+        """Direct main-process call to cover _mc_chunk_worker internals."""
+        import pickle as _pickle
+
+        from zylab.reliability import Distribution, RandomVariable
+        from zylab.reliability.bridge import _mc_chunk_worker
+
+        tpl = TemplateRegistry.with_builtin().get("structural.cantilever_static")
+        b = ReliabilityBridge(
+            template=tpl,
+            rv_mapping={
+                "model.height": RandomVariable(
+                    name="h",
+                    dist=Distribution.NORMAL,
+                    params={"loc": 100.0, "scale": 10.0},
+                ),
+                "sigma_y": RandomVariable(
+                    name="sy",
+                    dist=Distribution.LOGNORMAL,
+                    params={"loc": 250.0, "scale": 15.0},
+                ),
+            },
+            limit_state_expr="rv.sigma_y - fe.max_stress",
+        )
+        import numpy as np
+
+        X = np.array([[100.0, 249.55], [100.0, 100.0], [100.0, 500.0]])
+        bridge_bytes = _pickle.dumps(b)
+        g_vals = _mc_chunk_worker((bridge_bytes, X))
+        assert g_vals.shape == (3,)
+        assert np.isfinite(g_vals).all()
+
+    def test_parallel_intermediate_pf(self):
+        """0 < pf < 1 + Wilson CI else branch + beta finite branch."""
+        from zylab.reliability import Distribution, RandomVariable
+
+        tpl = TemplateRegistry.with_builtin().get("structural.cantilever_static")
+        b = ReliabilityBridge(
+            template=tpl,
+            rv_mapping={
+                "model.height": RandomVariable(
+                    name="h",
+                    dist=Distribution.NORMAL,
+                    params={"loc": 70.0, "scale": 30.0},
+                ),
+                "sigma_y": RandomVariable(
+                    name="sy",
+                    dist=Distribution.NORMAL,
+                    params={"loc": 200.0, "scale": 20.0},
+                ),
+            },
+            limit_state_expr="rv.sigma_y - fe.max_stress",
+        )
+        res = b.run_mc(n_samples=500, method="crude", seed=42, n_workers=2)
+        assert 0 < res.pf < 1
+        assert np.isfinite(res.beta)
+        assert np.isfinite(res.pf_ci_95[0])
+        assert np.isfinite(res.pf_ci_95[1])
+        assert res.pf_ci_95[0] < res.pf_ci_95[1]

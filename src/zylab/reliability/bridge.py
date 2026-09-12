@@ -295,12 +295,131 @@ class ReliabilityBridge:
         n_samples: int = 100_000,
         method: str = "crude",
         seed: int = 0,
+        n_workers: int | None = None,
     ) -> MCResult:
-        """运行 Monte Carlo 可靠性分析."""
-        return mc_analysis(
-            self.make_limit_state(),
-            self._variables(),
+        """Run Monte Carlo reliability analysis.
+
+        :param n_workers: >=2 enables multiprocessing. Bridge itself is picklable,
+            each worker constructs the closure locally.
+        """
+        _w = n_workers if (n_workers is not None and n_workers >= 2) else 1
+        if _w == 1:
+            return mc_analysis(
+                self.make_limit_state(),
+                self._variables(),
+                n_samples=n_samples,
+                method=method,
+                seed=seed,
+            )
+        return _run_mc_parallel(
+            bridge=self,
             n_samples=n_samples,
             method=method,
             seed=seed,
+            n_workers=_w,
         )
+
+
+# ---------------------------------------------------------------------------
+# Monte Carlo parallel (bridge-only)
+# ---------------------------------------------------------------------------
+
+
+def _mc_chunk_worker(args: tuple[bytes, np.ndarray]) -> np.ndarray:
+    """Process pool worker - unpickle bridge, evaluate g(x) over chunk."""
+    import pickle as _pickle
+
+    bridge_bytes, X_chunk = args
+    bridge: ReliabilityBridge = _pickle.loads(bridge_bytes)
+    g = bridge.make_limit_state()
+    return np.array([g(X_chunk[j]) for j in range(X_chunk.shape[0])])
+
+
+def _run_mc_parallel(
+    *,
+    bridge: ReliabilityBridge,
+    n_samples: int,
+    method: str,
+    seed: int,
+    n_workers: int,
+) -> MCResult:
+    """Parallel MC - U sampling + U->X on main proc, g-eval split to workers."""
+    import math as _math
+    from concurrent.futures import ProcessPoolExecutor
+
+    from scipy import stats as _stats
+
+    from .form import _from_standard
+
+    variables = bridge._variables()
+    D = len(variables)
+    rng = np.random.default_rng(seed)
+
+    if method == "crude":
+        U = rng.standard_normal((n_samples, D))
+    elif method == "lhc":
+        from scipy.stats import qmc as _qmc
+
+        lhs = _qmc.LatinHypercube(D, seed=seed)
+        U = _stats.norm.ppf(lhs.random(n_samples))
+    else:  # sobol
+        k = _math.ceil(_math.log2(max(n_samples, 1)))
+        n2 = 1 << k
+        from scipy.stats import qmc as _qmc
+
+        sampler = _qmc.Sobol(D, scramble=True, seed=seed)
+        U = _stats.norm.ppf(sampler.random(n2))[:n_samples]
+
+    X = np.array([_from_standard(U[j], variables) for j in range(n_samples)])
+
+    import pickle as _pickle
+
+    bridge_bytes = _pickle.dumps(bridge)
+    chunk_size = max(1, _math.ceil(n_samples / n_workers))
+    chunks = [X[i : i + chunk_size] for i in range(0, n_samples, chunk_size)]
+    args_list = [(bridge_bytes, c) for c in chunks]
+
+    with ProcessPoolExecutor(max_workers=n_workers) as ex:
+        g_chunks = list(ex.map(_mc_chunk_worker, args_list))
+
+    g_vals = np.concatenate(g_chunks)
+
+    n_fail = int(np.sum(g_vals < 0))
+    pf = n_fail / n_samples
+
+    if pf <= 0:
+        beta = _math.inf
+    elif pf >= 1.0:
+        beta = -_math.inf
+    else:
+        beta = float(-_stats.norm.ppf(pf))
+
+    pf_var = pf * (1.0 - pf) / n_samples
+    cov = float(np.sqrt(pf_var) / pf) if pf > 0 else float("inf")
+
+    if n_fail == 0:
+        ci_lo = 0.0
+        ci_hi = 1.0 - (0.05 / n_samples)
+    elif n_fail == n_samples:
+        ci_lo = 0.05 / n_samples
+        ci_hi = 1.0
+    else:
+        z = _stats.norm.ppf(0.975)
+        denom = 1.0 + z**2 / n_samples
+        center = pf + z**2 / (2 * n_samples)
+        spread = z * np.sqrt(pf * (1.0 - pf) / n_samples + z**2 / (4 * n_samples**2))
+        ci_lo = float((center - spread) / denom)
+        ci_hi = float((center + spread) / denom)
+        ci_lo = max(0.0, min(1.0, ci_lo))
+        ci_hi = max(0.0, min(1.0, ci_hi))
+
+    return MCResult(
+        pf=pf,
+        n_samples=n_samples,
+        n_fail=n_fail,
+        beta=beta,
+        variables=tuple(variables),
+        method=method,
+        cov=cov,
+        pf_ci_95=(ci_lo, ci_hi),
+    )
