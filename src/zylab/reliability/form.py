@@ -157,11 +157,6 @@ def _physical_to_standard(x: float, rv: RandomVariable) -> float:  # noqa: PLR09
     raise ReliabilityError(f"不支持的分布: {rv.dist}")
 
 
-def _to_standard(u_phys: np.ndarray, variables: Sequence[RandomVariable]) -> np.ndarray:
-    """物理空间向量 → 标准化正态空间向量."""
-    return np.array([_physical_to_standard(float(x), rv) for x, rv in zip(u_phys, variables, strict=False)])
-
-
 def _from_standard(u_std: np.ndarray, variables: Sequence[RandomVariable]) -> np.ndarray:
     """标准化正态空间向量 → 物理空间向量."""
     return np.array([_standard_to_physical(float(u), rv) for u, rv in zip(u_std, variables, strict=False)])

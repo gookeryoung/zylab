@@ -17,7 +17,7 @@ from .boundary import BodyForce, EdgePressure, StaticCase
 from .elements import element_geometric_stiffness, element_mass, element_measure, element_stiffness
 from .errors import MeshError
 from .material import LinearElastic, Section
-from .mesh import ElementBlock, ElementType, Mesh
+from .mesh import ElementType, Mesh
 
 __all__ = [
     "assemble_geometric",
@@ -268,10 +268,3 @@ def _check_tables(
             raise MeshError(f"单元块 {block.etype.value} 材料索引 {block.material} 越界（共 {len(materials)} 项）")
         if not 0 <= block.section < len(sections):
             raise MeshError(f"单元块 {block.etype.value} 截面索引 {block.section} 越界（共 {len(sections)} 项）")
-
-
-def block_at(mesh: Mesh, index: int) -> ElementBlock:
-    """按索引取单元块（供测试与结果后处理定位）."""
-    if not 0 <= index < len(mesh.blocks):
-        raise MeshError(f"单元块索引 {index} 越界（共 {len(mesh.blocks)} 块）")
-    return mesh.blocks[index]
