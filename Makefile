@@ -25,7 +25,7 @@ test: ## 运行测试（不含覆盖率）
 	uv run pytest -m "not slow"
 
 cov: ## 运行测试并检查覆盖率
-	uv run pytest -m "not slow" --cov=$(PACKAGE) --cov-fail-under=$(COV_THRESHOLD)
+	uv run pytest -m "not slow" --cov=$(PACKAGE) --cov-fail-under=$(COV_THRESHOLD) -n auto
 
 lint: ## 代码风格检查 (ruff)
 	uv run ruff check .

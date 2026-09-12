@@ -489,20 +489,17 @@ class NodeCanvasWidget(QGraphicsView):
     node_moved = Signal(str, float, float)
     #: 删除选中节点（节点 id）——页面据此调 graph.remove_node + set_graph 重绘
     node_delete_requested = Signal(str)
-    #: 画布请求新建节点（type_id, x, y 场景坐标）——页面据此调 graph.add_node + set_graph
-    node_add_requested = Signal(str, float, float)
     #: 画布请求建立连接（src_id, src_port, dst_id, dst_port）——页面据此调 graph.add_link
     link_requested = Signal(str, str, str, str)
 
     def __init__(self, parent=None) -> None:
-        """初始化空画布（场景/视图配置 + 旋转动画定时器 + 启用拖放）."""
+        """初始化空画布（场景/视图配置 + 旋转动画定时器）."""
         super().__init__(parent)
         self._scene = QGraphicsScene(self)
         self.setScene(self._scene)
         self.setRenderHint(QPainter.Antialiasing)
         self.setAlignment(Qt.AlignHCenter | Qt.AlignTop)
         self.setDragMode(QGraphicsView.NoDrag)
-        self.setAcceptDrops(True)  # 接受工具箱模块拖入
         self._cards: dict[str, _NodeCard] = {}
         self._edges: list[tuple[_EdgeItem, str]] = []  # (连线, 下游节点 id)
         self._frame: _SystemFrame | None = None
@@ -877,32 +874,3 @@ class NodeCanvasWidget(QGraphicsView):
             event.accept()
             return
         super().mouseReleaseEvent(event)
-
-    # ------------------------------------------------------------------ 拖放新建（Phase 3：工具箱模块 → 画布）
-
-    def dragEnterEvent(self, event) -> None:  # Qt 命名约定
-        """拖拽进入：接受携带 ``application/x-zylab-module-type`` 的拖入."""
-        mime = event.mimeData()
-        if mime.hasFormat("application/x-zylab-module-type"):
-            event.acceptProposedAction()
-        else:
-            super().dragEnterEvent(event)
-
-    def dragMoveEvent(self, event) -> None:  # Qt 命名约定
-        """拖拽中：接受合法拖入以显示光标."""
-        mime = event.mimeData()
-        if mime.hasFormat("application/x-zylab-module-type"):
-            event.acceptProposedAction()
-        else:
-            super().dragMoveEvent(event)
-
-    def dropEvent(self, event) -> None:  # Qt 命名约定
-        """放下拖入：解析 type_id → 发 node_add_requested 信号."""
-        mime = event.mimeData()
-        if mime.hasFormat("application/x-zylab-module-type"):
-            type_id = bytes(mime.data("application/x-zylab-module-type")).decode("utf-8")
-            scene_pos = self.mapToScene(event.pos())
-            self.node_add_requested.emit(type_id, scene_pos.x(), scene_pos.y())
-            event.acceptProposedAction()
-        else:
-            super().dropEvent(event)
