@@ -171,7 +171,7 @@ class ColorBarWidget(QWidget):
         labels = self._labels()
         painter.setPen(QColor(pal.text_secondary))
         ys = (self._PAD, (self.height() - text_h) // 2, self.height() - self._PAD - text_h)
-        for y, text in zip(ys, labels):
+        for y, text in zip(ys, labels, strict=False):
             painter.drawText(text_x, y, text_w, text_h, 0, metrics.elidedText(text, Qt.ElideRight, text_w))
 
 
@@ -851,7 +851,7 @@ class ResultView(QWidget):
         mesh = solution.mesh
         frames = [
             (snapshot.reshape(mesh.n_nodes, mesh.dofs_per_node), f"λ = {factor:.3g}")
-            for snapshot, factor in zip(solution.history_displacements, solution.history_factors)
+            for snapshot, factor in zip(solution.history_displacements, solution.history_factors, strict=False)
         ]
         if len(frames) > 1:
             self._start_anim(mesh, frames, first_index=len(frames) - 1)  # 结果态默认末帧（收敛态）

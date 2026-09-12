@@ -159,12 +159,12 @@ def _physical_to_standard(x: float, rv: RandomVariable) -> float:  # noqa: PLR09
 
 def _to_standard(u_phys: np.ndarray, variables: Sequence[RandomVariable]) -> np.ndarray:
     """物理空间向量 → 标准化正态空间向量."""
-    return np.array([_physical_to_standard(float(x), rv) for x, rv in zip(u_phys, variables)])
+    return np.array([_physical_to_standard(float(x), rv) for x, rv in zip(u_phys, variables, strict=False)])
 
 
 def _from_standard(u_std: np.ndarray, variables: Sequence[RandomVariable]) -> np.ndarray:
     """标准化正态空间向量 → 物理空间向量."""
-    return np.array([_standard_to_physical(float(u), rv) for u, rv in zip(u_std, variables)])
+    return np.array([_standard_to_physical(float(u), rv) for u, rv in zip(u_std, variables, strict=False)])
 
 
 # ---------- 梯度辅助 ----------
@@ -199,7 +199,7 @@ def _grad_x_to_u(
     其中 ∂x_i/∂u_i = φ(u_i) / f_{X_i}(x_i)（Rosenblatt 变换的 Jacobian）.
     """
     grad_u = np.zeros_like(grad_x)
-    for i, (xi, rv) in enumerate(zip(x, variables)):
+    for i, (xi, rv) in enumerate(zip(x, variables, strict=False)):
         u = _physical_to_standard(float(xi), rv)
         phi_u = stats.norm.pdf(u)
         f_x = _pdf_physical(float(xi), rv)

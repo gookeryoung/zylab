@@ -246,7 +246,7 @@ def _apply_convections(
     values: list[float] = []
     load = force.copy()
     for convection in case.convections:
-        for here, there in zip(convection.nodes[:-1], convection.nodes[1:]):
+        for here, there in zip(convection.nodes[:-1], convection.nodes[1:], strict=False):
             length = float(np.linalg.norm(mesh.coords[there] - mesh.coords[here]))
             if length <= 0.0:
                 raise MeshError("对流边界折线出现重复相邻节点，段长为零")
@@ -278,7 +278,7 @@ def _convection_total(mesh: Mesh, case: ThermalCase, temperatures: np.ndarray) -
     """对流边界总换热量（正 = 向环境散热）：逐段 ``h(T_avg-T∞)L`` 或逐面片 ``h(T_avg-T∞)A``."""
     total = 0.0
     for convection in case.convections:
-        for here, there in zip(convection.nodes[:-1], convection.nodes[1:]):
+        for here, there in zip(convection.nodes[:-1], convection.nodes[1:], strict=False):
             length = float(np.linalg.norm(mesh.coords[there] - mesh.coords[here]))
             t_avg = 0.5 * (temperatures[here] + temperatures[there])
             total += convection.h_coeff * (t_avg - convection.t_ambient) * length

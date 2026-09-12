@@ -101,7 +101,7 @@ def _cmd_run(target: str, params: list[str], scan: str | None, export: str | Non
             print(f"扫描参数非法: {exc}", file=sys.stderr)
             return 2
         failed = False
-        for value, outcome in zip(values, runs):
+        for value, outcome in zip(values, runs, strict=False):
             print(f"== 扫描值 {value:g} ==")
             print(summarize(outcome))
             failed = failed or not outcome.succeeded

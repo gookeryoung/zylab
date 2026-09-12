@@ -208,7 +208,7 @@ def _apply_edge_pressure(mesh: Mesh, pressure: EdgePressure, force: np.ndarray) 
     正压力（压缩）沿该法向，负值为外向拉力。
     """
     coords = mesh.coords
-    for here, there in zip(pressure.nodes[:-1], pressure.nodes[1:]):
+    for here, there in zip(pressure.nodes[:-1], pressure.nodes[1:], strict=False):
         segment = coords[there] - coords[here]
         length = float(np.linalg.norm(segment))
         if length <= 0.0:

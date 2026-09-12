@@ -88,7 +88,7 @@ def _harmonic_rows(solution: HarmonicResponse) -> tuple[Sequence[object], ...]:
     """谐响应：激励频率 / 全场峰值位移幅值."""
     rows: list[Sequence[object]] = [("omega_rad_s", "max_amplitude")]
     amplitudes = np.abs(solution.displacements).max(axis=0) if solution.displacements.size else np.zeros(0)
-    for omega, amp in zip(solution.frequencies, amplitudes):
+    for omega, amp in zip(solution.frequencies, amplitudes, strict=False):
         rows.append([f"{omega:.10g}", f"{amp:.10g}"])
     return tuple(rows)
 
@@ -97,7 +97,7 @@ def _transient_rows(solution: TransientSolution) -> tuple[Sequence[object], ...]
     """瞬态：时间站点 / 全场最大位移分量."""
     rows: list[Sequence[object]] = [("t", "max_abs_u")]
     peaks = np.abs(solution.displacements).max(axis=0) if solution.displacements.size else np.zeros(0)
-    for t, peak in zip(solution.times, peaks):
+    for t, peak in zip(solution.times, peaks, strict=False):
         rows.append([f"{t:.10g}", f"{peak:.10g}"])
     return tuple(rows)
 
@@ -109,7 +109,7 @@ def _nonlinear_rows(solution: NonlinearSolution) -> tuple[Sequence[object], ...]
         norms = np.linalg.norm(solution.history_displacements, axis=2).max(axis=1)
     else:
         norms = np.zeros(0)
-    for factor, peak in zip(solution.history_factors, norms):
+    for factor, peak in zip(solution.history_factors, norms, strict=False):
         rows.append([f"{factor:.10g}", f"{peak:.10g}"])
     return tuple(rows)
 
@@ -126,6 +126,6 @@ def _electrothermal_transient_rows(solution: ElectroThermalTransientSolution) ->
     """瞬态电-热耦合：时间站点 / 全场温度峰值与谷值时程（电压常值不随时间变）."""
     rows: list[Sequence[object]] = [("t", "t_max", "t_min")]
     thermal = solution.thermal
-    for t, frame in zip(thermal.times, thermal.temperatures):
+    for t, frame in zip(thermal.times, thermal.temperatures, strict=False):
         rows.append([f"{t:.10g}", f"{float(frame.max()):.10g}", f"{float(frame.min()):.10g}"])
     return tuple(rows)

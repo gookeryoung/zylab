@@ -111,7 +111,7 @@ def _confirm(
     box.setDefaultButton(buttons[0])
     exec_dialog(box)
     clicked = box.clickedButton()
-    for (label, _role), button in zip(options, buttons):
+    for (label, _role), button in zip(options, buttons, strict=False):
         if clicked is button:
             return label
     return None
@@ -311,7 +311,7 @@ class CellWidget(QFrame):
     def refresh_icons(self) -> None:
         """按当前主题重绘单元级工具条图标（删除动作用危险色区分）."""
         pal = theme.current_palette()
-        for (icon_name, _action), button in zip(self._TOOL_ITEMS, self._tool_buttons):
+        for (icon_name, _action), button in zip(self._TOOL_ITEMS, self._tool_buttons, strict=False):
             color = pal.danger_text if icon_name == "trash" else pal.text_secondary
             button.setIcon(nav_icon(icon_name, color))
 

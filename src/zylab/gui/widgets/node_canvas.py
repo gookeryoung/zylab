@@ -9,7 +9,8 @@
   线条与箭头分开绘制（避免同路径填充互相污染）；下游单元运行中时
   连线变主色并叠加流动虚线（数据传输动画）；
 - 交互：单击选中单元、双击运行、右键菜单（单元/空白）、Ctrl+A 或点击
-  标题栏全选（参数面板显示全部参数）。
+  标题栏全选（参数面板显示全部参数）。端口连线在模板定义时已固定，
+  画布不提供编辑连接功能，因此无端口锚点与拉线交互。
 """
 
 from __future__ import annotations
@@ -24,7 +25,6 @@ from ..qt_compat import (
     QFont,
     QFontMetrics,
     QGraphicsItem,
-    QGraphicsPathItem,
     QGraphicsScene,
     QGraphicsView,
     QKeyEvent,
@@ -55,27 +55,6 @@ _ARROW_HALF = 4.5  # 箭头半宽（像素）
 _RADIUS = 8.0  # 肘形折线拐角圆角半径
 _FLOW_STEP = 0.8  # 流动虚线每帧相位推进（像素，虚线周期 8）
 _FLOW_DASH = (3.0, 5.0)  # 流动虚线（段长, 间隔）
-_PORT_COLORS = {
-    "model": "#4a9eff",  # 蓝（主类型）
-    "geometry": "#7a5cff",  # 紫（纯几何）
-    "material": "#ff7a5c",  # 橙（材料）
-    "static": "#2dcf6a",  # 绿（静力）
-    "modal": "#cf2d9e",  # 粉（模态）
-    "harmonic": "#cfae2d",  # 金（谐响应）
-    "transient": "#2d8fcf",  # 青（瞬态）
-    "buckling": "#cf2d2d",  # 红（屈曲）
-    "nonlinear": "#7a2dcf",  # 紫（非线性）
-    "et_model": "#5c7a5c",  # 灰绿（传导）
-    "electrothermal": "#cf5c7a",  # 玫（电热）
-    "et_transient": "#5ccfae",  # 青绿（瞬态电热）
-    "data": "#888888",  # 灰（通用数据）
-    "any": "#cccccc",  # 浅灰（任意）
-}
-
-
-def _port_color(port_type: str) -> str:
-    """按端口类型取主题色."""
-    return _PORT_COLORS.get(port_type, "#4a9eff")
 
 
 _STATE_LABELS = {
@@ -185,26 +164,13 @@ class _SystemFrame(QGraphicsItem):
 
 
 class _NodeCard(QGraphicsItem):
-    """环节单元图元（手绘：圆角矩形 + 检查徽标 + 双行文字 + 端口锚点）.
-
-    锚点绘制规则：
-    - 左侧 = 输入端口列表，端口名垂直堆叠，按类型色描边；
-    - 右侧 = 输出端口列表，同上；
-    - 端口类型色在 ``_PORT_COLOR`` 表中定义，未匹配用主色。
-    """
-
-    #: 锚点半径（像素，场景坐标）
-    ANCHOR_R = 4.0
-    #: 锚点垂直间距
-    ANCHOR_GAP = 8.0
+    """环节单元图元（手绘：圆角矩形 + 检查徽标 + 双行文字）."""
 
     def __init__(
         self,
         node_id: str,
         name: str,
         rect: QRectF,
-        input_names: tuple[str, ...] = (),
-        output_names: tuple[str, ...] = (),
     ) -> None:
         """初始化单元."""
         super().__init__()
@@ -215,8 +181,6 @@ class _NodeCard(QGraphicsItem):
         self._detail = ""
         self.selected = False
         self.spin_angle = 0
-        self._input_names = input_names
-        self._output_names = output_names
         self.setPos(rect.topLeft())
         self.setFlag(QGraphicsItem.ItemIsMovable)
         self.setFlag(QGraphicsItem.ItemSendsGeometryChanges)
@@ -275,37 +239,8 @@ class _NodeCard(QGraphicsItem):
         painter.setPen(color)
         painter.drawText(pill.adjusted(7.0, 0.0, -7.0, 0.0), Qt.AlignVCenter | Qt.AlignLeft, text)
 
-    def hit_anchor(self, local_pos: tuple[float, float], tolerance: float = 8.0) -> str | None:
-        """判断本地坐标是否命中某个锚点；命中返回锚点键（"in.xxx" / "out.xxx"），否则 None."""
-        px, py = local_pos
-        for key, (ax, ay) in self.anchor_positions().items():
-            if (px - ax) ** 2 + (py - ay) ** 2 <= tolerance**2:
-                return key
-        return None
-
-    def anchor_positions(self) -> dict[str, tuple[float, float]]:
-        """返回所有端口锚点在 card 本地坐标下的位置.
-
-        键为 in.<port_name> / out.<port_name>，值为 (x, y)。
-        """
-        rect = self.boundingRect()
-        out: dict[str, tuple[float, float]] = {}
-        n_in = len(self._input_names)
-        total_h = max(0.0, (n_in - 1) * self.ANCHOR_GAP)
-        for i, name in enumerate(self._input_names):
-            x = 0.0
-            y = rect.center().y() - total_h / 2 + i * self.ANCHOR_GAP
-            out[f"in.{name}"] = (x, y)
-        n_out = len(self._output_names)
-        total_h_out = max(0.0, (n_out - 1) * self.ANCHOR_GAP)
-        for i, name in enumerate(self._output_names):
-            x = rect.width()
-            y = rect.center().y() - total_h_out / 2 + i * self.ANCHOR_GAP
-            out[f"out.{name}"] = (x, y)
-        return out
-
     def paint(self, painter: QPainter, option, widget=None) -> None:  # Qt 命名约定
-        """绘制单元 + 端口锚点."""
+        """绘制单元."""
         del option, widget
         pal = theme.current_palette()
         rect = self.boundingRect()
@@ -345,14 +280,6 @@ class _NodeCard(QGraphicsItem):
             pixmap = tinted_pixmap(icon_name, tint, _BADGE)
             if not pixmap.isNull():
                 painter.drawPixmap(int(bx), int(by), pixmap)
-
-        # 端口锚点（在单元体之后绘制，确保可见）
-        painter.setPen(Qt.NoPen)
-        for _key, (ax, ay) in self.anchor_positions().items():
-            color = QColor(_port_color("model"))  # 默认蓝，后续按类型改进
-            painter.setPen(QPen(color, 1.5))
-            painter.setBrush(QBrush(QColor(theme.current_palette().bg_muted)))
-            painter.drawEllipse(QPointF(ax, ay), self.ANCHOR_R, self.ANCHOR_R)
 
 
 class _EdgeItem(QGraphicsItem):
@@ -489,8 +416,6 @@ class NodeCanvasWidget(QGraphicsView):
     node_moved = Signal(str, float, float)
     #: 删除选中节点（节点 id）——页面据此调 graph.remove_node + set_graph 重绘
     node_delete_requested = Signal(str)
-    #: 画布请求建立连接（src_id, src_port, dst_id, dst_port）——页面据此调 graph.add_link
-    link_requested = Signal(str, str, str, str)
 
     def __init__(self, parent=None) -> None:
         """初始化空画布（场景/视图配置 + 旋转动画定时器）."""
@@ -500,6 +425,9 @@ class NodeCanvasWidget(QGraphicsView):
         self.setRenderHint(QPainter.Antialiasing)
         self.setAlignment(Qt.AlignHCenter | Qt.AlignTop)
         self.setDragMode(QGraphicsView.NoDrag)
+        # 视口优化：避免拖拽时产生残影
+        self.viewport().setAttribute(Qt.WA_OpaquePaintEvent)
+        self.setViewportUpdateMode(QGraphicsView.MinimalViewportUpdate)
         self._cards: dict[str, _NodeCard] = {}
         self._edges: list[tuple[_EdgeItem, str]] = []  # (连线, 下游节点 id)
         self._frame: _SystemFrame | None = None
@@ -509,10 +437,6 @@ class NodeCanvasWidget(QGraphicsView):
         self._timer = QTimer(self)
         self._timer.setInterval(33)
         self._timer.timeout.connect(self._advance_spinner)
-        # 拉线交互状态
-        self._rubber_line: QGraphicsPathItem | None = None
-        self._rubber_src: tuple[str, str] | None = None  # (node_id, port_name)
-        self._rubber_hint: str = ""  # "" 合法 "bad" 非法，用于描边色
         self.refresh_theme()
 
     # ------------------------------------------------------------------ 图装配
@@ -566,8 +490,6 @@ class NodeCanvasWidget(QGraphicsView):
                 node.id,
                 node.name,
                 QRectF(x, y, _CELL_W, _CELL_H),
-                input_names=tuple(p.name for p in node.spec.inputs),
-                output_names=tuple(p.name for p in node.spec.outputs),
             )
             self._scene.addItem(card)
             self._cards[node.id] = card
@@ -702,21 +624,8 @@ class NodeCanvasWidget(QGraphicsView):
         return item if isinstance(item, _NodeCard) else None
 
     def mousePressEvent(self, event) -> None:  # Qt 命名约定
-        """单击：端口锚点触发拉线、否则单元选中；组合框标题栏触发全选."""
+        """单击：单元选中；组合框标题栏触发全选."""
         pos = mouse_event_pos(event)
-        scene_pos = self.mapToScene(pos)
-        # 1) 端口锚点拉线触发（输出锚点开始拉 → 拖到输入锚点完成）
-        if self._graph is not None:
-            for node_id, card in self._cards.items():
-                local = card.mapFromScene(scene_pos)
-                anchor_key = card.hit_anchor((local.x(), local.y()), tolerance=8.0)
-                if anchor_key and anchor_key.startswith("out."):
-                    port_name = anchor_key[4:]  # "out.xxx" → "xxx"
-                    self._rubber_src = (node_id, port_name)
-                    self._rubber_hint = ""
-                    self._start_rubber(scene_pos)
-                    event.accept()
-                    return
         card = self._card_at(pos)
         if card is not None:
             self.select_node(card.node_id)
@@ -776,101 +685,8 @@ class NodeCanvasWidget(QGraphicsView):
         """旋转动画定时器是否运行中（测试用）."""
         return self._timer.isActive()
 
-    # ------------------------------------------------------------------ 拉线交互
-
-    def _start_rubber(self, scene_pos: QPointF) -> None:
-        """创建橡皮线图元（从源锚点到当前鼠标位置）."""
-        assert self._rubber_src is not None
-        node_id, port = self._rubber_src
-        card = self._cards[node_id]
-        local_xy = card.anchor_positions()[f"out.{port}"]
-        sx = card.pos().x() + local_xy[0]
-        sy = card.pos().y() + local_xy[1]
-        path = QPainterPath()
-        path.moveTo(sx, sy)
-        path.lineTo(scene_pos.x(), scene_pos.y())
-        self._rubber_line = QGraphicsPathItem(path)
-        pal = theme.current_palette()
-        pen = QPen(QColor(pal.primary), 1.5, Qt.DashLine)
-        self._rubber_line.setPen(pen)
-        self._rubber_line.setZValue(100.0)  # 置顶
-        self._scene.addItem(self._rubber_line)
-
-    def _update_rubber(self, scene_pos: QPointF) -> None:
-        """更新橡皮线终点 + can_connect 反馈（源锚点固定，鼠标即终点）."""
-        if self._rubber_line is None or self._rubber_src is None:
-            return
-        node_id, port = self._rubber_src
-        card = self._cards[node_id]
-        local_xy = card.anchor_positions()[f"out.{port}"]
-        sx = card.pos().x() + local_xy[0]
-        sy = card.pos().y() + local_xy[1]
-
-        # 判断鼠标当前是否在某个输入锚点上
-        hint = ""
-        if self._graph is not None:
-            for dnode_id, dcard in self._cards.items():
-                if dnode_id == node_id:
-                    continue
-                dlocal = dcard.mapFromScene(scene_pos)
-                danchor = dcard.hit_anchor((dlocal.x(), dlocal.y()), tolerance=10.0)
-                if danchor and danchor.startswith("in."):
-                    dport = danchor[3:]
-                    ok, _reason = self._graph.can_connect(node_id, port, dnode_id, dport)
-                    hint = "ok" if ok else "bad"
-                    break
-
-        path = QPainterPath()
-        path.moveTo(sx, sy)
-        path.lineTo(scene_pos.x(), scene_pos.y())
-        self._rubber_line.setPath(path)
-
-        # 反馈色
-        pal = theme.current_palette()
-        if hint == "ok":
-            color = QColor(pal.success_text)
-        elif hint == "bad":
-            color = QColor(pal.danger_text)
-        else:
-            color = QColor(pal.primary)
-        self._rubber_line.setPen(QPen(color, 1.5, Qt.DashLine))
-        self._rubber_hint = hint
-
-    def _end_rubber(self, scene_pos: QPointF) -> None:
-        """结束拉线：命中输入锚点则发 link_requested，否则清理."""
-        if self._rubber_line is None or self._rubber_src is None:
-            return
-        node_id, port = self._rubber_src
-        # 检测是否命中某个输入锚点
-        if self._graph is not None:
-            for dnode_id, dcard in self._cards.items():
-                if dnode_id == node_id:
-                    continue
-                dlocal = dcard.mapFromScene(scene_pos)
-                danchor = dcard.hit_anchor((dlocal.x(), dlocal.y()), tolerance=10.0)
-                if danchor and danchor.startswith("in."):
-                    dport = danchor[3:]
-                    ok, _reason = self._graph.can_connect(node_id, port, dnode_id, dport)
-                    if ok:
-                        self.link_requested.emit(node_id, port, dnode_id, dport)
-                    break
-        self._scene.removeItem(self._rubber_line)
-        self._rubber_line = None
-        self._rubber_src = None
-        self._rubber_hint = ""
-
     def mouseMoveEvent(self, event) -> None:  # Qt 命名约定
-        """拉线中更新橡皮线位置；否则保持原逻辑."""
-        if self._rubber_line is not None:
-            self._update_rubber(self.mapToScene(mouse_event_pos(event)))
-            event.accept()
-            return
         super().mouseMoveEvent(event)
 
     def mouseReleaseEvent(self, event) -> None:  # Qt 命名约定
-        """结束拉线；否则保持原逻辑."""
-        if self._rubber_line is not None:
-            self._end_rubber(self.mapToScene(mouse_event_pos(event)))
-            event.accept()
-            return
         super().mouseReleaseEvent(event)

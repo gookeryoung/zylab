@@ -322,7 +322,7 @@ class MainWindow(QMainWindow):
         # 状态栏永久 widget：完整路径（左对齐，双击切换）
         self._status_cwd_label = QLabel(objectName="statusCwdLabel")
         self._status_cwd_label.setToolTip("当前工作区（MATLAB cwd），双击切换")
-        self._status_cwd_label.mouseDoubleClickEvent = lambda _e: self._on_switch_workspace()
+        self._status_cwd_label.mouseDoubleClickEvent = lambda event: self._on_switch_workspace()  # noqa: ARG005  参数名须匹配 PySide stub
         self.statusBar().addPermanentWidget(self._status_cwd_label, 1)
         # 状态栏永久 widget：运行状态 indicator（右对齐，icon + 颜色 + 文字）
         # PySide2 QLabel 无 setIcon，用 pixmap + text 两个 QLabel 组合

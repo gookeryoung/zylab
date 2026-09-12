@@ -434,7 +434,7 @@ def run_batch_outputs(
     outcomes = run_batch(template, param_rows, use_cache=use_cache, cache=cache, n_workers=n_workers)
     succeeded_rows: list[np.ndarray] = []
     succeeded_ys: list[np.ndarray] = []
-    for outcome, row in zip(outcomes, param_rows):
+    for outcome, row in zip(outcomes, param_rows, strict=False):
         if not outcome.succeeded:
             continue
         outputs = outcome.resolve_outputs(template)

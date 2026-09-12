@@ -257,7 +257,6 @@ class FlowchartPage(QWidget):
         self._canvas.background_context_menu.connect(self._on_background_context_menu)
         self._canvas.all_selected.connect(self._on_all_selected)
         self._canvas.node_delete_requested.connect(self._on_node_delete_requested)
-        self._canvas.link_requested.connect(self._on_link_requested)
         self._param_form.param_edited.connect(self._on_param_edited)
         self._bridge.node_started.connect(self._on_node_started)
         self._bridge.node_progress.connect(self._on_node_progress)
@@ -640,7 +639,7 @@ class FlowchartPage(QWidget):
         for ref in self._graph.node(node_id).inputs.values():
             bundle = self._graph.node(ref.partition(".")[0]).result
             if isinstance(bundle, ModelBundle):
-                total = float(sum(np.linalg.norm(load.forces) for load in bundle.case.loads))
+                total = float(sum(np.linalg.norm(load.forces) for load in bundle.case.loads))  # pyrefly: ignore[no-matching-overload]
                 return total if total > 0.0 else 1.0
         return 1.0
 
@@ -653,19 +652,6 @@ class FlowchartPage(QWidget):
         if not self._graph.node(node_id).spec.inputs:
             self._preview_timer.start()  # 模型几何/网格参数变化 -> 云图预览联动
         self.status_message.emit("参数已修改，需重新运行")
-
-    def _on_link_requested(self, src_id: str, src_port: str, dst_id: str, dst_port: str) -> None:
-        """画布端口拉线完成 → 建立连接 + 画布重绘."""
-        if self._graph is None:
-            return
-        try:
-            self._graph.add_link(dst_id, dst_port, f"{src_id}.{src_port}")
-        except Exception as exc:
-            logger.warning("连接建立失败 %s.%s → %s.%s: %s", src_id, src_port, dst_id, dst_port, exc)
-            self.status_message.emit(f"连接失败: {exc}")
-            return
-        self._canvas.set_graph(self._graph)
-        self.status_message.emit(f"已连接: {src_id}.{src_port} → {dst_id}.{dst_port}")
 
     def _refresh_preview_async(self) -> None:
         """后台线程重建过期源节点的模型预览（画布转圈 + 状态提示，不阻塞 UI）."""

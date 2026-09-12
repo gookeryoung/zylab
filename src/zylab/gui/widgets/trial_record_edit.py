@@ -61,7 +61,7 @@ class TrialRecordEdit(QWidget):
             levels, responses = parse_trial_records(text)
         except ReliabilityError:
             levels, responses = [], []
-        self._records = [(float(level), int(hit)) for level, hit in zip(levels, responses)]
+        self._records = [(float(level), int(hit)) for level, hit in zip(levels, responses, strict=False)]
         self._rebuild_table()
         self.textChanged.emit(self.text())
 

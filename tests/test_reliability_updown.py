@@ -52,7 +52,7 @@ _Y = np.array([1, 0, 0, 0, 0, 1, 1, 1, 1, 0, 0, 0, 1, 1, 1, 1, 1, 0, 0, 1, 1, 0,
 _STEP = 0.05
 
 #: 金标准记录的序列化文本（TrialRecordEdit 控件同款格式）
-_RECORDS = ", ".join(f"{level:.2f} {'O' if hit else 'X'}" for level, hit in zip(_X, _Y))
+_RECORDS = ", ".join(f"{level:.2f} {'O' if hit else 'X'}" for level, hit in zip(_X, _Y, strict=False))
 
 
 def test_dixon_mood_core_excel_golden() -> None:

@@ -268,7 +268,7 @@ def optimize_direct(  # noqa: PLR0913, PLR0912
 
     def _build_overrides(x_fixed: np.ndarray) -> Mapping[str, Mapping[str, Any]]:
         overrides: dict[str, dict[str, Any]] = {}
-        for v, xi in zip(variables, x_fixed):
+        for v, xi in zip(variables, x_fixed, strict=False):
             nid, _, k = getattr(v, "name", "").partition(".")
             val: Any = xi
             lo, hi = bounds[list(variables).index(v)]
@@ -437,7 +437,7 @@ def optimize_pareto(  # noqa: PLR0913, PLR0912
 
     def _build_overrides(x_fixed: np.ndarray) -> Mapping[str, Mapping[str, Any]]:
         overrides: dict[str, dict[str, Any]] = {}
-        for v, xi in zip(variables, x_fixed):
+        for v, xi in zip(variables, x_fixed, strict=False):
             nid, _, k = getattr(v, "name", "").partition(".")
             val: Any = xi
             vi = list(variables).index(v)

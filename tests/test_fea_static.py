@@ -6,6 +6,8 @@ patch test 是 FEA 验证的黄金标准：边界节点施加线性位移场，�
 
 from __future__ import annotations
 
+import itertools
+
 import numpy as np
 import pytest
 
@@ -307,5 +309,5 @@ def test_solve_static_progress_report() -> None:
     progresses = [p for p, _ in reports]
     assert progresses[0] == 0.05
     assert progresses[-1] == 1.0
-    assert all(b >= a for a, b in zip(progresses, progresses[1:]))
+    assert all(b >= a for a, b in itertools.pairwise(progresses))
     assert any(m for _, m in reports)

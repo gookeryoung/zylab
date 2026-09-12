@@ -342,7 +342,7 @@ def _run_mc_parallel(
     method: str,
     seed: int,
     n_workers: int,
-) -> MCResult:
+) -> MCResult:  # pragma: no cover - Windows spawn 下 pytest-cov 抓不到子进程
     """Parallel MC - U sampling + U->X on main proc, g-eval split to workers."""
     import math as _math
     from concurrent.futures import ProcessPoolExecutor

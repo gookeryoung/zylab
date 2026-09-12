@@ -100,7 +100,7 @@ def solve_static(
     progress(0.6, "求解线性方程组")
     u, reactions = solve_system(k_global, force, fixed_dofs, fixed_values)
 
-    reaction_map = {int(dof): float(val) for dof, val in zip(fixed_dofs, reactions)}
+    reaction_map = {int(dof): float(val) for dof, val in zip(fixed_dofs, reactions, strict=False)}
     progress(0.9, "恢复单元应力")
     results = _recover_stresses(mesh, materials, sections, u)
     energy = 0.5 * float(u @ (k_global @ u))

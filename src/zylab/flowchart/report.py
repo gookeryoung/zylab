@@ -352,7 +352,7 @@ def _curve_svg(data: CurveData) -> str:
                 v = 1.0 - (y - y_min) / (y_max - y_min)
             return _SVG_PAD_T + v * plot_h
 
-        points = " ".join(f"{_sx(x):.1f},{_sy(y):.1f}" for x, y in zip(series.x, series.y))
+        points = " ".join(f"{_sx(x):.1f},{_sy(y):.1f}" for x, y in zip(series.x, series.y, strict=False))
         color = resolve_curve_color(style.get("color"), index)
         stroke_w = float(style.get("width", 2))
         dash = style.get("dash")

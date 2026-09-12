@@ -242,7 +242,7 @@ def vfilm_resistor_mesh(  # noqa: PLR0912, PLR0913, PLR0917  几何十参数各�
 
     # 站点序列（相邻段共享端点站）
     stations: list[tuple[float, float]] = []
-    for (x0, y0), (x1, y1), count in zip(vertices[:-1], vertices[1:], seg_counts):
+    for (x0, y0), (x1, y1), count in zip(vertices[:-1], vertices[1:], seg_counts, strict=False):
         for i in range(count):
             stations.append((x0 + (x1 - x0) * i / count, y0 + (y1 - y0) * i / count))
     stations.append(vertices[-1])
