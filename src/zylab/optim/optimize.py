@@ -23,7 +23,7 @@ from __future__ import annotations
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from enum import Enum
-from typing import TYPE_CHECKING, Any, Optional
+from typing import TYPE_CHECKING, Any
 
 import numpy as np
 from scipy.optimize import basinhopping, differential_evolution, dual_annealing, shgo
@@ -65,7 +65,7 @@ class OptimResult:
     #: 代理预测的最优目标值
     best_y: float
     #: 最优解处代理预测的标准差（GPR 才有，RBF 为 None）
-    best_std: Optional[float] = None
+    best_std: float | None = None
     #: 优化器名称
     optimizer: str = ""
     #: scipy 原始结果（调试用）
@@ -101,7 +101,7 @@ def optimize(  # noqa: PLR0913  优化器签名必须暴露所有 scipy 全局�
     optimizer: Optimizer | str = Optimizer.DIFFERENTIAL_EVOLUTION,
     n_iter: int = 100,
     seed: int = _DEFAULT_SEED,
-    callback: Optional[Callable[[np.ndarray, float], None]] = None,
+    callback: Callable[[np.ndarray, float], None] | None = None,
 ) -> OptimResult:
     """在给定设计空间边界上用指定优化器最小化代理.
 
@@ -185,8 +185,8 @@ def optimize_direct(  # noqa: PLR0913, PLR0912
     seed: int = _DEFAULT_SEED,
     penalty: float = 1e10,
     maximize: bool = False,
-    callback: Optional[Callable[[np.ndarray, float], None]] = None,
-    report: Optional[Callable[..., Any]] = None,
+    callback: Callable[[np.ndarray, float], None] | None = None,
+    report: Callable[..., Any] | None = None,
 ) -> OptimResult:
     """直接把 workflow 当目标函数，在设计空间边界内跑 scipy 全局优化器.
 
@@ -350,8 +350,8 @@ def optimize_pareto(  # noqa: PLR0913, PLR0912
     seed: int = _DEFAULT_SEED,
     minimize: bool | Sequence[bool] = True,
     penalty: float = 1e10,
-    callback: Optional[Callable[[np.ndarray, np.ndarray], None]] = None,
-    report: Optional[Callable[..., Any]] = None,
+    callback: Callable[[np.ndarray, np.ndarray], None] | None = None,
+    report: Callable[..., Any] | None = None,
     cache: dict[str, Any] | None = None,
     n_workers: int | None = None,
 ) -> ParetoOptResult:

@@ -35,7 +35,6 @@ from __future__ import annotations
 
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
-from typing import Optional
 
 import numpy as np
 
@@ -160,7 +159,7 @@ def sobol_indices(
     Y_A: np.ndarray,
     Y_B: np.ndarray,
     Y_CA: np.ndarray,
-    Y_CB: Optional[np.ndarray] = None,  # noqa: ARG001  保留为 API 兼容，内部不再需要
+    Y_CB: np.ndarray | None = None,  # noqa: ARG001  保留为 API 兼容，内部不再需要
 ) -> tuple[np.ndarray, np.ndarray, float, float]:
     """Saltelli 方差分解估计器——纯数值函数.
 
@@ -213,7 +212,7 @@ def sobol_analysis(
     d: int,
     N: int = 512,
     *,
-    names: Optional[Sequence[str]] = None,
+    names: Sequence[str] | None = None,
     seed: int = _DEFAULT_SEED,
 ) -> SobolIndices:
     """完整 Sobol 感度分析入口（生成 Saltelli 样本 → 批量评估 → 方差分解）.

@@ -15,7 +15,7 @@ from __future__ import annotations
 
 import json
 import logging
-from datetime import UTC, datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
@@ -74,7 +74,7 @@ class Project:
                 meta = h5.create_group("meta")
                 meta.attrs["schema_version"] = PROJECT_SCHEMA_VERSION
                 meta.attrs["name"] = name
-                meta.attrs["created_at"] = datetime.now(UTC).isoformat()
+                meta.attrs["created_at"] = datetime.now(timezone.utc).isoformat()
                 meta.attrs["app_version"] = app_version
                 for group in _RESERVED_GROUPS[1:]:
                     h5.create_group(group)

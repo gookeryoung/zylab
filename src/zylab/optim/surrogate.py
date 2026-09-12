@@ -19,7 +19,6 @@ from __future__ import annotations
 from abc import ABC, abstractmethod
 from collections.abc import Callable
 from dataclasses import dataclass
-from typing import Optional
 
 import numpy as np
 from sklearn.gaussian_process import GaussianProcessRegressor
@@ -42,7 +41,7 @@ class Surrogate(ABC):
     def predict(self, X: np.ndarray) -> np.ndarray:
         """预测 (m, d) 输入的目标值，返回 shape (m,) 的向量."""
 
-    def predict_std(self, X: np.ndarray) -> Optional[np.ndarray]:
+    def predict_std(self, X: np.ndarray) -> np.ndarray | None:
         """预测标准差——GPR 返回值，RBF 返回 None."""
         del X  # 基类默认实现不使用 X
         return None
@@ -70,11 +69,11 @@ class GprSurrogate(Surrogate):
     :param alpha: 观测噪声方差（GPR nugget），默认 1e-10 处理奇异矩阵。
     """
 
-    length_scale: Optional[float] = None
+    length_scale: float | None = None
     normalize_y: bool = True
     alpha: float = 1e-10
 
-    _gp: Optional[GaussianProcessRegressor] = None
+    _gp: GaussianProcessRegressor | None = None
 
     @override
     def fit(self, X: np.ndarray, y: np.ndarray) -> GprSurrogate:
@@ -131,7 +130,7 @@ class RbfSurrogate(Surrogate):
     kernel: str = "thin_plate_spline"
     smoothing: float = 0.0
 
-    _rbf: Optional[Callable[[np.ndarray], np.ndarray]] = None
+    _rbf: Callable[[np.ndarray], np.ndarray] | None = None
 
     @override
     def fit(self, X: np.ndarray, y: np.ndarray) -> RbfSurrogate:

@@ -5,7 +5,7 @@ from __future__ import annotations
 import os
 import time
 from collections.abc import Callable
-from typing import Any, Optional
+from typing import Any
 
 __all__ = ["SAMPLE_TEMPLATE", "add", "crash", "echo_report", "failing", "long_running"]
 
@@ -25,7 +25,7 @@ def add(a: int, b: int) -> int:
     return a + b
 
 
-def echo_report(report: Optional[Callable[[float, str], None]] = None) -> str:
+def echo_report(report: Callable[[float, str], None] | None = None) -> str:
     """上报两次进度后返回 ok."""
     if report is not None:
         report(0.5, "半程")
@@ -43,7 +43,7 @@ def crash() -> None:
     os._exit(1)
 
 
-def long_running(seconds: float = 30.0, report: Optional[Callable[[float, str], None]] = None) -> str:
+def long_running(seconds: float = 30.0, report: Callable[[float, str], None] | None = None) -> str:
     """长跑任务（用于取消测试），周期性上报进度."""
     deadline = time.monotonic() + seconds
     while time.monotonic() < deadline:
