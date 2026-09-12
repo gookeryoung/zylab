@@ -25,6 +25,7 @@ from __future__ import annotations
 
 import ast
 import math
+import os
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
@@ -43,6 +44,10 @@ from .form import (
 
 if TYPE_CHECKING:  # pragma: no cover
     from zylab.flowchart import Template
+
+# pytest-xdist worker 内检测到则禁用内部 ProcessPoolExecutor，避免 Windows
+# spawn 模式下嵌套进程池极低频死锁。正常用户调用不受影响。
+_IS_XDIST_WORKER = bool(os.environ.get("PYTEST_XDIST_WORKER"))
 
 
 # ---------------------------------------------------------------------------
@@ -302,7 +307,7 @@ class ReliabilityBridge:
         :param n_workers: >=2 enables multiprocessing. Bridge itself is picklable,
             each worker constructs the closure locally.
         """
-        _w = n_workers if (n_workers is not None and n_workers >= 2) else 1
+        _w = n_workers if (n_workers is not None and n_workers >= 2 and not _IS_XDIST_WORKER) else 1
         if _w == 1:
             return mc_analysis(
                 self.make_limit_state(),

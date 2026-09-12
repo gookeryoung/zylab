@@ -386,6 +386,10 @@ class TestRunBatch:
 
     def test_run_batch_parallel_cache_isolated(self) -> None:
         """并行模式下外部 cache dict 不被回填（进程间隔离）."""
+        import os
+
+        if os.environ.get("PYTEST_XDIST_WORKER"):
+            pytest.skip("xdist worker 内禁用内部并行，无法验证进程间隔离")
         tpl = _template("structural.cantilever_static")
         rows = [{"model.nx": 4, "model.ny": 2} for _ in range(4)]
         external_cache: dict = {}
