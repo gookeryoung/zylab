@@ -146,8 +146,8 @@ def can_connect(  # noqa: PLR0911 — 连接校验的多分支返回是可读性
     if not compat_check(out_port.port_type, in_port.port_type):
         return False, f"端口类型不兼容: {out_port.port_type.value} → {in_port.port_type.value}"
 
-    # 环检测：dst_id 不得是 src_id 的递归上游（否则加这条边后形成环）
-    if src_id in graph.ancestors(dst_id):
+    # 环检测：dst_id 不得是 src_id 的递归上游（已存在 dst→...→src 路径，加 src→dst 即成环）
+    if dst_id in graph.ancestors(src_id):
         return False, f"连接后形成环（{dst_id} 已是 {src_id} 的上游）"
 
     return True, ""
