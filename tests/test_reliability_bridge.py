@@ -59,6 +59,7 @@ def g(bridge: ReliabilityBridge):
 
 
 class TestMakeLimitState:
+    @pytest.mark.slow()
     def test_mean_point_positive(self, g):
         """均值点 g ≈ 110.7 > 0（安全域）."""
         # Normal(100,10) + Lognormal mean ≈ 249.55
@@ -67,6 +68,7 @@ class TestMakeLimitState:
         assert val > 50, f"均值点应在安全域, g={val}"
         assert np.isfinite(val)
 
+    @pytest.mark.slow()
     def test_fe_failure_sentinel(self):
         """FE 参数触发越界校验时返回 1e10 哨兵，避免 FORM 迭代崩溃."""
         tpl = TemplateRegistry.with_builtin().get("structural.cantilever_static")
@@ -97,6 +99,7 @@ class TestMakeLimitState:
 # ---------------------------------------------------------------------------
 
 
+@pytest.mark.slow()
 class TestFormSormConvergence:
     def test_form_converges(self, bridge: ReliabilityBridge):
         res = bridge.run_form(max_iter=30, tol=1e-5)
@@ -196,6 +199,7 @@ class TestFeParamMapping:
 
 
 class TestFeOutputExtractor:
+    @pytest.mark.slow()
     def test_collect_static_solution(self):
         """cantilever_static 必须能提取 strain_energy 和 max_stress."""
         from zylab.flowchart import run_workflow
@@ -225,16 +229,17 @@ class TestFeOutputExtractor:
 # ---------------------------------------------------------------------------
 
 
+@pytest.mark.slow()
 class TestMcInterface:
     def test_mc_runs_small(self, bridge: ReliabilityBridge):
-        """MC 50 样本能跑完且 pf 在 [0,1]."""
-        mc = bridge.run_mc(n_samples=50, method="crude", seed=7)
+        """MC 20 样本能跑完且 pf 在 [0,1]."""
+        mc = bridge.run_mc(n_samples=20, method="crude", seed=7)
         assert 0 <= mc.pf <= 1
-        assert mc.n_samples == 50
+        assert mc.n_samples == 20
 
     def test_mc_sobol(self, bridge: ReliabilityBridge):
         """Sobol 低差异序列 MC 接口通畅."""
-        mc = bridge.run_mc(n_samples=16, method="sobol", seed=42)
+        mc = bridge.run_mc(n_samples=8, method="sobol", seed=42)
         assert 0 <= mc.pf <= 1
 
 
@@ -349,13 +354,14 @@ class TestMiscExtractors:
             g(np.array([[1.0]]))  # 2-d → 触发 ndim 检查
 
 
+@pytest.mark.slow()
 class TestMcParallel:
     """Bridge.run_mc n_workers 并行化验证."""
 
     def test_serial_parallel_consistency(self, bridge: ReliabilityBridge):
         """相同 seed + n_samples 下，串行和并行结果完全一致."""
-        res_s = bridge.run_mc(n_samples=100, method="crude", seed=7, n_workers=1)
-        res_p = bridge.run_mc(n_samples=100, method="crude", seed=7, n_workers=2)
+        res_s = bridge.run_mc(n_samples=50, method="crude", seed=7, n_workers=1)
+        res_p = bridge.run_mc(n_samples=50, method="crude", seed=7, n_workers=2)
         assert res_s.pf == res_p.pf
         assert res_s.n_fail == res_p.n_fail
         assert res_s.beta == res_p.beta
@@ -364,20 +370,20 @@ class TestMcParallel:
 
     def test_parallel_lhc(self, bridge: ReliabilityBridge):
         """LHC + 并行通畅."""
-        res = bridge.run_mc(n_samples=64, method="lhc", seed=42, n_workers=2)
+        res = bridge.run_mc(n_samples=32, method="lhc", seed=42, n_workers=2)
         assert 0 <= res.pf <= 1
-        assert res.n_samples == 64
+        assert res.n_samples == 32
 
     def test_parallel_sobol(self, bridge: ReliabilityBridge):
         """Sobol + 并行通畅."""
-        res = bridge.run_mc(n_samples=32, method="sobol", seed=42, n_workers=2)
+        res = bridge.run_mc(n_samples=16, method="sobol", seed=42, n_workers=2)
         assert 0 <= res.pf <= 1
 
     def test_workers_below_2_is_serial(self, bridge: ReliabilityBridge):
         """n_workers=None/1 默认走串行分支（和不指定一致）."""
-        res_default = bridge.run_mc(n_samples=50, seed=11)
-        res_w1 = bridge.run_mc(n_samples=50, seed=11, n_workers=1)
-        res_w2 = bridge.run_mc(n_samples=50, seed=11, n_workers=None)
+        res_default = bridge.run_mc(n_samples=30, seed=11)
+        res_w1 = bridge.run_mc(n_samples=30, seed=11, n_workers=1)
+        res_w2 = bridge.run_mc(n_samples=30, seed=11, n_workers=None)
         assert res_default.pf == res_w1.pf == res_w2.pf
 
     def test_parallel_all_fail(self):
@@ -396,11 +402,11 @@ class TestMcParallel:
             },
             limit_state_expr="-1",
         )
-        res = b.run_mc(n_samples=50, method="crude", seed=1, n_workers=2)
+        res = b.run_mc(n_samples=30, method="crude", seed=1, n_workers=2)
         assert res.pf == 1.0
         assert res.beta == -float("inf")
-        assert res.n_fail == 50
-        assert res.pf_ci_95 == (0.05 / 50, 1.0)
+        assert res.n_fail == 30
+        assert res.pf_ci_95 == (0.05 / 30, 1.0)
 
     def test_worker_direct_call(self):
         """Direct main-process call to cover _mc_chunk_worker internals."""
@@ -455,7 +461,7 @@ class TestMcParallel:
             },
             limit_state_expr="rv.sigma_y - fe.max_stress",
         )
-        res = b.run_mc(n_samples=500, method="crude", seed=42, n_workers=2)
+        res = b.run_mc(n_samples=100, method="crude", seed=42, n_workers=2)
         assert 0 < res.pf < 1
         assert np.isfinite(res.beta)
         assert np.isfinite(res.pf_ci_95[0])

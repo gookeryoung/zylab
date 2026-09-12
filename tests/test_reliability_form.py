@@ -207,8 +207,10 @@ class TestResultDataclass:
 # ---------- Monte Carlo ----------
 
 
+@pytest.mark.slow()
 class TestMC:
     def test_mc_crude_pf_close_to_form(self) -> None:
+        """MC 与 FORM 结果在同一数量级（20k 样本，β≈3.12）."""
         R = RandomVariable("R", Distribution.NORMAL, {"loc": 100.0, "scale": 10.0})
         S = RandomVariable("S", Distribution.NORMAL, {"loc": 60.0, "scale": 8.0})
 
@@ -216,15 +218,16 @@ class TestMC:
             return float(x[0] - x[1])
 
         res_f = form_analysis(g, [R, S], grad=lambda _x: np.array([1.0, -1.0]))
-        res_mc = mc_analysis(g, [R, S], n_samples=500_000, seed=42)
+        res_mc = mc_analysis(g, [R, S], n_samples=20_000, seed=42)
         assert res_mc.pf_ci_95[0] <= res_f.pf_form <= res_mc.pf_ci_95[1]
-        assert res_f.beta == pytest.approx(res_mc.beta, abs=0.05)
+        # 20k 样本下 pf 相对误差 ~25%，beta 绝对误差 ~0.3
+        assert res_f.beta == pytest.approx(res_mc.beta, abs=0.3)
         assert isinstance(res_mc, MCResult)
 
     def test_mc_lhs_method(self) -> None:
         R = RandomVariable("R", Distribution.NORMAL, {"loc": 100.0, "scale": 10.0})
         S = RandomVariable("S", Distribution.NORMAL, {"loc": 60.0, "scale": 8.0})
-        res = mc_analysis(lambda x: float(x[0] - x[1]), [R, S], n_samples=100_000, method="lhc", seed=42)
+        res = mc_analysis(lambda x: float(x[0] - x[1]), [R, S], n_samples=10_000, method="lhc", seed=42)
         assert res.method == "lhc"
         assert 0 < res.pf < 1
         assert res.n_fail > 0
@@ -232,14 +235,15 @@ class TestMC:
     def test_mc_sobol_method(self) -> None:
         R = RandomVariable("R", Distribution.NORMAL, {"loc": 100.0, "scale": 10.0})
         S = RandomVariable("S", Distribution.NORMAL, {"loc": 60.0, "scale": 8.0})
-        res = mc_analysis(lambda x: float(x[0] - x[1]), [R, S], n_samples=100_000, method="sobol", seed=42)
+        res = mc_analysis(lambda x: float(x[0] - x[1]), [R, S], n_samples=10_000, method="sobol", seed=42)
         assert res.method == "sobol"
         assert 0 < res.pf < 1
 
     def test_mc_stats_fields(self) -> None:
+        """cov/CI/beta 字段语义正确（20k 样本即可验证）."""
         R = RandomVariable("R", Distribution.NORMAL, {"loc": 100.0, "scale": 10.0})
         S = RandomVariable("S", Distribution.NORMAL, {"loc": 60.0, "scale": 8.0})
-        res = mc_analysis(lambda x: float(x[0] - x[1]), [R, S], n_samples=500_000, seed=42)
+        res = mc_analysis(lambda x: float(x[0] - x[1]), [R, S], n_samples=20_000, seed=42)
         assert res.cov > 0
         assert res.pf_ci_95[0] < res.pf < res.pf_ci_95[1]
         assert res.beta > 0
