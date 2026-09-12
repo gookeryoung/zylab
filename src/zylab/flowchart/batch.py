@@ -43,10 +43,6 @@ from .param_store import ParameterStore
 from .results import resolve_input
 from .template import Template
 
-# pytest-xdist worker 内检测到则禁用内部 ProcessPoolExecutor，避免 Windows
-# spawn 模式下嵌套进程池极低频死锁。正常用户调用不受影响。
-_IS_XDIST_WORKER = bool(os.environ.get("PYTEST_XDIST_WORKER"))
-
 __all__ = [
     "NodeOutcome",
     "ReportFn",
@@ -375,7 +371,7 @@ def run_batch(  # noqa: PLR0913
     n = len(param_rows)
 
     # ---- 并行分支 ----
-    if n_workers is not None and n_workers >= 2 and not _IS_XDIST_WORKER:
+    if n_workers is not None and n_workers >= 2:
         # 每个 worker 内部自建节点级 cache（进程间隔离）
         # 不回填主进程的 cache dict——跨进程共享不可行
         args_iter = ((template, row, use_cache) for row in param_rows)
