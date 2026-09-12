@@ -156,17 +156,17 @@ class LSCCurve:
 
     @cached_property
     def ms(self) -> float:
-        """m 的平方."""
+        """M 的平方."""
         return self.m**2
 
     @cached_property
     def mc(self) -> float:
-        """m 的立方."""
+        """M 的立方."""
         return self.m**3
 
     @cached_property
     def ms4(self) -> float:
-        """m 的四次方."""
+        """M 的四次方."""
         return self.m**4
 
     @cached_property
@@ -265,7 +265,7 @@ class LSCCurve:
     def d(self) -> np.ndarray:
         """目标向量 d."""
         return np.array(
-            [0, self.n * self.m, self.t * self.m, self.s / 2, 0, self.n * self.m1, self.t * self.m1, self.s1 / 2]
+            [0, self.n * self.m, self.t * self.m, self.s / 2, 0, self.n * self.m1, self.t * self.m1, self.s1 / 2],
         )
 
     @cached_property

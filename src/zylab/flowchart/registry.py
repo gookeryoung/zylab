@@ -91,7 +91,7 @@ class TemplateRegistry:
                 *directory.glob("*.yml"),
                 *directory.glob("*/*.yaml"),
                 *directory.glob("*/*.yml"),
-            }
+            },
         )
         for path in paths:
             try:

@@ -18,8 +18,9 @@ from enum import Enum, unique
 from typing import Any, Mapping
 
 from .cache import node_fingerprint
-from .errors import FlowchartError, LinkError, TemplateError
+from .errors import LinkError, TemplateError
 from .module import ModuleSpec, module_spec
+from .ports import assert_can_connect, can_connect
 from .template import Template
 
 __all__ = ["NodeInstance", "NodeState", "WorkflowGraph"]
@@ -193,24 +194,15 @@ class WorkflowGraph:
         """连接上游输出到目标节点输入端口；本节点与下游级联失效.
 
         :param src_ref: 上游引用（``"node_id.port"`` 格式）。
-        :raises LinkError: 端口不存在/引用格式错误/自连接/端口类型不匹配。
+        :raises LinkError: 端口不存在/引用格式错误/连接非法（类型不兼容/自连/成环）。
         """
-        node = self.node(dst_id)
-        try:
-            in_port = node.spec.input_port(dst_port)
-        except FlowchartError as exc:
-            raise LinkError(str(exc)) from exc
+        # src_ref 格式校验
         src_id, sep, src_port = src_ref.partition(".")
         if not sep or not src_id or not src_port:
             raise LinkError(f"连接 {src_ref!r} 应为 '节点id.端口名' 格式")
-        if src_id == dst_id:
-            raise LinkError(f"节点 {dst_id!r} 不允许自连接")
-        try:
-            out_port = self.node(src_id).spec.output_port(src_port)
-        except FlowchartError as exc:
-            raise LinkError(f"连接 {src_ref!r} 无效: {exc}") from exc
-        if out_port.port_type is not in_port.port_type:
-            raise LinkError(f"端口类型不匹配: {out_port.port_type.value} != {in_port.port_type.value}")
+        # 统一走 can_connect：端口存在性 + 类型兼容 + 自连 + 环检测
+        assert_can_connect(self, src_id, src_port, dst_id, dst_port)
+        node = self.node(dst_id)
         node.inputs[dst_port] = src_ref
         self._invalidate(dst_id)
 
@@ -252,7 +244,7 @@ class WorkflowGraph:
         return final_id
 
     def remove_node(self, node_id: str) -> None:
-        """删除节点：自身 + 所有下游指向本节点的入端口一并清理。
+        """删除节点：自身 + 所有下游指向本节点的入端口一并清理.
 
         :raises TemplateError: 图中不存在该节点。
         """
@@ -262,6 +254,14 @@ class WorkflowGraph:
             for port in refs_to_remove:
                 del other.inputs[port]
         del self._nodes[node_id]
+
+    def can_connect(self, src_id: str, src_port: str, dst_id: str, dst_port: str) -> tuple[bool, str]:
+        """预判一条连接是否合法（GUI 拖线实时反馈 + add_link 内部复用同逻辑）.
+
+        委托 :func:`~zylab.flowchart.ports.can_connect`，签名同 graph 侧调用习惯
+        （参数顺序 ``源节点, 源端口, 目标节点, 目标端口``）。
+        """
+        return can_connect(self, src_id, src_port, dst_id, dst_port)
 
     def _generate_node_id(self, type_id: str) -> str:
         """生成唯一节点 id；格式 ``<type_last_segment>_<4hex>``."""

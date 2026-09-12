@@ -30,7 +30,7 @@ __all__ = ["SemanticColorResolver", "markdown_to_html"]
 
 #: 语义色名集合（与 GUI 主题 / 报告打印固定色表保持一致）。
 _SEMANTIC_COLORS: frozenset[str] = frozenset(
-    {"primary", "success", "warning", "danger", "info", "text", "text_secondary"}
+    {"primary", "success", "warning", "danger", "info", "text", "text_secondary"},
 )
 
 #: 合法 ``#RRGGBB`` 格式正则。

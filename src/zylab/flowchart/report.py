@@ -118,7 +118,8 @@ def _render_views(template: DslTemplate, outputs: Mapping[str, Any]) -> dict[str
 
 
 def _report_sections(
-    template: DslTemplate, views: Mapping[str, ViewData]
+    template: DslTemplate,
+    views: Mapping[str, ViewData],
 ) -> list[tuple[DslReportSection, ViewData | None]]:
     """报告章节序列：声明优先，未声明 report 时按 results 兜底自拼章节."""
     if template.report is not None:
@@ -135,7 +136,9 @@ def _report_sections(
 
 
 def _resolve_section_view(
-    template: DslTemplate, section: DslReportSection, views: Mapping[str, ViewData]
+    template: DslTemplate,
+    section: DslReportSection,
+    views: Mapping[str, ViewData],
 ) -> ViewData | None:
     """按章节 figure/table 引用取视图数据（引用非法时报错）."""
     ref = section.figure or section.table
@@ -240,7 +243,7 @@ def _html_view(view: ViewData) -> str:
             cells = []
             for ci, cell in enumerate(row):
                 cells.append(
-                    f'<td align="{_col_html_align(view.columns[ci])}">{escape(_fmt_with_col(cell, view.columns[ci]))}</td>'
+                    f'<td align="{_col_html_align(view.columns[ci])}">{escape(_fmt_with_col(cell, view.columns[ci]))}</td>',
                 )
             body += "<tr>" + "".join(cells) + "</tr>"
         return (
@@ -329,7 +332,7 @@ def _curve_svg(data: CurveData) -> str:
     parts = [f'<svg xmlns="http://www.w3.org/2000/svg" width="{_SVG_W}" height="{_SVG_H}">']
     parts.append(f'<rect width="{_SVG_W}" height="{_SVG_H}" fill="#ffffff"/>')
     parts.append(
-        f'<rect x="{_SVG_PAD_L}" y="{_SVG_PAD_T}" width="{plot_w}" height="{plot_h}" fill="none" stroke="#cccccc"/>'
+        f'<rect x="{_SVG_PAD_L}" y="{_SVG_PAD_T}" width="{plot_w}" height="{plot_h}" fill="none" stroke="#cccccc"/>',
     )
     for index, series in enumerate(data.series):
         style = data.series_styles[index] if index < len(data.series_styles) else {}
@@ -359,7 +362,7 @@ def _curve_svg(data: CurveData) -> str:
         if data.mark_peak and len(series.y) > 0:
             peak_idx = max(range(len(series.y)), key=lambda i: abs(series.y[i]))  # type: ignore[arg-type]
             parts.append(
-                f'<circle cx="{_sx(series.x[peak_idx]):.1f}" cy="{_sy(series.y[peak_idx]):.1f}" r="4" fill="#EF4444"/>'
+                f'<circle cx="{_sx(series.x[peak_idx]):.1f}" cy="{_sy(series.y[peak_idx]):.1f}" r="4" fill="#EF4444"/>',
             )
     parts += _svg_axes(data, (x_min, x_max, y_min, y_max), (plot_w, plot_h))
     parts += _svg_legend(data)
@@ -387,7 +390,7 @@ def _svg_axes(data: CurveData, bounds: tuple[float, float, float, float], plot: 
     if data.y_label:
         parts.append(
             f'<text x="14" y="{_SVG_PAD_T + plot_h / 2:.0f}" font-size="12" fill="#666" '
-            f'transform="rotate(-90 14 {_SVG_PAD_T + plot_h / 2:.0f})" text-anchor="middle">{escape(data.y_label)}</text>'
+            f'transform="rotate(-90 14 {_SVG_PAD_T + plot_h / 2:.0f})" text-anchor="middle">{escape(data.y_label)}</text>',
         )
     parts.append(text(_SVG_PAD_L, _SVG_H - _SVG_PAD_B + 16, _fmt(x_min), "start"))
     parts.append(text(_SVG_PAD_L + plot_w, _SVG_H - _SVG_PAD_B + 16, _fmt(x_max), "end"))
@@ -406,7 +409,7 @@ def _svg_legend(data: CurveData) -> list[str]:
         y = _SVG_PAD_T + 8 + index * 18
         parts.append(f'<rect x="{x}" y="{y}" width="12" height="12" fill="{color}"/>')
         parts.append(
-            f'<text x="{x - 6}" y="{y + 11}" font-size="12" fill="#333" text-anchor="end">{escape(series.name)}</text>'
+            f'<text x="{x - 6}" y="{y + 11}" font-size="12" fill="#333" text-anchor="end">{escape(series.name)}</text>',
         )
     return parts
 
@@ -542,7 +545,7 @@ def _cloud_frame(coords: np.ndarray) -> tuple[np.ndarray, float]:
         (
             offset_x + (coords[:, 0] - x_min) * scale,
             offset_y + (1.0 - (coords[:, 1] - y_min) / span_y) * span_y * scale,
-        )
+        ),
     )
     return screen, scale
 
@@ -565,7 +568,7 @@ def _cloud_2d(mesh: Any, coords: np.ndarray, colors: np.ndarray) -> list[str]:
     for a, b in edges:
         parts.append(
             f'<line x1="{screen[a, 0]:.1f}" y1="{screen[a, 1]:.1f}" '
-            f'x2="{screen[b, 0]:.1f}" y2="{screen[b, 1]:.1f}" stroke="#00000033" stroke-width="0.6"/>'
+            f'x2="{screen[b, 0]:.1f}" y2="{screen[b, 1]:.1f}" stroke="#00000033" stroke-width="0.6"/>',
         )
     return parts
 
@@ -579,12 +582,12 @@ def _cloud_3d(mesh: Any, coords: np.ndarray, colors: np.ndarray) -> list[str]:
     for a, b in edges:
         parts.append(
             f'<line x1="{screen[a, 0]:.1f}" y1="{screen[a, 1]:.1f}" '
-            f'x2="{screen[b, 0]:.1f}" y2="{screen[b, 1]:.1f}" stroke="#00000022" stroke-width="0.6"/>'
+            f'x2="{screen[b, 0]:.1f}" y2="{screen[b, 1]:.1f}" stroke="#00000022" stroke-width="0.6"/>',
         )
     for index in np.argsort(depth)[::-1]:  # 远者先画，近者覆盖
         parts.append(
             f'<circle cx="{screen[index, 0]:.1f}" cy="{screen[index, 1]:.1f}" '
-            f'r="{_CLOUD_R:.1f}" fill="{_rgb(colors[index])}"/>'
+            f'r="{_CLOUD_R:.1f}" fill="{_rgb(colors[index])}"/>',
         )
     return parts
 
@@ -595,7 +598,7 @@ def _cloud_colorbar(values: np.ndarray, label: str, cmap: str) -> str:
     bar_y = (_CLOUD_H - _CLOUD_BAR_H) / 2
     parts = [
         f'<text x="{bar_x + _CLOUD_BAR_W / 2:.0f}" y="{bar_y - 10:.0f}" font-size="12" fill="#333" '
-        f'text-anchor="middle">{escape(label)}</text>'
+        f'text-anchor="middle">{escape(label)}</text>',
     ]
     segments = 16
     lut = cmap_lut(cmap, samples=segments)
@@ -603,18 +606,18 @@ def _cloud_colorbar(values: np.ndarray, label: str, cmap: str) -> str:
         y = bar_y + _CLOUD_BAR_H * (1.0 - (index + 1) / segments)
         parts.append(
             f'<rect x="{bar_x:.0f}" y="{y:.0f}" width="{_CLOUD_BAR_W}" '
-            f'height="{_CLOUD_BAR_H / segments + 0.5:.1f}" fill="{_rgb(lut[index])}"/>'
+            f'height="{_CLOUD_BAR_H / segments + 0.5:.1f}" fill="{_rgb(lut[index])}"/>',
         )
     parts.append(
-        f'<rect x="{bar_x:.0f}" y="{bar_y:.0f}" width="{_CLOUD_BAR_W}" height="{_CLOUD_BAR_H}" fill="none" stroke="#999"/>'
+        f'<rect x="{bar_x:.0f}" y="{bar_y:.0f}" width="{_CLOUD_BAR_W}" height="{_CLOUD_BAR_H}" fill="none" stroke="#999"/>',
     )
     parts.append(
         f'<text x="{bar_x + _CLOUD_BAR_W + 6:.0f}" y="{bar_y + 12:.0f}" font-size="11" fill="#333" '
-        f'text-anchor="start">{_fmt(float(values.max()))}</text>'
+        f'text-anchor="start">{_fmt(float(values.max()))}</text>',
     )
     parts.append(
         f'<text x="{bar_x + _CLOUD_BAR_W + 6:.0f}" y="{bar_y + _CLOUD_BAR_H:.0f}" font-size="11" fill="#333" '
-        f'text-anchor="start">{_fmt(float(values.min()))}</text>'
+        f'text-anchor="start">{_fmt(float(values.min()))}</text>',
     )
     return "".join(parts)
 

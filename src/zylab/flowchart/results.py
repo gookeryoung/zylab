@@ -196,7 +196,7 @@ def _build_curve(result: DslResult, outputs: Mapping[str, Any]) -> CurveData:
         y_values = _resolve_sequence(y_ref, outputs)
         if len(y_values) != len(x_values):
             raise TemplateError(
-                f"曲线结果 {result.id!r} 序列 {y_ref!r} 长度 {len(y_values)} 与 x 长度 {len(x_values)} 不匹配"
+                f"曲线结果 {result.id!r} 序列 {y_ref!r} 长度 {len(y_values)} 与 x 长度 {len(x_values)} 不匹配",
             )
         series.append(CurveSeries(name=name, x=x_values, y=y_values))
     series_styles_raw = spec.get("series", [])

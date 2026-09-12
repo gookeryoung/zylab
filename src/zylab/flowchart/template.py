@@ -233,7 +233,7 @@ class Template:
             ):
                 raise LinkError(
                     f"参数化计算 {self.id!r} 连接 {ref!r} -> {node.id}.{port_name} 端口类型不匹配: "
-                    f"{out_port.port_type.value} != {in_port.port_type.value}"
+                    f"{out_port.port_type.value} != {in_port.port_type.value}",
                 )
 
     def _validate_param_ref(self, ref: str) -> None:
@@ -361,7 +361,7 @@ def _parse_output_params(raw: Any, template_id: str) -> list[OutputParam]:
                 unit=str(item.get("unit", "")),
                 label=str(item.get("label", name)),
                 doc=str(item.get("doc", "")),
-            )
+            ),
         )
     return result
 

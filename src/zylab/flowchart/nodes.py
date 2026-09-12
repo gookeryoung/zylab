@@ -301,7 +301,7 @@ def build_joule_series(inputs: NodeInputs, params: NodeParams, report: ReportFn 
     n_electrode = min(max(round(float(p["electrode_len"]) / dx), 1), nx // 2 - 1) if nx >= 3 else 1
     blocks = []
     for zone, (i_begin, i_end) in enumerate(
-        ((0, n_electrode), (n_electrode, nx - n_electrode), (nx - n_electrode, nx))
+        ((0, n_electrode), (n_electrode, nx - n_electrode), (nx - n_electrode, nx)),
     ):
         conn = []
         for j in range(ny):
@@ -565,7 +565,9 @@ def run_nonlinear(inputs: NodeInputs, params: NodeParams, report: ReportFn | Non
 
 
 def run_electrothermal(
-    inputs: NodeInputs, params: NodeParams, report: ReportFn | None = None
+    inputs: NodeInputs,
+    params: NodeParams,
+    report: ReportFn | None = None,
 ) -> ElectroThermalSolution:
     """电-热耦合分析节点：ET_MODEL -> ElectroThermalSolution（稳态顺序耦合）."""
     model = inputs["model"]
@@ -691,7 +693,9 @@ def build_vfilm_resistor(inputs: NodeInputs, params: NodeParams, report: ReportF
 
 
 def run_electrothermal_transient(
-    inputs: NodeInputs, params: NodeParams, report: ReportFn | None = None
+    inputs: NodeInputs,
+    params: NodeParams,
+    report: ReportFn | None = None,
 ) -> ElectroThermalTransientSolution:
     """瞬态电-热耦合分析节点：ET_MODEL -> ElectroThermalTransientSolution.
 

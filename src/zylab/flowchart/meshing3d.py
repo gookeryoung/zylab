@@ -43,6 +43,7 @@ class CylinderMesh3d:
         end_low_nodes: z=0 端面节点（接地 0V 电极）。
         end_high_nodes: z=L 端面节点（给定电压电极）。
         conv_faces: 外圆柱面与两端面的四边形面片（对流边界）。
+
     """
 
     mesh: Mesh
@@ -76,6 +77,7 @@ def cylinder_resistor_mesh(
 
     Raises:
         MeshError: 几何或分段参数非法。
+
     """
     if radius <= 0.0 or length <= 0.0:
         raise MeshError(f"圆柱半径与长度须为正，实际 R={radius}, L={length}")
@@ -146,6 +148,7 @@ class VfilmMesh3d:
         lead_high_nodes: 引出端面节点（x=L，给定电压电极）。
         film_top_faces: 薄膜顶面（z = 膜厚）四边形面片（对流边界）。
         base_bottom_nodes: 陶瓷基底底面（z = -基底厚）节点（恒温边界）。
+
     """
 
     mesh: Mesh
@@ -218,6 +221,7 @@ def vfilm_resistor_mesh(  # noqa: PLR0912, PLR0913, PLR0917  几何十参数各�
 
     Raises:
         MeshError: 几何或分段参数非法。
+
     """
     if min(span, depth, width, thickness, substrate_h, lead_len) <= 0.0:
         raise MeshError("V 形薄膜几何参数（跨度/深度/宽/厚/基底厚/电极段长）须为正")
@@ -322,20 +326,29 @@ def vfilm_resistor_mesh(  # noqa: PLR0912, PLR0913, PLR0917  几何十参数各�
                     _hex(
                         (sub[k][m + 1][j], sub[k + 1][m + 1][j], sub[k + 1][m + 1][j + 1], sub[k][m + 1][j + 1]),
                         (sub[k][m][j], sub[k + 1][m][j], sub[k + 1][m][j + 1], sub[k][m][j + 1]),
-                    )
+                    ),
                 )
 
     mesh = Mesh(
         coords=mapper.coords(),
         blocks=(
             ElementBlock(
-                etype=ElementType.HEX8, conn=np.asarray(conn_resistor, dtype=np.int64), material=0, name="电阻膜"
+                etype=ElementType.HEX8,
+                conn=np.asarray(conn_resistor, dtype=np.int64),
+                material=0,
+                name="电阻膜",
             ),
             ElementBlock(
-                etype=ElementType.HEX8, conn=np.asarray(conn_electrode, dtype=np.int64), material=1, name="电极"
+                etype=ElementType.HEX8,
+                conn=np.asarray(conn_electrode, dtype=np.int64),
+                material=1,
+                name="电极",
             ),
             ElementBlock(
-                etype=ElementType.HEX8, conn=np.asarray(conn_substrate, dtype=np.int64), material=2, name="陶瓷基底"
+                etype=ElementType.HEX8,
+                conn=np.asarray(conn_substrate, dtype=np.int64),
+                material=2,
+                name="陶瓷基底",
             ),
         ),
     )

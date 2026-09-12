@@ -1,4 +1,12 @@
-"""MODEL 端口载荷：模型数据包（结构/传导两族，网格 + 材料表 + 截面表 + 工况）."""
+"""MODEL 端口载荷与拆分式载荷：结构/传导两族 Bundle + 纯几何 Bundle + 材料载荷.
+
+拆分式建模流程（Phase 1 新增）::
+
+    material.* → MATERIAL → mesh.generate ─┐
+    geom.*     → GEOMETRY → mesh.generate ──► MODEL → analysis.*
+
+与旧一体化 ``example.*`` → MODEL 并行共存。
+"""
 
 from __future__ import annotations
 
@@ -14,7 +22,35 @@ from zylab.fea import (
     ThermalCase,
 )
 
-__all__ = ["ConductionBundle", "ModelBundle"]
+__all__ = [
+    "ConductionBundle",
+    "GeometryBundle",
+    "MaterialPayload",
+    "ModelBundle",
+]
+
+
+@dataclass(frozen=True)
+class GeometryBundle:
+    """纯几何载荷（拆分式建模：几何节点 → 网格节点的输入）.
+
+    与 :class:`ModelBundle` 的区别是不含材料表（材料由独立 material.* 节点提供）。
+    """
+
+    mesh: Mesh
+    sections: tuple[Section, ...]
+    case: StaticCase
+
+
+@dataclass(frozen=True)
+class MaterialPayload:
+    """材料载荷（拆分式建模：material.* → mesh.generate 的输入）.
+
+    载荷可以是 :class:`LinearElastic` 或 :class:`ConductionMaterial`（网格节点
+    根据自身类型决定消费哪种）。
+    """
+
+    material: object
 
 
 @dataclass(frozen=True)

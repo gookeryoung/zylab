@@ -15,6 +15,7 @@ from .errors import ModuleNotFoundError_, ParamError
 
 __all__ = [
     "BUILTIN_MODULES",
+    "SPLIT_MODULES",
     "ModuleCategory",
     "ModuleSpec",
     "ParamSpec",
@@ -31,8 +32,14 @@ _INF = 1.0e300
 
 @unique
 class PortType(Enum):
-    """端口载荷类型（连接校验依据：仅同类型端口可相连）."""
+    """端口载荷类型（连接校验依据：默认仅同类型端口可相连，Phase 2 起引入兼容矩阵）.
 
+    新增 GEOMETRY / MATERIAL 支撑「几何-材料-网格-求解」拆分式建模流程，
+    与旧一体化 MODEL 并行共存。
+    """
+
+    GEOMETRY = "geometry"  # geom.GeometryPayload（纯几何：网格拓扑 + 截面参数 + 载荷工况）
+    MATERIAL = "material"  # material.MaterialPayload（材料实例：LinearElastic / ConductionMaterial）
     MODEL = "model"  # bundle.ModelBundle（网格+材料+截面+工况）
     STATIC = "static"  # fea.StaticSolution
     MODAL = "modal"  # fea.ModalSolution
@@ -151,11 +158,12 @@ class ModuleSpec:
 
     :param type_id: 全局唯一类型 id（如 ``"example.cantilever_q4"``）。
     :param name: 中文显示名。
-    :param category: 模块类别。
+    :param category: 模块类别（SOURCE / ANALYSIS / POST 三角色）。
     :param target: 节点执行函数全限定名（``"zylab.flowchart.nodes:xxx"``）。
     :param inputs: 输入端口表。
     :param outputs: 输出端口表。
     :param params: 参数 schema 表。
+    :param catalog: GUI 工具树路径（如 ``("材料参数", "弹性材料")``）；空串时由 type_id 前缀自动推断。
     """
 
     type_id: str
@@ -165,6 +173,7 @@ class ModuleSpec:
     inputs: tuple[PortSpec, ...] = ()
     outputs: tuple[PortSpec, ...] = ()
     params: tuple[ParamSpec, ...] = ()
+    catalog: tuple[str, ...] = ()
 
     def param(self, key: str) -> ParamSpec:
         """按 key 取参数规格；未知键抛 :class:`ParamError`."""
@@ -326,7 +335,15 @@ BUILTIN_MODULES: tuple[ModuleSpec, ...] = (
             ParamSpec("nx", "纵向单元数", ParamType.INT, 40, 1, 400, 5),
             ParamSpec("ny", "横向单元数", ParamType.INT, 10, 1, 400, 1),
             ParamSpec(
-                "voltage", "电极电压 V₀", ParamType.FLOAT, 1.0, -1.0e6, 1.0e6, 0.1, "V", "右端电极电压，左端接地 0"
+                "voltage",
+                "电极电压 V₀",
+                ParamType.FLOAT,
+                1.0,
+                -1.0e6,
+                1.0e6,
+                0.1,
+                "V",
+                "右端电极电压，左端接地 0",
             ),
             ParamSpec("electric_sigma", "电导率 σ", ParamType.FLOAT, 1.0, 1.0e-9, 1.0e9, 0.1, "S/mm", "稳态电传导系数"),
             ParamSpec("thermal_k", "导热系数 k", ParamType.FLOAT, 1.0, 1.0e-9, 1.0e6, 0.1, "W/mm·K", "稳态热传导系数"),
@@ -369,7 +386,15 @@ BUILTIN_MODULES: tuple[ModuleSpec, ...] = (
                 "左右电极段长（各一段，中间为电阻区）",
             ),
             ParamSpec(
-                "sigma_conductor", "电极电导率 σ_c", ParamType.FLOAT, 50.0, 1.0e-9, 1.0e9, 0.1, "S/mm", "电极区材料"
+                "sigma_conductor",
+                "电极电导率 σ_c",
+                ParamType.FLOAT,
+                50.0,
+                1.0e-9,
+                1.0e9,
+                0.1,
+                "S/mm",
+                "电极区材料",
             ),
             ParamSpec(
                 "sigma_resistor",
@@ -385,7 +410,15 @@ BUILTIN_MODULES: tuple[ModuleSpec, ...] = (
             ParamSpec("k_conductor", "电极导热系数 k_c", ParamType.FLOAT, 0.4, 1.0e-9, 1.0e6, 0.01, "W/mm·K"),
             ParamSpec("k_resistor", "电阻区导热系数 k_h", ParamType.FLOAT, 0.015, 1.0e-9, 1.0e6, 0.001, "W/mm·K"),
             ParamSpec(
-                "voltage", "电极电压 V₀", ParamType.FLOAT, 1.0, -1.0e6, 1.0e6, 0.1, "V", "右端电极电压，左端接地 0"
+                "voltage",
+                "电极电压 V₀",
+                ParamType.FLOAT,
+                1.0,
+                -1.0e6,
+                1.0e6,
+                0.1,
+                "V",
+                "右端电极电压，左端接地 0",
             ),
             ParamSpec("thickness", "厚度 t", ParamType.FLOAT, 1.0, 0.01, 100.0, 0.1, "mm"),
             ParamSpec("t_base", "底边温度", ParamType.FLOAT, 20.0, -1.0e4, 1.0e4, 1.0, "", "底边恒温边界"),
@@ -428,10 +461,26 @@ BUILTIN_MODULES: tuple[ModuleSpec, ...] = (
             ParamSpec("hole_x", "圆孔圆心 x", ParamType.FLOAT, 15.0, 0.0, 1.0e4, 1.0, "mm", "板内圆孔位置"),
             ParamSpec("hole_y", "圆孔圆心 y", ParamType.FLOAT, 5.0, 0.0, 1.0e4, 1.0, "mm"),
             ParamSpec(
-                "hole_r", "圆孔半径 r", ParamType.FLOAT, 2.0, 0.0, 1.0e3, 0.5, "mm", "0 = 无孔；挖孔后孔缘自动施加对流"
+                "hole_r",
+                "圆孔半径 r",
+                ParamType.FLOAT,
+                2.0,
+                0.0,
+                1.0e3,
+                0.5,
+                "mm",
+                "0 = 无孔；挖孔后孔缘自动施加对流",
             ),
             ParamSpec(
-                "sigma_conductor", "电极电导率 σ_c", ParamType.FLOAT, 50.0, 1.0e-9, 1.0e9, 0.1, "S/mm", "电极区材料"
+                "sigma_conductor",
+                "电极电导率 σ_c",
+                ParamType.FLOAT,
+                50.0,
+                1.0e-9,
+                1.0e9,
+                0.1,
+                "S/mm",
+                "电极区材料",
             ),
             ParamSpec(
                 "sigma_resistor",
@@ -447,7 +496,15 @@ BUILTIN_MODULES: tuple[ModuleSpec, ...] = (
             ParamSpec("k_conductor", "电极导热系数 k_c", ParamType.FLOAT, 0.4, 1.0e-9, 1.0e6, 0.01, "W/mm·K"),
             ParamSpec("k_resistor", "电阻区导热系数 k_h", ParamType.FLOAT, 0.015, 1.0e-9, 1.0e6, 0.001, "W/mm·K"),
             ParamSpec(
-                "voltage", "电极电压 V₀", ParamType.FLOAT, 1.0, -1.0e6, 1.0e6, 0.1, "V", "右端电极电压，左端接地 0"
+                "voltage",
+                "电极电压 V₀",
+                ParamType.FLOAT,
+                1.0,
+                -1.0e6,
+                1.0e6,
+                0.1,
+                "V",
+                "右端电极电压，左端接地 0",
             ),
             ParamSpec("thickness", "厚度 t", ParamType.FLOAT, 1.0, 0.01, 100.0, 0.1, "mm"),
             ParamSpec("t_base", "底边温度", ParamType.FLOAT, 20.0, -1.0e4, 1.0e4, 1.0, "", "底边恒温边界"),
@@ -499,7 +556,15 @@ BUILTIN_MODULES: tuple[ModuleSpec, ...] = (
             ParamSpec("n_r", "径向单元数", ParamType.INT, 4, 1, 32, 1),
             ParamSpec("n_z", "轴向单元数", ParamType.INT, 20, 1, 300, 5),
             ParamSpec(
-                "voltage", "电极电压 V₀", ParamType.FLOAT, 1.0, -1.0e6, 1.0e6, 0.1, "V", "z=L 端面电压，z=0 端面接地"
+                "voltage",
+                "电极电压 V₀",
+                ParamType.FLOAT,
+                1.0,
+                -1.0e6,
+                1.0e6,
+                0.1,
+                "V",
+                "z=L 端面电压，z=0 端面接地",
             ),
             ParamSpec("electric_sigma", "电导率 σ", ParamType.FLOAT, 1.0, 1.0e-9, 1.0e9, 0.1, "S/mm"),
             ParamSpec("thermal_k", "导热系数 k", ParamType.FLOAT, 0.015, 1.0e-9, 1.0e6, 0.001, "W/mm·K"),
@@ -541,16 +606,48 @@ BUILTIN_MODULES: tuple[ModuleSpec, ...] = (
             ParamSpec("k_electrode", "电极导热系数 k_e", ParamType.FLOAT, 0.4, 1.0e-9, 1.0e6, 0.01, "W/mm·K"),
             ParamSpec("k_ceramic", "陶瓷导热系数 k_c", ParamType.FLOAT, 0.025, 1.0e-9, 1.0e6, 0.001, "W/mm·K", "基底"),
             ParamSpec(
-                "rho_cp_film", "薄膜热容 ρc_f", ParamType.FLOAT, 2.0, 1.0e-9, 1.0e6, 0.1, "J/mm³·K", "瞬态分析必需"
+                "rho_cp_film",
+                "薄膜热容 ρc_f",
+                ParamType.FLOAT,
+                2.0,
+                1.0e-9,
+                1.0e6,
+                0.1,
+                "J/mm³·K",
+                "瞬态分析必需",
             ),
             ParamSpec(
-                "rho_cp_electrode", "电极热容 ρc_e", ParamType.FLOAT, 2.5, 1.0e-9, 1.0e6, 0.1, "J/mm³·K", "瞬态分析必需"
+                "rho_cp_electrode",
+                "电极热容 ρc_e",
+                ParamType.FLOAT,
+                2.5,
+                1.0e-9,
+                1.0e6,
+                0.1,
+                "J/mm³·K",
+                "瞬态分析必需",
             ),
             ParamSpec(
-                "rho_cp_ceramic", "陶瓷热容 ρc_c", ParamType.FLOAT, 3.0, 1.0e-9, 1.0e6, 0.1, "J/mm³·K", "瞬态分析必需"
+                "rho_cp_ceramic",
+                "陶瓷热容 ρc_c",
+                ParamType.FLOAT,
+                3.0,
+                1.0e-9,
+                1.0e6,
+                0.1,
+                "J/mm³·K",
+                "瞬态分析必需",
             ),
             ParamSpec(
-                "voltage", "电极电压 V₀", ParamType.FLOAT, 1.0, -1.0e6, 1.0e6, 0.1, "V", "引出端电压，引入端接地 0"
+                "voltage",
+                "电极电压 V₀",
+                ParamType.FLOAT,
+                1.0,
+                -1.0e6,
+                1.0e6,
+                0.1,
+                "V",
+                "引出端电压，引入端接地 0",
             ),
             ParamSpec("t_base", "基底底面温度", ParamType.FLOAT, 20.0, -1.0e4, 1.0e4, 1.0, "", "陶瓷底面恒温边界"),
             ParamSpec(
@@ -599,7 +696,11 @@ BUILTIN_MODULES: tuple[ModuleSpec, ...] = (
                 doc="受限命名空间安全求值；变量来自输入数据合并与 vars 绑定（支持数组逐元素运算）",
             ),
             ParamSpec(
-                "vars", "变量绑定", ParamType.MAP, {}, doc="变量名 -> 字面值/数组（DSL 层可经 $名 引用参数化计算参数）"
+                "vars",
+                "变量绑定",
+                ParamType.MAP,
+                {},
+                doc="变量名 -> 字面值/数组（DSL 层可经 $名 引用参数化计算参数）",
             ),
         ),
     ),
@@ -663,7 +764,15 @@ BUILTIN_MODULES: tuple[ModuleSpec, ...] = (
             ),
             ParamSpec("mu", "真值 μ", ParamType.FLOAT, 10.0, -1.0e9, 1.0e9, 0.5, "", "50% 响应点（weibull 为尺度 η）"),
             ParamSpec(
-                "sigma", "真值 σ", ParamType.FLOAT, 1.0, 1.0e-9, 1.0e9, 0.1, "", "感度标准差（weibull 为形状 k）"
+                "sigma",
+                "真值 σ",
+                ParamType.FLOAT,
+                1.0,
+                1.0e-9,
+                1.0e9,
+                0.1,
+                "",
+                "感度标准差（weibull 为形状 k）",
             ),
             ParamSpec("n_total", "序贯发数", ParamType.INT, 30, 4, 10000, 1, "", "序贯法（方法101-104/Neyer）总发数"),
             ParamSpec("x_low", "初始下界", ParamType.FLOAT, 6.0, -1.0e9, 1.0e9, 0.5, "", "估计全不响应刺激量下界"),
@@ -750,7 +859,14 @@ BUILTIN_MODULES: tuple[ModuleSpec, ...] = (
         params=(
             ParamSpec("m", "内部断点 m", ParamType.FLOAT, -1.3, -100.0, 0.0, 0.05, doc="须为负数，内部段左端点"),
             ParamSpec(
-                "m1", "外部断点 m1", ParamType.FLOAT, -2.4, -200.0, 0.0, 0.1, doc="须为负数且小于 m，外部段左端点"
+                "m1",
+                "外部断点 m1",
+                ParamType.FLOAT,
+                -2.4,
+                -200.0,
+                0.0,
+                0.1,
+                doc="须为负数且小于 m，外部段左端点",
             ),
             ParamSpec("s", "内部斜率 s", ParamType.FLOAT, 1.2183, -100.0, 100.0, 0.1, doc="内部段 x=0 处的目标斜率"),
             ParamSpec("s1", "外部斜率 s1", ParamType.FLOAT, 8.1, -100.0, 200.0, 0.1, doc="外部段 x=0 处的目标斜率"),
@@ -763,6 +879,56 @@ BUILTIN_MODULES: tuple[ModuleSpec, ...] = (
         ),
     ),
 )
+
+# ------------------------------------------------------------------ 拆分式模块（Phase 1：几何-材料-网格解耦，与旧一体化并存）
+
+SPLIT_MODULES: tuple[ModuleSpec, ...] = (
+    # ---- 材料 ----
+    ModuleSpec(
+        type_id="material.linear_elastic",
+        name="线弹性材料",
+        category=ModuleCategory.SOURCE,
+        target="zylab.flowchart.split_nodes:material_linear_elastic",
+        outputs=(PortSpec("material", PortType.MATERIAL, "材料"),),
+        catalog=("材料参数", "弹性材料"),
+        params=(
+            ParamSpec("e_modulus", "弹性模量 E", ParamType.FLOAT, 2.1e5, 1.0e3, 1.0e12, 1.0e5, "MPa"),
+            ParamSpec("density", "密度 ρ", ParamType.FLOAT, 7.85, 1.0e-9, 1.0e5, 0.1, "t/mm³"),
+            ParamSpec("poisson", "泊松比 ν", ParamType.FLOAT, 0.3, 0.0, 0.49, 0.05),
+        ),
+    ),
+    # ---- 几何 ----
+    ModuleSpec(
+        type_id="geom.cantilever_2d",
+        name="悬臂梁（Q4 平面应力）",
+        category=ModuleCategory.SOURCE,
+        target="zylab.flowchart.split_nodes:geom_cantilever_2d",
+        outputs=(PortSpec("geometry", PortType.GEOMETRY, "纯几何"),),
+        catalog=("参数化建模", "梁系几何"),
+        params=(
+            ParamSpec("length", "长度 L", ParamType.FLOAT, 40.0, 0.1, 1.0e4, 1.0, "mm"),
+            ParamSpec("height", "高度 H", ParamType.FLOAT, 8.0, 0.1, 1.0e4, 1.0, "mm"),
+            ParamSpec("nx", "纵向单元数", ParamType.INT, 40, 1, 400, 5),
+            ParamSpec("ny", "横向单元数", ParamType.INT, 8, 1, 400, 1),
+            ParamSpec("tip_load", "端部载荷", ParamType.FLOAT, -100.0, -1.0e9, 1.0e9, 10.0, "N"),
+            ParamSpec("thickness", "厚度 t", ParamType.FLOAT, 1.0, 0.01, 100.0, 0.1, "mm"),
+        ),
+    ),
+    # ---- 网格装配 ----
+    ModuleSpec(
+        type_id="mesh.generate_structural",
+        name="结构网格装配",
+        category=ModuleCategory.ANALYSIS,
+        target="zylab.flowchart.split_nodes:mesh_generate_structural",
+        inputs=(
+            PortSpec("geometry", PortType.GEOMETRY, "纯几何"),
+            PortSpec("material", PortType.MATERIAL, "材料"),
+        ),
+        outputs=(PortSpec("model", PortType.MODEL, "模型"),),
+        catalog=("有限元网格划分", "通用网格划分"),
+    ),
+)
+
 
 # ------------------------------------------------------------------ 求解器模块（fea.solvers.SolverSpec 自动生成，并存保留旧 analysis.* 类型）
 
@@ -778,7 +944,9 @@ def _build_solver_modules() -> tuple[ModuleSpec, ...]:
 SOLVER_MODULES: tuple[ModuleSpec, ...] = _build_solver_modules()
 
 
-_MODULES_BY_ID: dict[str, ModuleSpec] = {spec.type_id: spec for spec in (*BUILTIN_MODULES, *SOLVER_MODULES)}
+_MODULES_BY_ID: dict[str, ModuleSpec] = {
+    spec.type_id: spec for spec in (*BUILTIN_MODULES, *SPLIT_MODULES, *SOLVER_MODULES)
+}
 
 
 def module_spec(type_id: str) -> ModuleSpec:
@@ -814,5 +982,5 @@ def module_spec(type_id: str) -> ModuleSpec:
 
 
 def all_modules() -> tuple[ModuleSpec, ...]:
-    """返回全部内置模块规格（定义序 + 求解器序）."""
-    return (*BUILTIN_MODULES, *SOLVER_MODULES)
+    """返回全部内置模块规格（一体化 + 拆分式 + 求解器自动生成）."""
+    return (*BUILTIN_MODULES, *SPLIT_MODULES, *SOLVER_MODULES)

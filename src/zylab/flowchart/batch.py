@@ -195,7 +195,7 @@ def run_workflow(
                         name=node.name,
                         result=cached_result,
                         elapsed=elapsed,
-                    )
+                    ),
                 )
                 logger.debug("批处理节点命中缓存: %s (%.3fs)", node.id, elapsed)
             else:
@@ -207,7 +207,7 @@ def run_workflow(
                         name=node.name,
                         result=results[node.id],
                         elapsed=elapsed,
-                    )
+                    ),
                 )
                 logger.debug("批处理节点完成: %s (%.3fs)", node.id, elapsed)
                 if cache is not None:
@@ -222,7 +222,7 @@ def run_workflow(
                     name=node.name,
                     error=message,
                     elapsed=elapsed,
-                )
+                ),
             )
             logger.warning("批处理节点失败: %s: %s", node.id, message)
             failed = True
@@ -575,6 +575,7 @@ def explore_doe(  # noqa: PLR0913
     Returns
     -------
     ExploreResult
+
     """
     # 延迟 import 避免循环依赖
     from zylab.doe.design_space import SamplingMethod

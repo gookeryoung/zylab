@@ -248,13 +248,13 @@ class TestLinkEditing:
     def test_add_link_unknown_source(self) -> None:
         """上游节点不存在."""
         graph = _graph()
-        with pytest.raises(LinkError, match="无效"):
+        with pytest.raises(LinkError, match="源节点不存在"):
             graph.add_link("modal", "model", "ghost.model")
 
     def test_add_link_type_mismatch(self) -> None:
-        """端口类型不匹配（解端口接回模型输入）."""
+        """端口类型不兼容（解端口接回模型输入）."""
         graph = _graph()
-        with pytest.raises(LinkError, match="端口类型不匹配"):
+        with pytest.raises(LinkError, match="端口类型不兼容"):
             graph.add_link("modal", "model", "static.solution")
 
 

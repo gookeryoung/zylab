@@ -268,7 +268,10 @@ class DslTemplate(Template):
                 id=str(raw["id"]),
                 type_id=str(raw["type"]),
                 params=_substitute_node_params(
-                    str(raw["type"]), dict(raw.get("params", {})), defaults, str(meta.get("id", ""))
+                    str(raw["type"]),
+                    dict(raw.get("params", {})),
+                    defaults,
+                    str(meta.get("id", "")),
                 ),
                 inputs=dict(raw.get("inputs", {})),
             )
@@ -408,7 +411,7 @@ def _parse_results(raw: Any) -> tuple[DslResult, ...]:
                 group=group,
                 format=fmt,
                 style=style,
-            )
+            ),
         )
     return tuple(results)
 
@@ -437,7 +440,7 @@ def _parse_report(raw: Any) -> DslReport | None:
                 text=str(section.get("text", "")),
                 figure=str(section.get("figure", "")),
                 table=str(section.get("table", "")),
-            )
+            ),
         )
     exports = tuple(str(e) for e in data.get("exports", ("html",)))
     unknown = set(exports) - {"html", "md"}
@@ -493,7 +496,7 @@ def _parse_outputs(raw: Any, template_id: str) -> tuple[OutputParam, ...]:
                     unit=str(spec.get("unit", "")),
                     label=str(spec.get("label", name)),
                     doc=str(spec.get("doc", "")),
-                )
+                ),
             )
         else:
             raise TemplateError(f"参数化计算 {template_id!r} 输出参数 {name!r} 声明应为字符串或对象")

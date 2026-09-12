@@ -150,7 +150,7 @@ class WorkflowRunner:
             self._handle.add_listener(lambda event: self._on_task_event(node_id, started_at, current_hash, event))
 
     def _on_task_event(self, node_id: str, started_at: float, content_hash: str, event: TaskEvent) -> None:
-        """executor 事件处理（监控线程）：PROGRESS 透传；RESULT 登记缓存与哈希并续跑；ERROR 中止队列."""
+        """Executor 事件处理（监控线程）：PROGRESS 透传；RESULT 登记缓存与哈希并续跑；ERROR 中止队列."""
         if event.kind is EventKind.PROGRESS:
             self._emit(NodeRunEvent(node_id, EventKind.PROGRESS, event.payload))
             return
