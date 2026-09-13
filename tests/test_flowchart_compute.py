@@ -99,6 +99,7 @@ def _cantilever_static() -> object:
     return run_static({"model": model}, {})
 
 
+@pytest.mark.slow()
 def test_post_static_extract_tip_displacement() -> None:
     """表达式下标提取末端竖向位移，量级与梁理论解一致."""
     solution = _cantilever_static()

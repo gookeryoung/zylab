@@ -355,6 +355,7 @@ class TestRunBatch:
         with pytest.raises(Exception, match="失败节点"):
             failed.resolve_outputs(new_tpl)
 
+    @pytest.mark.slow()
     def test_run_batch_parallel_n_workers(self) -> None:
         """n_workers=2 开进程池，结果全成功且长度匹配行数（Windows spawn）."""
         tpl = _template("structural.cantilever_static")
@@ -369,6 +370,7 @@ class TestRunBatch:
         for o in outcomes:
             assert o.succeeded, o.first_error()
 
+    @pytest.mark.slow()
     def test_run_batch_parallel_outputs_match_serial(self) -> None:
         """run_batch_outputs 并行/串行数值完全一致（结果顺序对齐）."""
         tpl = _template("structural.cantilever_static")
@@ -386,6 +388,7 @@ class TestRunBatch:
         assert np.allclose(Xs, Xp)
         assert np.allclose(Ys, Yp)
 
+    @pytest.mark.slow()
     def test_run_batch_parallel_cache_isolated(self) -> None:
         """并行模式下外部 cache dict 不被回填（进程间隔离）."""
         tpl = _template("structural.cantilever_static")

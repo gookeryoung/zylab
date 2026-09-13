@@ -232,6 +232,7 @@ def test_optimize_direct_bad_target(cantilever_template) -> None:
 # --- optimize_pareto 并行评估 ---
 
 
+@pytest.mark.slow()
 def test_optimize_pareto_parallel_n_workers(cantilever_template, small_design) -> None:
     """n_workers=2 开 run_batch 并行，能正常返回 Pareto front."""
     res = optimize_pareto(
@@ -249,6 +250,7 @@ def test_optimize_pareto_parallel_n_workers(cantilever_template, small_design) -
     assert res.n_evaluations > 0
 
 
+@pytest.mark.slow()
 def test_optimize_pareto_parallel_fe_match_serial(cantilever_template, small_design) -> None:
     """串行/并行 FE 数值一致（用相同 seed 跑相同 n_population）."""
     res_s = optimize_pareto(

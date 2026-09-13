@@ -158,6 +158,7 @@ def test_preview_result_discarded_when_stale(qtbot) -> None:
 
 
 @pytest.mark.gui
+@pytest.mark.slow()
 def test_run_all_static_template(qtbot) -> None:
     """运行全部（右键菜单入口）：子进程求解完成，结果视图呈现位移摘要（真实进程端到端）."""
     page = FlowchartPage()
@@ -172,6 +173,7 @@ def test_run_all_static_template(qtbot) -> None:
 
 
 @pytest.mark.gui
+@pytest.mark.slow()
 def test_node_click_shows_cached_result(qtbot) -> None:
     """单击已完成节点呈现其结果，且参数面板只显示该环节参数."""
     page = FlowchartPage()
@@ -227,6 +229,7 @@ def test_run_node_up_to_date_no_hang(qtbot) -> None:
 
 
 @pytest.mark.gui
+@pytest.mark.slow()
 def test_run_all_when_all_up_to_date(qtbot) -> None:
     """全部节点已最新时运行全部：直接提示不进入运行态（真实进程端到端）."""
     page = FlowchartPage()
@@ -398,6 +401,7 @@ def test_preview_failure_marks_failed(qtbot, monkeypatch) -> None:
 
 
 @pytest.mark.gui
+@pytest.mark.slow()
 def test_result_tabs_per_node(qtbot) -> None:
     """多 TAB 结果页：每个有结果的节点独立一页（页名 = 节点名），可关闭回占位."""
     page = FlowchartPage()
