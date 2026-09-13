@@ -4,13 +4,19 @@ from __future__ import annotations
 
 from zylab.flowchart.results import CloudData, CurveData, CurveSeries, TableColumn, TableData, TextData
 from zylab.gui.qt_compat import Qt
+from zylab.gui.widgets._table_utils import (
+    build_table_widget as _build_table_widget,
+)
+from zylab.gui.widgets._table_utils import (
+    col_alignment as _col_alignment,
+)
+from zylab.gui.widgets._table_utils import (
+    format_cell_with_format as _format_cell_with_format,
+)
 from zylab.gui.widgets.stream_view import (
     ResultBlockCard,
     ResultStreamView,
-    _build_table_widget,
     _build_text_body,
-    _col_alignment,
-    _format_cell_with_format,
     _kind_badge,
 )
 

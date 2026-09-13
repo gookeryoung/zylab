@@ -281,7 +281,10 @@ def qss_tokens(pal: Palette) -> dict[str, str]:
     颜色令牌额外生成 ``_NOHASH`` 变体（不带 ``#`` 前缀），专供 data URI
     内嵌场景使用——data URI 中 ``#`` 会被 Qt 解析为 URL fragment 标识符，
     导致 SVG 被截断；须用 ``%23${QSS_XXX_NOHASH}`` 代替 ``#${QSS_XXX}``。
+
+    字体族与字号从运行时可变状态取值（可被 SettingsPanel 覆盖）。
     """
+    scale = _font_scale
     tokens: dict[str, str] = {}
     for key, value in vars(pal).items():
         upper = f"QSS_{key.upper()}"
@@ -290,12 +293,12 @@ def qss_tokens(pal: Palette) -> dict[str, str]:
             tokens[f"{upper}_NOHASH"] = value[1:]
     tokens.update(
         {
-            "FONT_FAMILY": FONT_FAMILY,
-            "FONT_MONO": FONT_MONO,
-            "FONT_TITLE": FONT_TITLE,
-            "FONT_HEADING": FONT_HEADING,
-            "FONT_BODY": FONT_BODY,
-            "FONT_CAPTION": FONT_CAPTION,
+            "FONT_FAMILY": _font_family_body,
+            "FONT_MONO": _font_family_mono,
+            "FONT_TITLE": _scale_font(FONT_TITLE, scale),
+            "FONT_HEADING": _scale_font(FONT_HEADING, scale),
+            "FONT_BODY": _scale_font(FONT_BODY, scale),
+            "FONT_CAPTION": _scale_font(FONT_CAPTION, scale),
             "RADIUS_SM": RADIUS_SM,
             "RADIUS_MD": RADIUS_MD,
             "CONTROL_HEIGHT": CONTROL_HEIGHT,
@@ -359,3 +362,67 @@ CONTROL_HEIGHT_SM = "26px"
 SIDEBAR_WIDTH = 200
 HEADER_HEIGHT = 32
 STATUSBAR_HEIGHT = 24
+
+
+# ---------------------------------------------------------------------------
+# 字体/字号运行时可变（SettingsPanel 可覆盖 FONT_FAMILY/FONT_MONO/字号）
+# ---------------------------------------------------------------------------
+
+# 当前字体族（与上方常量初值一致，set_font_families 可覆盖）
+_font_family_body: str = FONT_FAMILY
+_font_family_mono: str = FONT_MONO
+
+# 当前字号缩放倍率（1.0 = 原生，范围 0.8 ~ 1.4）
+_font_scale: float = 1.0
+
+
+def _scale_font(font_str: str, scale: float) -> str:
+    """把 ``"13px"`` 类字符串按 scale 缩放（1.0 = 原样）.
+
+    非 px 单位（如 "bold"）或解析失败原样返回。
+    """
+    import re
+
+    match = re.match(r"^(\d+(?:\.\d+)?)(px)$", font_str)
+    if not match or scale == 1.0:
+        return font_str
+    size = float(match.group(1))
+    scaled = round(size * scale, 1)
+    # 整数值去掉 .0 后缀（Qt QSS 不强制但更简洁）
+    if scaled == int(scaled):
+        scaled = int(scaled)
+    return f"{scaled}{match.group(2)}"
+
+
+def set_font_families(body: str | None = None, mono: str | None = None) -> None:
+    """设置当前字体族（None 表示保持原值）.
+
+    Args:
+        body: 正文字体族字符串（如 `"Microsoft YaHei"`）。None 时不变。
+        mono: 等宽字体族字符串。None 时不变。
+    """
+    global _font_family_body, _font_family_mono  # noqa: PLW0603
+    if body is not None and body.strip():
+        _font_family_body = body.strip()
+    if mono is not None and mono.strip():
+        _font_family_mono = mono.strip()
+
+
+def set_font_scale(scale: float) -> None:
+    """设置字号缩放倍率（0.8 ~ 1.4）.
+
+    Args:
+        scale: 缩放倍率，超出范围自动夹紧。
+    """
+    global _font_scale  # noqa: PLW0603
+    _font_scale = max(0.8, min(1.4, float(scale)))
+
+
+def current_font_families() -> dict[str, str]:
+    """返回当前生效的字体族 dict（body / mono）."""
+    return {"body": _font_family_body, "mono": _font_family_mono}
+
+
+def current_font_scale() -> float:
+    """返回当前字号缩放倍率."""
+    return _font_scale

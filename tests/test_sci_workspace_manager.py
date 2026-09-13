@@ -8,13 +8,24 @@ from pathlib import Path
 import pytest
 
 from zylab.console import ReplKernel
-from zylab.core import EventBus
+from zylab.core import EventBus, get_workspace_history_limit, update_runtime_config
 from zylab.sci import (
     CURRENT_WORKSPACE_FILE,
     TOPIC_WORKSPACE_CHANGED,
     WorkspaceInfo,
     WorkspaceManager,
 )
+
+
+@pytest.fixture(autouse=True)
+def _reset_runtime_history_limit(monkeypatch: pytest.MonkeyPatch) -> None:
+    """每个测试前重置运行时工作区历史条数为默认值 10 + 恢复 os.chdir 到 cwd."""
+    original_cwd = Path.cwd()
+    update_runtime_config(workspace_history_limit=10)
+    yield
+    # 还原 cwd 到测试前（WorkspaceManager.set_workspace 内部会 os.chdir，
+    # 跨测试如果 tmp_path 被清了，再 chdir 进去就会崩溃）
+    os.chdir(original_cwd)
 
 
 class TestWorkspaceManager:
@@ -304,3 +315,106 @@ class TestKernelCwd:
         # _init_namespace 从 Path.cwd() 重建
         assert kernel.namespace["cwd"] == Path.cwd().resolve()
         assert isinstance(kernel.namespace["cwd"], Path)
+
+
+class TestWorkspaceHistoryLimitConfigurable:
+    """WorkspaceManager 历史条数上限可经 SettingsPanel 调整."""
+
+    def test_history_limit_follows_runtime_config(self, tmp_path: Path) -> None:
+        """连续切换超过当前 runtime history_limit 条数时，多出的应被截断."""
+        bus = EventBus()
+        wm = WorkspaceManager(bus)
+
+        # 把 runtime limit 改成 3
+        update_runtime_config(workspace_history_limit=3)
+        assert get_workspace_history_limit() == 3
+
+        # 连续切换 4 次（每条都不同）
+        for i in range(4):
+            target = tmp_path / f"d{i}"
+            target.mkdir()
+            wm.set_workspace(target)
+
+        # 历史应被截断到 3 条（最新的 3 次切换前路径）
+        assert len(wm._history) <= 3
+        # 当前 cwd 不在历史中
+        assert wm.cwd not in wm._history
+
+    def test_history_limit_change_applies_to_existing_manager(self, tmp_path: Path) -> None:
+        """runtime limit 在运行中被收紧，下次切换时历史会被裁剪."""
+        bus = EventBus()
+        wm = WorkspaceManager(bus)
+
+        # 默认 limit=10，切换 4 次
+        for i in range(4):
+            target = tmp_path / f"d{i}"
+            target.mkdir()
+            wm.set_workspace(target)
+
+        assert len(wm._history) == 4
+
+        # 把 limit 收紧到 2——下次切换时才生效（_update_history 里裁剪）
+        update_runtime_config(workspace_history_limit=2)
+        target5 = tmp_path / "d4"
+        target5.mkdir()
+        wm.set_workspace(target5)
+
+        assert len(wm._history) == 2
+
+    def test_save_persists_truncated_history(self, tmp_path: Path, monkeypatch) -> None:
+        """save() 持久化的历史条数也应遵守 runtime limit."""
+        bus = EventBus()
+        data_dir = tmp_path / "fake_data"
+        data_dir.mkdir()  # save() 需要目录存在
+        monkeypatch.setattr("zylab.sci.workspace.default_data_dir", lambda: data_dir)
+        wm = WorkspaceManager(bus)
+
+        # 切换 3 次
+        for i in range(3):
+            target = tmp_path / f"d{i}"
+            target.mkdir()
+            wm.set_workspace(target)
+
+        # limit 收紧到 2
+        update_runtime_config(workspace_history_limit=2)
+        wm.save()
+
+        # 从持久化文件验证
+        import json
+
+        persisted = json.loads((data_dir / CURRENT_WORKSPACE_FILE).read_text(encoding="utf-8"))
+        assert "history" in persisted
+        # 持久化历史 <= 运行时值（save 前会过滤掉当前路径）
+        assert len(persisted["history"]) <= 2
+
+    def test_load_respects_runtime_limit(self, tmp_path: Path, monkeypatch) -> None:
+        """从持久化文件恢复时，历史条目也应被 runtime limit 裁剪."""
+        bus = EventBus()
+        data_dir = tmp_path / "fake_data"
+        data_dir.mkdir()
+        monkeypatch.setattr("zylab.sci.workspace.default_data_dir", lambda: data_dir)
+
+        # 先准备一个含 5 条历史的 workspace.json
+        import json
+
+        history_paths = []
+        for i in range(5):
+            p = tmp_path / f"d{i}"
+            p.mkdir()
+            history_paths.append(str(p))
+        target_current = tmp_path / "current"
+        target_current.mkdir()
+
+        (data_dir / CURRENT_WORKSPACE_FILE).write_text(
+            json.dumps({"path": str(target_current), "history": history_paths}, ensure_ascii=False),
+            encoding="utf-8",
+        )
+
+        # runtime limit 收紧到 3
+        update_runtime_config(workspace_history_limit=3)
+
+        # 新建 WM，load 应裁剪历史
+        wm = WorkspaceManager(bus)
+        wm.load()
+        assert len(wm._history) <= 3
+        assert wm.cwd == target_current.resolve()

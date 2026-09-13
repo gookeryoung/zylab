@@ -459,11 +459,22 @@ def optimize_pareto(  # noqa: PLR0913, PLR0912
                     F[k] = -val if maximize_mask[k] else val
         return F
 
-    # 根据 n_workers 决定走串行 evaluate 闭包还是 run_batch 并行
-    _parallel = n_workers is not None and n_workers >= 2
+    # 解析实际使用的进程池大小：None 保持串行（向后兼容）；-1 sentinel
+    # 读取运行时全局默认（SettingsPanel 设置的"最大并发进程数"）。
+    from zylab.core import get_max_workers
+
+    if n_workers is None or n_workers == 0:
+        effective_workers = 0  # 串行
+    elif n_workers == -1:
+        effective_workers = get_max_workers()
+    else:
+        effective_workers = n_workers
+
+    # 根据 workers 决定走串行 evaluate 闭包还是 run_batch 并行
+    _parallel = effective_workers >= 2
 
     def _batch_evaluate(pop_matrix: np.ndarray) -> np.ndarray:
-        """批量评估种群——n_workers>=2 时用 run_batch 并行."""
+        """批量评估种群——workers>=2 时用 run_batch 并行."""
         N = len(pop_matrix)
         if not _parallel:
             return np.array([evaluate(p) for p in pop_matrix])
@@ -475,7 +486,7 @@ def optimize_pareto(  # noqa: PLR0913, PLR0912
             for j, vn in enumerate(vnames):
                 row[vn] = float(p[j])
             rows.append(row)
-        outcomes = run_batch(template, rows, n_workers=n_workers, cache=cache_local)
+        outcomes = run_batch(template, rows, n_workers=effective_workers, cache=cache_local)
         F = np.full((N, K), float(penalty))
         for idx, outcome in enumerate(outcomes):
             if outcome.succeeded:

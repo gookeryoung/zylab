@@ -18,6 +18,7 @@ from ..qt_compat import (
     QWidget,
     Signal,
 )
+from ._widget_utils import clear_layout
 
 __all__ = ["ParamForm"]
 
@@ -48,11 +49,7 @@ class ParamForm(QWidget):
         self._graph = graph
         self._fields.clear()
         self._group_rows.clear()
-        while self._layout.count():
-            item = self._layout.takeAt(0)
-            widget = item.widget()
-            if widget is not None:
-                widget.deleteLater()
+        clear_layout(self._layout)
 
         if not groups:  # 参数化计算未声明分组时平铺全部数值参数
             groups = tuple(

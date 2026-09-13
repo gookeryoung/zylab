@@ -222,6 +222,15 @@ class MainWindow(QMainWindow):
         self._command_search.installEventFilter(self)
         layout.addWidget(self._command_search, alignment=Qt.AlignVCenter)
 
+        # 右：设置按钮（齿轮图标，打开设置对话框）
+        self._settings_btn = QPushButton(objectName="headerSettingsBtn")
+        self._settings_btn.setToolTip("设置")
+        self._settings_btn.setFixedSize(24, 24)
+        self._settings_btn.setIconSize(QSize(12, 12))
+        self._settings_btn.setIcon(nav_icon("settings", theme.current_palette().nav_text))
+        self._settings_btn.clicked.connect(self._open_settings_dialog)
+        layout.addWidget(self._settings_btn, alignment=Qt.AlignVCenter)
+
         # 右：帮助按钮（关于 zylab，降级自侧边栏导航项）
         self._help_btn = QPushButton(objectName="headerHelpBtn")
         self._help_btn.setToolTip("关于 zylab")
@@ -259,6 +268,8 @@ class MainWindow(QMainWindow):
         pal = theme.current_palette()
         self._workspace_history_btn.setIcon(nav_icon("arrow_down", pal.nav_text))
         self._workspace_open_btn.setIcon(nav_icon("open_file", pal.nav_text))
+        self._settings_btn.setIcon(nav_icon("settings", pal.nav_text))
+        self._help_btn.setIcon(nav_icon("question", pal.nav_text))
 
     def _refresh_project_tree_icons(self) -> None:
         """按当前主题色重绘项目浏览器树节点图标（主题切换时联动）."""
@@ -392,27 +403,70 @@ class MainWindow(QMainWindow):
         QShortcut(QKeySequence("Ctrl+Shift+P"), self, self._palette.open_commands)
 
     def _open_about_dialog(self) -> None:
-        """弹出关于对话框（独立 QDialog，而非侧边栏页面）."""
-        from .qt_compat import QDialog
+        """弹出关于对话框（独立 QDialog，语义令牌驱动，深色/浅色主题一致）."""
+        from .qt_compat import QDialog, QGridLayout
 
         dlg = QDialog(self)
         dlg.setWindowTitle("关于 zylab")
-        dlg.setMinimumWidth(420)
+        dlg.setMinimumWidth(440)
         root = QVBoxLayout(dlg)
         root.setContentsMargins(theme.SPACING_LG, theme.SPACING_LG, theme.SPACING_LG, theme.SPACING_LG)
         root.setSpacing(theme.SPACING_MD)
 
+        # 品牌头部区：primary 背景 + primary_text 反色文字
+        brand_frame = QFrame(objectName="aboutBrand")
+        brand_layout = QVBoxLayout(brand_frame)
+        brand_layout.setContentsMargins(theme.SPACING_LG, theme.SPACING_LG, theme.SPACING_LG, theme.SPACING_LG)
+        brand_layout.setSpacing(theme.SPACING_SM)
         brand = QLabel("zylab", objectName="aboutAppName")
         desc = QLabel("通用科学计算仿真分析平台", objectName="aboutAppDesc")
         desc.setWordWrap(True)
-        version_label = QLabel(f"版本 v{__version__}")
-        tech = QLabel("技术栈：PySide2/PySide6 · NumPy · SciPy · matplotlib · 离线 FEA 求解内核")
-        tech.setWordWrap(True)
-        lic = QLabel("开源许可：MIT License。\nzylab 采用 MIT License 开源发布，使用 Python 标准库与第三方开源库。")
-        lic.setWordWrap(True)
+        brand_layout.addWidget(brand)
+        brand_layout.addWidget(desc)
+        root.addWidget(brand_frame)
 
-        for w in (brand, desc, version_label, tech, lic):
-            root.addWidget(w)
+        # 应用信息卡片
+        info_card = QFrame(objectName="aboutCard")
+        info_layout = QVBoxLayout(info_card)
+        info_layout.setContentsMargins(theme.SPACING_LG, theme.SPACING_LG, theme.SPACING_LG, theme.SPACING_LG)
+        info_layout.setSpacing(theme.SPACING_MD)
+        info_title = QLabel("应用信息", objectName="aboutCardTitle")
+        info_layout.addWidget(info_title)
+
+        grid = QGridLayout()
+        grid.setHorizontalSpacing(theme.SPACING_MD)
+        grid.setVerticalSpacing(theme.SPACING_SM)
+        grid.setColumnStretch(1, 1)
+        info_pairs = (
+            ("版本", f"v{__version__}"),
+            ("技术栈", "PySide2/PySide6 · NumPy · SciPy · matplotlib"),
+            ("求解内核", "离线 FEA 求解器"),
+            ("开源许可", "MIT License"),
+        )
+        for row, (k, v) in enumerate(info_pairs):
+            key_lbl = QLabel(k, objectName="aboutInfoTitle")
+            val_lbl = QLabel(v, objectName="aboutInfoValue")
+            val_lbl.setWordWrap(True)
+            grid.addWidget(key_lbl, row, 0)
+            grid.addWidget(val_lbl, row, 1)
+        info_layout.addLayout(grid)
+        root.addWidget(info_card)
+
+        # 版权说明卡片
+        lic_card = QFrame(objectName="aboutCard")
+        lic_layout = QVBoxLayout(lic_card)
+        lic_layout.setContentsMargins(theme.SPACING_LG, theme.SPACING_LG, theme.SPACING_LG, theme.SPACING_LG)
+        lic_layout.setSpacing(theme.SPACING_SM)
+        lic_title = QLabel("开源许可", objectName="aboutCardTitle")
+        lic_body = QLabel(
+            "zylab 采用 MIT License 开源发布，使用 Python 标准库与第三方开源库。\n详见项目根目录 LICENSE 文件。",
+            objectName="aboutBody",
+        )
+        lic_body.setWordWrap(True)
+        lic_layout.addWidget(lic_title)
+        lic_layout.addWidget(lic_body)
+        root.addWidget(lic_card)
+
         root.addStretch()
 
         dlg.exec_() if hasattr(dlg, "exec_") else dlg.exec()
@@ -420,14 +474,16 @@ class MainWindow(QMainWindow):
     def _open_settings_dialog(self) -> None:
         """弹出设置对话框（SettingsPanel 嵌入 QDialog）.
 
-        保存时应用主题等副作用：持久化 → set_theme 切换 → 状态栏提示。
+        保存时一次性应用主题 + 字体族 + 字号（通过 apply_settings），
+        再刷新各页面和状态栏提示。
         """
-        from .qt_compat import QDialog
+        from .app import apply_settings
+        from .qt_compat import QApplication, QDialog
         from .widgets.settings_panel import SettingsPanel
 
         dlg = QDialog(self)
         dlg.setWindowTitle("设置")
-        dlg.setMinimumSize(480, 360)
+        dlg.setMinimumSize(560, 480)
 
         panel = SettingsPanel()
         from .qt_compat import QVBoxLayout
@@ -440,10 +496,24 @@ class MainWindow(QMainWindow):
 
         def _on_save() -> None:
             cfg = panel.save()
-            theme_name = cfg.get("theme")
-            if theme_name and theme_name != theme.current_palette().name:
-                self._set_theme(theme_name, persist=True)
-            self.statusBar().showMessage("设置已保存", 3000)
+            apply_settings(
+                QApplication.instance(),
+                theme_name=cfg.get("theme"),
+                font_family_body=cfg.get("font_family_body"),
+                font_family_mono=cfg.get("font_family_mono"),
+                font_scale=cfg.get("font_scale"),
+                log_level=cfg.get("log_level"),
+                max_workers=cfg.get("max_workers"),
+                solver_timeout_s=cfg.get("solver_timeout_s"),
+                autosave_interval_sec=cfg.get("autosave_interval_sec"),
+                workspace_history_limit=cfg.get("workspace_history_limit"),
+            )
+            self._refresh_sidebar_icons()
+            self._refresh_project_tree_icons()
+            self._notebook_page.refresh_theme()
+            self._flowchart_page.refresh_theme()
+            self._template_page.refresh_theme()
+            self.statusBar().showMessage("设置已保存并应用", 3000)
             dlg.accept()
 
         with contextlib.suppress(RuntimeError, TypeError):

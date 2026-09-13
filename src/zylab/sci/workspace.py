@@ -19,7 +19,7 @@ from typing import Any
 
 import numpy as np
 
-from zylab.core import EventBus, default_data_dir
+from zylab.core import EventBus, default_data_dir, get_workspace_history_limit
 
 __all__ = ["CURRENT_WORKSPACE_FILE", "TOPIC_WORKSPACE_CHANGED", "VarInfo", "WorkspaceManager", "whos"]
 
@@ -34,8 +34,9 @@ CURRENT_WORKSPACE_FILE = "workspace.json"
 #: 工作区变更事件主题
 TOPIC_WORKSPACE_CHANGED = "workspace.changed"
 
-#: 历史工作区保留的最大条数
-_MAX_HISTORY = 10
+#: 历史工作区保留条数默认上限（可经 SettingsPanel 调整，运行时通过
+#: :func:`get_workspace_history_limit` 动态读取）。
+_DEFAULT_HISTORY_LIMIT = 10
 
 
 @dataclass(frozen=True)
@@ -170,7 +171,8 @@ class WorkspaceManager:
 
         {"path": "F:/projects/my-work", "history": ["F:/prev1", "F:/prev2"]}
 
-    历史数组长度上限 :data:`_MAX_HISTORY`（10），当前路径不出现在历史中。
+    历史数组长度上限由 :func:`zylab.core.get_workspace_history_limit` 控制（默认 10，
+    可经 SettingsPanel 调整），当前路径不出现在历史中。
 
     用法::
 
@@ -239,7 +241,8 @@ class WorkspaceManager:
         """将旧 cwd 并入历史（去重并限制数量，当前路径不出现在历史中）."""
         # 过滤掉与当前 cwd 或新加入的旧 cwd 重复的条目
         filtered = [p for p in self._history if p not in (prev_cwd, self._cwd)]
-        self._history = [prev_cwd, *filtered][:_MAX_HISTORY]
+        limit = get_workspace_history_limit()
+        self._history = [prev_cwd, *filtered][:limit]
 
     def save(self) -> Path | None:
         """持久化当前工作区路径与历史（关闭前调用）.
@@ -252,8 +255,9 @@ class WorkspaceManager:
         self.data_dir.mkdir(parents=True, exist_ok=True)
         target = self.data_dir / CURRENT_WORKSPACE_FILE
         try:
-            # 历史持久化前过滤掉当前路径，避免重复；数量上限 _MAX_HISTORY
-            history_strs = [str(p) for p in self._history if p != self._cwd][:_MAX_HISTORY]
+            # 历史持久化前过滤掉当前路径，避免重复；数量上限取运行时值
+            limit = get_workspace_history_limit()
+            history_strs = [str(p) for p in self._history if p != self._cwd][:limit]
             payload = json.dumps(
                 {"path": str(self._cwd), "history": history_strs},
                 ensure_ascii=False,
@@ -299,7 +303,8 @@ class WorkspaceManager:
                     continue
                 seen.add(key)
                 history.append(p)
-            self._history = history[:_MAX_HISTORY]
+                limit = get_workspace_history_limit()
+                self._history = history[:limit]
         # 再恢复当前路径
         raw_path = data.get("path")
         if not isinstance(raw_path, str) or not raw_path.strip():

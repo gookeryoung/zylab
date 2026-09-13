@@ -15,16 +15,36 @@ from .errors import (
 )
 from .events import EventBus
 from .executor import EventKind, ProcessExecutor, TaskEvent, TaskHandle, TaskSpec, TaskStatus
-from .log import LOG_FILE_NAME, set_debug, setup_logging
+from .log import LOG_FILE_NAME, LOG_LEVELS, set_debug, set_root_level, setup_logging
 from .project import PROJECT_SCHEMA_VERSION, PROJECT_SUFFIX, Project
 from .registry import ENTRY_POINT_PREFIX, PluginKind, PluginRegistry, PluginSpec
+from .runtime_config import (
+    AUTOSAVE_MAX,
+    AUTOSAVE_MIN,
+    DEFAULT_MAX_WORKERS,
+    SOLVER_TIMEOUT_MAX,
+    WORKERS_MAX,
+    WORKERS_MIN,
+    get_autosave_interval,
+    get_max_workers,
+    get_solver_timeout,
+    get_workspace_history_limit,
+    update_runtime_config,
+)
 
 __all__ = [
+    "AUTOSAVE_MAX",
+    "AUTOSAVE_MIN",
+    "DEFAULT_MAX_WORKERS",
     "ENTRY_POINT_PREFIX",
     "ENV_PREFIX",
     "LOG_FILE_NAME",
+    "LOG_LEVELS",
     "PROJECT_SCHEMA_VERSION",
     "PROJECT_SUFFIX",
+    "SOLVER_TIMEOUT_MAX",
+    "WORKERS_MAX",
+    "WORKERS_MIN",
     "AppConfig",
     "ConfigError",
     "EventBus",
@@ -46,8 +66,14 @@ __all__ = [
     "WorkerError",
     "ZylabError",
     "default_data_dir",
+    "get_autosave_interval",
+    "get_max_workers",
+    "get_solver_timeout",
+    "get_workspace_history_limit",
     "load_config",
     "read_toml",
     "set_debug",
+    "set_root_level",
     "setup_logging",
+    "update_runtime_config",
 ]

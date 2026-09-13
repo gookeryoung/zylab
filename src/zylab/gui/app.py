@@ -10,10 +10,12 @@ import tempfile
 from pathlib import Path
 from string import Template
 
+from ..core import set_root_level, update_runtime_config
 from . import theme
 from .qt_compat import QApplication, QFontDatabase, QLibraryInfo, QLocale, QTranslator, exec_app
 
 __all__ = [
+    "apply_settings",
     "apply_theme",
     "create_app",
     "load_stylesheet",
@@ -149,6 +151,73 @@ def apply_theme(app: QApplication, name: str) -> theme.Palette:
     return pal
 
 
+def apply_settings(  # noqa: PLR0913  签名显式枚举全部运行时字段，调用方（SettingsPanel 保存后）一次传齐
+    app: QApplication,
+    *,
+    theme_name: str | None = None,
+    font_family_body: str | None = None,
+    font_family_mono: str | None = None,
+    font_scale: float | None = None,
+    log_level: str | None = None,
+    max_workers: int | None = None,
+    solver_timeout_s: int | None = None,
+    autosave_interval_sec: int | None = None,
+    workspace_history_limit: int | None = None,
+) -> None:
+    """一次性应用主题 + 字体族 + 字号缩放 + 运行时配置（重刷全局样式表）.
+
+    相比单独调用 apply_theme + set_font_families + 更新运行时状态，本函数
+    保证样式表只重刷一次（减少闪烁），且所有运行时字段同步生效。
+
+    Args:
+        app: QApplication 实例。
+        theme_name: 主题标识；None 表示保持当前主题。
+        font_family_body: 正文字体族；None 表示保持当前值。
+        font_family_mono: 等宽字体族；None 表示保持当前值。
+        font_scale: 字号缩放倍率；None 表示保持当前值。
+        log_level: 根日志器级别（DEBUG/INFO/WARNING/ERROR/CRITICAL）；None 不变。
+        max_workers: 求解器默认并发进程数；None 不变。
+        solver_timeout_s: 求解器超时秒数；None 不变。
+        autosave_interval_sec: 自动保存间隔秒数（0 = 关闭）；None 不变。
+        workspace_history_limit: 工作区历史保留条数上限；None 不变。
+    """
+    # 1. 先更新 theme 模块级运行时状态
+    if theme_name is not None:
+        theme.set_current_theme(theme_name)
+    theme.set_font_families(body=font_family_body, mono=font_family_mono)
+    if font_scale is not None:
+        theme.set_font_scale(font_scale)
+
+    # 2. 更新 core 层运行时配置（求解/超时/自动保存/历史条数）
+    runtime_updates: dict[str, object] = {}
+    if max_workers is not None:
+        runtime_updates["max_workers"] = max_workers
+    if solver_timeout_s is not None:
+        runtime_updates["solver_timeout_s"] = solver_timeout_s
+    if autosave_interval_sec is not None:
+        runtime_updates["autosave_interval_sec"] = autosave_interval_sec
+    if workspace_history_limit is not None:
+        runtime_updates["workspace_history_limit"] = workspace_history_limit
+    if runtime_updates:
+        update_runtime_config(**runtime_updates)
+
+    # 3. 根日志器级别调整（不在 runtime_config 里，走 logging 原生 API）
+    if log_level is not None:
+        try:
+            set_root_level(log_level)
+        except ValueError as exc:
+            logger.warning("日志级别设置失败（已忽略）: %s", exc)
+
+    # 4. 统一重刷样式表（主题 + 字体 + 字号令牌都从当前模块级状态取值）
+    app.setStyleSheet(load_stylesheet())
+    logger.debug(
+        "设置已应用: theme=%s log=%s workers=%s",
+        theme_name or "unchanged",
+        log_level or "unchanged",
+        runtime_updates or "unchanged",
+    )
+
+
 def create_app(argv: list[str] | None = None, theme_name: str = theme.DEFAULT_THEME) -> QApplication:
     """创建 QApplication（Fusion 风格 + 指定主题样式表 + Qt 标准对话框本地化）.
 
@@ -248,13 +317,72 @@ def save_theme_name(data_dir: Path, name: str) -> None:
 
 def main() -> int:  # pragma: no cover（事件循环阻塞，需图形环境手动测试）
     """启动 GUI 应用."""
+    import json as _json
+
+    from zylab.core.config import default_data_dir
     from zylab.core.log import setup_logging
 
     setup_logging("dev")
-    from zylab.core.config import default_data_dir
 
-    app = create_app(theme_name=load_theme_name(default_data_dir()))
-    register_user_themes(default_data_dir())
+    data_dir = default_data_dir()
+
+    # 1. 优先从 settings.json 读取完整配置（外观 + 运行时）
+    theme_name = theme.DEFAULT_THEME
+    font_family_body: str | None = None
+    font_family_mono: str | None = None
+    font_scale: float | None = None
+    log_level: str | None = None
+    max_workers: int | None = None
+    solver_timeout_s: int | None = None
+    autosave_interval_sec: int | None = None
+    workspace_history_limit: int | None = None
+
+    settings_path = data_dir / "settings.json"
+    if settings_path.is_file():
+        try:
+            data = _json.loads(settings_path.read_text(encoding="utf-8"))
+            theme_name = str(data.get("theme", theme.DEFAULT_THEME))
+            font_family_body = data.get("font_family_body")
+            font_family_mono = data.get("font_family_mono")
+            font_scale_val = data.get("font_scale")
+            if font_scale_val is not None:
+                font_scale = float(font_scale_val)
+            log_level_val = data.get("log_level")
+            if log_level_val:
+                log_level = str(log_level_val)
+            if "max_workers" in data:
+                max_workers = int(data["max_workers"])
+            if "solver_timeout_s" in data:
+                solver_timeout_s = int(data["solver_timeout_s"])
+            if "autosave_interval_sec" in data:
+                autosave_interval_sec = int(data["autosave_interval_sec"])
+            if "workspace_history_limit" in data:
+                workspace_history_limit = int(data["workspace_history_limit"])
+        except (OSError, ValueError) as exc:
+            logger.warning("settings.json 解析失败，使用默认: %s", exc)
+
+    # 兼容旧版 theme.txt（settings.json 中无 theme 字段时回退）
+    if theme_name == theme.DEFAULT_THEME:
+        legacy_theme = load_theme_name(data_dir)
+        if legacy_theme != theme.DEFAULT_THEME:
+            theme_name = legacy_theme
+
+    app = create_app(theme_name=theme_name)
+
+    # 2. 应用字体/字号/日志/运行时配置（主题已在 create_app 中应用，跳过避免重复切换）
+    apply_settings(
+        app,
+        font_family_body=font_family_body,
+        font_family_mono=font_family_mono,
+        font_scale=font_scale,
+        log_level=log_level,
+        max_workers=max_workers,
+        solver_timeout_s=solver_timeout_s,
+        autosave_interval_sec=autosave_interval_sec,
+        workspace_history_limit=workspace_history_limit,
+    )
+
+    register_user_themes(data_dir)
     from .main_window import MainWindow  # 惰性导入，加速 --help 等非 GUI 路径
 
     window = MainWindow()

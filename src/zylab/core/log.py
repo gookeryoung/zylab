@@ -13,11 +13,14 @@ import logging.config
 from pathlib import Path
 from typing import Any
 
-__all__ = ["LOG_FILE_NAME", "set_debug", "setup_logging"]
+__all__ = ["LOG_FILE_NAME", "LOG_LEVELS", "set_debug", "set_root_level", "setup_logging"]
 
 logger = logging.getLogger(__name__)
 
 LOG_FILE_NAME = "zylab.log"
+
+#: 合法日志级别名称（大写，与 logging 模块保持一致）
+LOG_LEVELS: tuple[str, ...] = ("DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL")
 
 _SIMPLE_FMT = "%(asctime)s [%(levelname)-8s] %(name)s: %(message)s"
 _VERBOSE_FMT = "%(asctime)s [%(levelname)-8s] %(name)s:%(lineno)d %(funcName)s(): %(message)s"
@@ -79,3 +82,25 @@ def setup_logging(env: str = "dev", log_dir: Path | None = None) -> None:
 def set_debug(module: str, enabled: bool = True) -> None:
     """运行时动态调整某模块日志级别（True=DEBUG，False=INFO），用于单点排查."""
     logging.getLogger(module).setLevel(logging.DEBUG if enabled else logging.INFO)
+
+
+def set_root_level(level: str) -> None:
+    """运行时调整根日志器级别（对所有未显式设级别的模块生效）.
+
+    适用于 SettingsPanel 保存后即时调整日志输出详细度，无需重启应用。
+
+    Args:
+        level: 日志级别名称，取值为 ``DEBUG/INFO/WARNING/ERROR/CRITICAL``（大小写不敏感）。
+
+    Raises:
+        ValueError: level 不在合法范围内时抛出。
+    """
+    name = level.upper().strip()
+    if name not in LOG_LEVELS:
+        raise ValueError(f"非法日志级别 {level!r}，可选: {LOG_LEVELS}")
+    numeric = getattr(logging, name)
+    logging.getLogger().setLevel(numeric)
+    # 同时更新所有现有 handler 的级别，确保 handler 不会过滤掉根日志器放行的记录
+    for handler in logging.getLogger().handlers:
+        handler.setLevel(numeric)
+    logger.info("根日志器级别已调整为 %s", name)

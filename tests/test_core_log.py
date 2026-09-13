@@ -8,7 +8,7 @@ from pathlib import Path
 
 import pytest
 
-from zylab.core.log import LOG_FILE_NAME, set_debug, setup_logging
+from zylab.core.log import LOG_FILE_NAME, LOG_LEVELS, set_debug, set_root_level, setup_logging
 
 
 @pytest.fixture(autouse=True)
@@ -73,3 +73,55 @@ def test_set_debug() -> None:
     assert logging.getLogger("test_module").level == logging.DEBUG
     set_debug("test_module", enabled=False)
     assert logging.getLogger("test_module").level == logging.INFO
+
+
+def test_set_root_level_uppercase() -> None:
+    """set_root_level 接受大写级别名称并立即生效."""
+    setup_logging("dev")
+    set_root_level("WARNING")
+    root = logging.getLogger()
+    assert root.level == logging.WARNING
+    set_root_level("INFO")  # 还原
+
+
+def test_set_root_level_case_insensitive() -> None:
+    """set_root_level 对大小写不敏感."""
+    setup_logging("dev")
+    set_root_level("debug")  # 小写
+    assert logging.getLogger().level == logging.DEBUG
+    set_root_level("Critical")  # 混合大小写
+    assert logging.getLogger().level == logging.CRITICAL
+    set_root_level("INFO")  # 还原
+
+
+def test_set_root_level_handlers_also_updated() -> None:
+    """根日志器级别调整时，handler 级别也应同步更新."""
+    setup_logging("dev")
+    root = logging.getLogger()
+    # 先设为 ERROR
+    set_root_level("ERROR")
+    assert root.level == logging.ERROR
+    for handler in root.handlers:
+        assert handler.level == logging.ERROR
+
+    # 再设为 DEBUG
+    set_root_level("DEBUG")
+    assert root.level == logging.DEBUG
+    for handler in root.handlers:
+        assert handler.level == logging.DEBUG
+
+    set_root_level("INFO")  # 还原
+
+
+def test_set_root_level_invalid_raises() -> None:
+    """非法级别应抛 ValueError."""
+    setup_logging("dev")
+    with pytest.raises(ValueError, match="非法日志级别"):
+        set_root_level("VERBOSE")
+    with pytest.raises(ValueError, match="非法日志级别"):
+        set_root_level("INVALID")
+
+
+def test_log_levels_constant() -> None:
+    """LOG_LEVELS 常量包含全部合法级别."""
+    assert set(LOG_LEVELS) == {"DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"}

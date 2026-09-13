@@ -20,7 +20,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from zylab.flowchart.results import CloudData, CurveData, TableColumn, TableData, TextData, ViewData
+from zylab.flowchart.results import CloudData, CurveData, TableData, TextData, ViewData
 from zylab.flowchart.richtext import markdown_to_html
 
 from .. import theme
@@ -28,18 +28,17 @@ from ..icons import nav_icon
 from ..qt_compat import (
     QFrame,
     QHBoxLayout,
-    QHeaderView,
     QLabel,
     QScrollArea,
     QSizePolicy,
     Qt,
-    QTableWidget,
-    QTableWidgetItem,
     QTextBrowser,
     QVBoxLayout,
     QWidget,
 )
-from .dsl_result_view import _format_cell, build_curve_widget
+from ._table_utils import build_table_widget
+from ._widget_utils import clear_layout
+from .dsl_result_view import build_curve_widget
 
 __all__ = ["ResultBlockCard", "ResultStreamView"]
 
@@ -91,26 +90,6 @@ def _kind_badge(payload: ViewData | str) -> tuple[str, str]:
     return _KIND_BADGES.get(kind, ("result_error", "?"))
 
 
-def _build_table_widget(data: TableData) -> QTableWidget:
-    """表格正文（列格式/对齐透传；斑马纹由 QSS 控制）."""
-    table = QTableWidget(objectName="dslTable")
-    table.setColumnCount(len(data.columns))
-    table.setRowCount(len(data.rows))
-    table.setHorizontalHeaderLabels(list(data.column_titles))
-    table.verticalHeader().setVisible(False)
-    table.setEditTriggers(QTableWidget.NoEditTriggers)
-    table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
-    for row, values in enumerate(data.rows):
-        for column, value in enumerate(values):
-            col_def = data.columns[column]
-            fmt = col_def.format or ".6g"
-            cell_text = _format_cell_with_format(value, fmt)
-            item = QTableWidgetItem(cell_text)
-            item.setTextAlignment(_col_alignment(col_def))
-            table.setItem(row, column, item)
-    return table
-
-
 def _build_text_body(data: TextData) -> QWidget:
     """文本正文：markdown 用 QTextBrowser.setHtml，plain 用 QLabel.
 
@@ -130,27 +109,6 @@ def _build_text_body(data: TextData) -> QWidget:
     label = QLabel(data.text, objectName="resultText")
     label.setWordWrap(True)
     return label
-
-
-def _format_cell_with_format(value: Any, fmt: str) -> str:
-    """按 printf 格式规格格式化单元格."""
-    if fmt and isinstance(value, float):
-        try:
-            return format(value, fmt)
-        except (ValueError, TypeError):
-            return str(value)
-    return _format_cell(value)
-
-
-def _col_alignment(col_def: TableColumn) -> int:
-    """列对齐（右对齐数值列；或按声明）."""
-    if col_def.align == "right":
-        return Qt.AlignRight | Qt.AlignVCenter
-    if col_def.align == "left":
-        return Qt.AlignLeft | Qt.AlignVCenter
-    if col_def.align == "center":
-        return Qt.AlignCenter
-    return Qt.AlignRight | Qt.AlignVCenter
 
 
 # ------------------------------------------------------------------ 结果块卡片
@@ -251,7 +209,7 @@ class ResultBlockCard(QFrame):
 
         # 表格
         if isinstance(payload, TableData):
-            widget = _build_table_widget(payload)
+            widget = build_table_widget(payload)
             widget.setMaximumHeight(_STREAM_TABLE_MAX_HEIGHT)
             return widget
 
@@ -318,11 +276,7 @@ class ResultStreamView(QWidget):
         :param blocks: 块声明序列；语义色见 :data:`_SEMANTIC_BAR_COLORS` 键。
         """
         # 清空
-        while self._container_layout.count():
-            item = self._container_layout.takeAt(0)
-            w = item.widget()
-            if w is not None:
-                w.deleteLater()
+        clear_layout(self._container_layout)
 
         if not blocks:
             self._run_header.setText("")

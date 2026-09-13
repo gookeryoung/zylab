@@ -13,7 +13,8 @@ from zylab.flowchart.results import (
     TableData,
     TextData,
 )
-from zylab.gui.widgets.dsl_result_view import DslResultView, _format_cell
+from zylab.gui.widgets._table_utils import format_cell as _format_cell
+from zylab.gui.widgets.dsl_result_view import DslResultView
 
 
 @pytest.mark.gui

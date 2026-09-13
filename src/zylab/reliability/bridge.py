@@ -300,9 +300,21 @@ class ReliabilityBridge:
         """Run Monte Carlo reliability analysis.
 
         :param n_workers: >=2 enables multiprocessing. Bridge itself is picklable,
-            each worker constructs the closure locally.
+            each worker constructs the closure locally. ``None``（默认）保持串行；
+            传 ``-1`` 读取运行时全局默认（SettingsPanel 设置的并发进程数）；
+            显式传 ``>=2`` 多进程并行。
         """
-        _w = n_workers if (n_workers is not None and n_workers >= 2) else 1
+        from zylab.core import get_max_workers
+
+        # None → 串行（向后兼容）；-1 sentinel → 读运行时默认
+        if n_workers is None or n_workers == 0:
+            _w = 1
+        elif n_workers == -1:
+            _w = get_max_workers()
+            if _w < 2:
+                _w = 1
+        else:
+            _w = n_workers
         if _w == 1:
             return mc_analysis(
                 self.make_limit_state(),

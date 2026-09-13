@@ -28,6 +28,7 @@ from ..qt_compat import (
     QVBoxLayout,
     QWidget,
 )
+from ._widget_utils import clear_layout
 from .trial_record_edit import TrialRecordEdit
 
 __all__ = ["DslParamForm"]
@@ -59,11 +60,7 @@ class DslParamForm(QWidget):
         self._edits.clear()
         self._record_edits.clear()
         self._derived_labels.clear()
-        while self._layout.count():
-            item = self._layout.takeAt(0)
-            widget = item.widget()
-            if widget is not None:
-                widget.deleteLater()
+        clear_layout(self._layout)
         for group in template.dsl_params:
             box = QGroupBox(group.label)
             form = QFormLayout(box)

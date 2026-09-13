@@ -29,15 +29,13 @@ from zylab.sci.palettes import CURVE_PALETTE, PG_CURVE_DEFAULTS, resolve_curve_c
 from .. import theme
 from ..qt_compat import (
     QGroupBox,
-    QHeaderView,
     QLabel,
     QScrollArea,
-    Qt,
-    QTableWidget,
-    QTableWidgetItem,
     QVBoxLayout,
     QWidget,
 )
+from ._table_utils import build_table_widget
+from ._widget_utils import clear_layout
 from .plot_widget import PlotMenuConfig, ZyPlotWidget
 
 __all__ = ["DslGroupedResultView", "DslResultView"]
@@ -133,11 +131,7 @@ class DslGroupedResultView(QWidget):  # pragma: no cover
 
         :param blocks: 块声明序列；错误消息（str）渲染为错误文本块。
         """
-        while self._layout.count():
-            item = self._layout.takeAt(0)
-            widget = item.widget()
-            if widget is not None:
-                widget.deleteLater()
+        clear_layout(self._layout)
         for title, payload in blocks:
             self._layout.addWidget(_build_block(title, payload))
         self._layout.addStretch()
@@ -159,7 +153,7 @@ def _build_block(title: str, payload: ViewData | str) -> QGroupBox:  # pragma: n
         body = build_curve_widget(payload)
         body.setFixedHeight(_GROUPED_CURVE_HEIGHT)
     elif isinstance(payload, TableData):
-        body = build_table_widget(payload)
+        body = build_table_widget(payload, include_zebra=True, include_theme_style=True)
         body.setMaximumHeight(_GROUPED_TABLE_MAX_HEIGHT)
     elif isinstance(payload, TextData):
         body = build_text_widget(payload)
@@ -256,48 +250,6 @@ def _peak_index(values: tuple) -> int:  # pragma: no cover
     return max(range(len(abs_vals)), key=lambda i: abs_vals[i])
 
 
-def build_table_widget(data: TableData) -> QWidget:  # pragma: no cover
-    """表格（列宽均分 + 斑马纹 + 表头主题底；列格式/对齐已由 stream_view 专用构建器处理）."""
-    table = QTableWidget(objectName="dslTable")
-    table.setColumnCount(len(data.columns))
-    table.setRowCount(len(data.rows))
-    table.setHorizontalHeaderLabels(list(data.column_titles))
-    table.verticalHeader().setVisible(False)
-    table.setEditTriggers(QTableWidget.NoEditTriggers)
-    table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
-    palette = theme.current_palette()
-    for row, values in enumerate(data.rows):
-        for column, value in enumerate(values):
-            col_def = data.columns[column]
-            fmt = col_def.format or ".6g"
-            cell_text = _format_cell_with_format(value, fmt) if col_def.format else _format_cell(value)
-            item = QTableWidgetItem(cell_text)
-            if col_def.align == "right":
-                item.setTextAlignment(Qt.AlignRight | Qt.AlignVCenter)
-            elif col_def.align == "left":
-                item.setTextAlignment(Qt.AlignLeft | Qt.AlignVCenter)
-            elif col_def.align == "center":
-                item.setTextAlignment(Qt.AlignCenter)
-            if row % 2 == 1:
-                item.setBackground(Qt.GlobalColor.transparent)  # QSS zebra 处理
-            table.setItem(row, column, item)
-    table.setStyleSheet(
-        f"QTableWidget#dslTable {{ gridline-color: {palette.border}; }}"
-        f"QHeaderView::section {{ background: {palette.bg_muted}; }}"
-    )
-    return table
-
-
-def _format_cell_with_format(value: Any, fmt: str) -> str:  # pragma: no cover
-    """按 printf 格式规格格式化单元格."""
-    if fmt and isinstance(value, float):
-        try:
-            return format(value, fmt)
-        except (ValueError, TypeError):
-            return str(value)
-    return _format_cell(value)
-
-
 def build_text_widget(data: TextData) -> QWidget:  # pragma: no cover
     """文本（自动换行正文）."""
     label = QLabel(data.text, objectName="resultText")
@@ -308,10 +260,3 @@ def build_text_widget(data: TextData) -> QWidget:  # pragma: no cover
 def _cloud_hint(data: CloudData) -> str:  # pragma: no cover
     """云图占位提示（实际渲染由参数化计算应用页路由到解算视图）."""
     return f"云图结果 {data.node_id!r} 由解算视图渲染"
-
-
-def _format_cell(value: Any) -> str:
-    """表格单元格文本（浮点 6 位有效数字，其余 str）."""
-    if isinstance(value, float):
-        return f"{value:.6g}"
-    return str(value)

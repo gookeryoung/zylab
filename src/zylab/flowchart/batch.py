@@ -27,6 +27,7 @@ from typing import Any
 import numpy as np
 from typing_extensions import override
 
+from zylab.core import get_max_workers
 from zylab.fea import (
     BucklingSolution,
     ElectroThermalSolution,
@@ -344,11 +345,13 @@ def run_batch(  # noqa: PLR0913
         空缓存（进程间不能共享 dict），跨进程去重需用户先预处理
         param_rows 去掉重复配置。
     :param n_workers: 进程池大小。``None`` 或 ``<=1`` 走当前进程
-        串行（默认，向后兼容）；``>=2`` 时开 :class:`ProcessPoolExecutor`
-        多进程并行。Windows / Linux 均支持（模板 dataclass 可 pickle，
-        worker 模块级定义）。**并行收益在单次 FE > 10ms 时显著**
-        （例如非线性、瞬态、热耦合问题），快 FE（<5ms）进程池启动开销
-        可能抵消收益。
+        串行（向后兼容）；``>=2`` 时开 :class:`ProcessPoolExecutor`
+        多进程并行。若希望在 None 时读取运行时全局默认
+        （SettingsPanel 设置的"最大并发进程数"），可传 ``-1``。
+        Windows / Linux 均支持（模板 dataclass 可 pickle，
+        worker 模块级定义）。**并行收益在单次 FE > 10ms 时
+        显著**（例如非线性、瞬态、热耦合问题），快 FE（<5ms）进程池
+        启动开销可能抵消收益。
     :return: 与 ``param_rows`` 等长的结果列表，结果顺序与输入行对齐.
     :raises ValueError: ``param_rows`` 为空.
 
@@ -371,12 +374,22 @@ def run_batch(  # noqa: PLR0913
 
     n = len(param_rows)
 
+    # 解析实际使用的进程池大小：None 保持串行（向后兼容）；-1 sentinel
+    # 读取运行时全局默认（SettingsPanel 设置的"最大并发进程数"）。
+    # 显式传 >=2 时按传入值；0/1 强制串行。
+    if n_workers is None or n_workers == 0:
+        effective_workers = 0  # 串行
+    elif n_workers == -1:
+        effective_workers = get_max_workers()
+    else:
+        effective_workers = n_workers
+
     # ---- 并行分支 ----
-    if n_workers is not None and n_workers >= 2:
+    if effective_workers >= 2:
         # 每个 worker 内部自建节点级 cache（进程间隔离）
         # 不回填主进程的 cache dict——跨进程共享不可行
         args_iter = ((template, row, use_cache) for row in param_rows)
-        actual_workers = min(n_workers, max(1, os.cpu_count() or 1))
+        actual_workers = min(effective_workers, max(1, os.cpu_count() or 1))
         with ProcessPoolExecutor(max_workers=actual_workers) as pool:
             # map 保序——保证 outcomes 与 param_rows 对齐
             outcomes = list(pool.map(_batch_row_worker, args_iter))
