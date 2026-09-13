@@ -31,6 +31,7 @@ def _variables():
 
 
 class TestOptimizeDirect:
+    @pytest.mark.slow()
     def test_de_minimize_finds_real_optimum(self) -> None:
         """DE minimize：最优应在边界角点."""
         tpl = _template_with_target()
@@ -43,6 +44,7 @@ class TestOptimizeDirect:
         # nx 越小应变能越低
         assert res.best_y == pytest.approx(0.1385, rel=0.05)
 
+    @pytest.mark.slow()
     def test_maximize_returns_positive(self) -> None:
         """maximize=True：内部翻负，返回值应为正值."""
         tpl = _template_with_target()

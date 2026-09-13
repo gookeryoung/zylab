@@ -154,6 +154,7 @@ class _FakeVar:
         self.levels = tuple(levels)
 
 
+@pytest.mark.slow()
 def test_optimize_direct_all_optimizers(cantilever_template) -> None:
     """覆盖 DE / basinhopping / shgo / dual_annealing 四条优化器路径."""
     from zylab.optim import optimize_direct

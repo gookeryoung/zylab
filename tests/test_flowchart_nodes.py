@@ -378,6 +378,7 @@ class TestRunAnalyses:
 class TestBuiltinTemplatesExecutable:
     """内置模板端到端可执行（按定义序串行驱动，源节点 -> 分析节点）."""
 
+    @pytest.mark.slow()
     @pytest.mark.parametrize("template", BUILTIN_TEMPLATES, ids=lambda t: t.id)
     def test_template_runs(self, template) -> None:
         """每个内置模板按节点定义序执行，分析节点输出类型与端口声明一致."""
