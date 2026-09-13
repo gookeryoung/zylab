@@ -153,9 +153,10 @@ class TestQssTokens:
         """箭头 + close 按钮 SVG 资源路径应注入 QSS 且文件存在、颜色随主题."""
         qss = load_stylesheet(pal)
         urls = re.findall(r"image: url\(([^)]+\.svg)\)", qss)
-        # 2 箭头（arrow-up/down，arrow-down 被 QComboBox + QSpinBox 各引用一次）
+        # 2 箭头（arrow-up/down，arrow-down 被 QComboBox + QSpinBox 各引用一次 = 2 次）
         # + 2 close 按钮（normal + hover）
-        assert len(urls) == 5
+        # + 2 chevron（项目树折叠/展开指示器，chevron-right + chevron-down）
+        assert len(urls) == 7
         for url in urls:
             assert Path(url).exists()
         # 生成的 SVG 含当前主题次级文字色（取第一个 arrow 文件验证）
