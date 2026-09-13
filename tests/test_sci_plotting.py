@@ -11,7 +11,9 @@ from zylab.sci import (
     TOPIC_PLOT_REQUESTED,
     PlotRequest,
     apply_matplotlib_defaults,
+    fig_to_png_bytes,
     make_plot_function,
+    save_figure,
 )
 
 
@@ -273,3 +275,53 @@ def test_plot_reg_scatter_with_regression_line() -> None:
     result = plot_reg(x, y, order=1, ci=95, ax=ax)
     assert result is ax  # seaborn 返回传入的 ax
     plt.close(fig)
+
+
+def test_save_figure_png(tmp_path) -> None:
+    """save_figure 正常导出 PNG 文件."""
+    fig, ax = plt.subplots()
+    ax.plot([1, 2, 3], [1, 4, 9])
+    out = tmp_path / "out.png"
+    result = save_figure(fig, out)
+    plt.close(fig)
+
+    assert result == out
+    assert out.is_file()
+    assert out.stat().st_size > 100  # PNG 至少几百字节
+
+
+def test_save_figure_pdf(tmp_path) -> None:
+    """save_figure 导出 PDF 文件（按后缀自动识别格式）."""
+    fig, ax = plt.subplots()
+    ax.plot([1, 2, 3], [1, 4, 9])
+    out = tmp_path / "report.pdf"
+    result = save_figure(fig, out)
+    plt.close(fig)
+
+    assert result.suffix == ".pdf"
+    assert out.is_file()
+    assert out.stat().st_size > 100  # PDF 文件至少几百字节
+
+
+def test_save_figure_non_figure_raises(tmp_path) -> None:
+    """save_figure 非 Figure 对象抛 TypeError."""
+    with pytest.raises(TypeError, match="matplotlib Figure"):
+        save_figure("not a figure", tmp_path / "out.png")
+
+
+def test_fig_to_png_bytes_returns_png_magic() -> None:
+    """fig_to_png_bytes 返回以 PNG magic bytes 开头的非空 bytes."""
+    fig, ax = plt.subplots()
+    ax.plot([1, 2, 3], [1, 4, 9])
+    data = fig_to_png_bytes(fig)
+    plt.close(fig)
+
+    assert isinstance(data, bytes)
+    assert len(data) > 100
+    assert data[:8] == b"\x89PNG\r\n\x1a\n"  # PNG magic
+
+
+def test_fig_to_png_bytes_non_figure_raises() -> None:
+    """fig_to_png_bytes 非 Figure 对象抛 TypeError."""
+    with pytest.raises(TypeError, match="matplotlib Figure"):
+        fig_to_png_bytes("not a figure")

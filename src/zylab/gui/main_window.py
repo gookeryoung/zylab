@@ -9,11 +9,12 @@ from zylab.sci import TOPIC_WORKSPACE_CHANGED, WorkspaceInfo, WorkspaceManager
 
 from . import theme
 from .app import apply_theme, save_theme_name
-from .icons import NAV_ICON_NAMES, nav_icon
+from .icons import nav_icon
 from .pages.flowchart_page import FlowchartPage
 from .pages.notebook_page import NotebookPage
 from .pages.template_page import TemplatePage
 from .qt_compat import (
+    QDockWidget,
     QEvent,
     QFileDialog,
     QFrame,
@@ -21,18 +22,16 @@ from .qt_compat import (
     QKeySequence,
     QLabel,
     QLineEdit,
-    QListWidget,
-    QListWidgetItem,
     QMainWindow,
     QMenu,
     QPushButton,
     QShortcut,
     QSize,
-    QSizePolicy,
-    QSplitter,
     QStackedWidget,
     Qt,
     QToolButton,
+    QTreeWidget,
+    QTreeWidgetItem,
     QVBoxLayout,
     QWidget,
 )
@@ -44,9 +43,6 @@ _PAGE_CONSOLE = 0
 _PAGE_FEA = 1
 _PAGE_TEMPLATE = 2
 _NAV_LABELS = ("笔记本", "流程图", "参数化计算")
-
-#: 侧边栏图标显示尺寸（像素）
-_NAV_ICON_SIZE = QSize(14, 14)
 
 
 class MainWindow(QMainWindow):
@@ -68,11 +64,10 @@ class MainWindow(QMainWindow):
         self._kernel.set_workspace_manager(self._workspace_manager)
 
         # 侧边栏折叠状态（默认展开；恢复上次会话）
-        self._sidebar_folded = False
+        self._project_dock_visible = True
 
         self._build_ui()
         self._load_gui_state()
-        self._apply_sidebar_folded()
         self._install_page_shortcuts()
         self._setup_command_palette()
         self._connect()
@@ -84,40 +79,13 @@ class MainWindow(QMainWindow):
         return self._kernel
 
     def _build_ui(self) -> None:
-        """组装四区布局."""
+        """组装 Dock 窗口布局：中央 QStackedWidget + 三个 QDockWidget."""
+        # ---- 中央区：Header + QStackedWidget ----
         central = QWidget()
         root = QVBoxLayout(central)
         root.setContentsMargins(0, 0, 0, 0)
         root.setSpacing(0)
         root.addWidget(self._build_header())
-
-        self._splitter = QSplitter(Qt.Horizontal)
-        self._sidebar = QListWidget(objectName="sidebar")
-        for label in _NAV_LABELS:
-            QListWidgetItem(label, self._sidebar)
-        self._sidebar.setIconSize(_NAV_ICON_SIZE)
-        self._sidebar.setFixedWidth(theme.SIDEBAR_WIDTH)
-        # QListWidget 默认垂直 Expanding 会强制填充整个容器，导致 item 下方大片空白
-        self._sidebar.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Preferred)
-
-        # 侧边栏折叠手柄（包在容器底部）
-        from .qt_compat import QPushButton as _QPB
-
-        self._sidebar_handle = _QPB(objectName="sidebarHandle")
-        self._sidebar_handle.setFixedHeight(36)  # 与导航 item 同高（QListWidget#sidebar::item height: 36px）
-        self._sidebar_handle.setCursor(Qt.PointingHandCursor)
-        self._sidebar_handle.setToolTip("折叠/展开侧边栏 (Ctrl+B)")
-        self._sidebar_handle.setText("«")
-        self._sidebar_handle.clicked.connect(self._toggle_sidebar)
-        self._sidebar_container = QWidget(objectName="sidebarContainer")
-        _sb_layout = QVBoxLayout(self._sidebar_container)
-        _sb_layout.setContentsMargins(0, 0, 0, 0)
-        _sb_layout.setSpacing(0)
-        _sb_layout.addWidget(self._sidebar)
-        _sb_layout.addStretch()  # 弹簧填充导航项与手柄之间的空白
-        _sb_layout.addWidget(self._sidebar_handle)
-        self._sidebar.setCurrentRow(_PAGE_CONSOLE)
-        self._refresh_sidebar_icons()
 
         self._stack = QStackedWidget()
         self._notebook_page = NotebookPage(self._kernel, self._bus)
@@ -126,14 +94,53 @@ class MainWindow(QMainWindow):
         self._stack.addWidget(self._notebook_page)
         self._stack.addWidget(self._flowchart_page)
         self._stack.addWidget(self._template_page)
-
-        self._splitter.addWidget(self._sidebar_container)
-        self._splitter.addWidget(self._stack)
-        self._splitter.setStretchFactor(0, 0)
-        self._splitter.setStretchFactor(1, 1)
-        self._splitter.setSizes([theme.SIDEBAR_WIDTH, 1080])
-        root.addWidget(self._splitter, stretch=1)
+        root.addWidget(self._stack, stretch=1)
         self.setCentralWidget(central)
+
+        # ---- 左侧 Dock：项目树 ----
+        self._project_tree = QTreeWidget(objectName="projectTree")
+        self._project_tree.setHeaderLabels(["项目浏览器"])
+        self._build_default_project_tree()
+        self._project_dock = QDockWidget("项目", self)
+        self._project_dock.setObjectName("projectDock")
+        self._project_dock.setWidget(self._project_tree)
+        self._project_dock.setFeatures(QDockWidget.DockWidgetMovable | QDockWidget.DockWidgetFloatable)
+        self.addDockWidget(Qt.LeftDockWidgetArea, self._project_dock)
+
+        # ---- 右侧 Dock：属性 ----
+        self._prop_dock = QDockWidget("属性", self)
+        self._prop_dock.setObjectName("propertyDock")
+        self._prop_dock.setWidget(QWidget(objectName="propertyPlaceholder"))
+        self._prop_dock.setFeatures(QDockWidget.DockWidgetMovable | QDockWidget.DockWidgetFloatable)
+        self.addDockWidget(Qt.RightDockWidgetArea, self._prop_dock)
+
+        # ---- 底部 Dock：日志 ----
+        from .qt_compat import QPlainTextEdit
+
+        self._log_view = QPlainTextEdit(objectName="logView")
+        self._log_view.setReadOnly(True)
+        self._log_view.setMaximumBlockCount(500)
+        self._log_dock = QDockWidget("日志", self)
+        self._log_dock.setObjectName("logDock")
+        self._log_dock.setWidget(self._log_view)
+        self._log_dock.setFeatures(QDockWidget.DockWidgetMovable | QDockWidget.DockWidgetFloatable)
+        self.addDockWidget(Qt.BottomDockWidgetArea, self._log_dock)
+
+        # 初始 Dock 可见性
+        self._project_dock.setVisible(self._project_dock_visible)
+        self._prop_dock.setVisible(False)  # 默认隐藏，有选中项时再打开
+        self._log_dock.setVisible(False)
+
+    def _build_default_project_tree(self) -> None:
+        """构建默认项目树根节点（工作区目录扫描 + 页面快捷入口）."""
+        root = QTreeWidgetItem(self._project_tree, ["当前工作区"])
+        root.setData(0, Qt.UserRole, ("workspace", ""))
+        root.setExpanded(True)
+
+        # 页面快捷入口
+        for idx, label in enumerate(_NAV_LABELS):
+            item = QTreeWidgetItem(root, [f"📄 {label}"])
+            item.setData(0, Qt.UserRole, ("page", idx))
 
     def _build_header(self) -> QFrame:
         """构建头部条：左侧标题 + 居中 MATLAB 风格工作区地址栏 + 右侧功能搜索框."""
@@ -229,21 +236,10 @@ class MainWindow(QMainWindow):
             self.statusBar().showMessage(f"主题已切换: {theme.current_palette().display_name}")
 
     def _refresh_sidebar_icons(self) -> None:
-        """按当前主题色重绘侧边栏图标（选中行用强调色）+ 工作区操作按钮."""
+        """按当前主题色重绘头部工作区操作按钮（侧边栏已改为 Dock）."""
         pal = theme.current_palette()
-        for row, name in enumerate(NAV_ICON_NAMES):
-            item = self._sidebar.item(row)
-            if item is not None:
-                color = pal.nav_accent if row == self._sidebar.currentRow() else pal.nav_text
-                item.setIcon(nav_icon(name, color))
-
-        # 工作区下拉历史按钮（箭头）+ 打开文件夹按钮
         self._workspace_history_btn.setIcon(nav_icon("arrow_down", pal.nav_text))
         self._workspace_open_btn.setIcon(nav_icon("open_file", pal.nav_text))
-
-        # 手柄文字同步折叠状态
-        self._sidebar_handle.setText("»" if self._sidebar_folded else "«")
-        self._sidebar_handle.setToolTip("展开侧边栏 (Ctrl+B)" if self._sidebar_folded else "折叠侧边栏 (Ctrl+B)")
 
     def _refresh_workspace_ui(self) -> None:
         """刷新头部和状态栏的工作区路径显示（只读 self._workspace_manager）."""
@@ -306,8 +302,7 @@ class MainWindow(QMainWindow):
     def _connect(self) -> None:
         """连接导航与跨页信号；订阅工作区变更事件同步 UI；状态栏常驻工作区路径与运行状态."""
 
-        self._sidebar.currentRowChanged.connect(self._stack.setCurrentIndex)
-        self._sidebar.currentRowChanged.connect(lambda _row: self._refresh_sidebar_icons())
+        self._project_tree.itemDoubleClicked.connect(self._on_project_tree_double_clicked)
         # 笔记本/参数化计算页状态提示统一进主窗口状态栏；参数化计算声明的主题按预览语义应用
         self._notebook_page.status_message.connect(self.statusBar().showMessage)
         self._template_page.status_message.connect(self.statusBar().showMessage)
@@ -384,17 +379,55 @@ class MainWindow(QMainWindow):
 
         dlg.exec_() if hasattr(dlg, "exec_") else dlg.exec()
 
+    def _open_settings_dialog(self) -> None:
+        """弹出设置对话框（SettingsPanel 嵌入 QDialog）.
+
+        保存时应用主题等副作用：持久化 → set_theme 切换 → 状态栏提示。
+        """
+        from .qt_compat import QDialog
+        from .widgets.settings_panel import SettingsPanel
+
+        dlg = QDialog(self)
+        dlg.setWindowTitle("设置")
+        dlg.setMinimumSize(480, 360)
+
+        panel = SettingsPanel()
+        from .qt_compat import QVBoxLayout
+
+        root = QVBoxLayout(dlg)
+        root.setContentsMargins(0, 0, 0, 0)
+        root.addWidget(panel)
+
+        import contextlib
+
+        def _on_save() -> None:
+            cfg = panel.save()
+            theme_name = cfg.get("theme")
+            if theme_name and theme_name != theme.current_palette().name:
+                self._set_theme(theme_name, persist=True)
+            self.statusBar().showMessage("设置已保存", 3000)
+            dlg.accept()
+
+        with contextlib.suppress(RuntimeError, TypeError):
+            panel._save_btn.clicked.disconnect()
+        panel._save_btn.clicked.connect(_on_save)
+        with contextlib.suppress(RuntimeError, TypeError):
+            panel._cancel_btn.clicked.disconnect()
+        panel._cancel_btn.clicked.connect(dlg.reject)
+
+        dlg.exec_() if hasattr(dlg, "exec_") else dlg.exec()
+
     def _install_page_shortcuts(self) -> None:
         """页面级快捷键：Ctrl+1/2/3 直达，Ctrl+PgDn/PgUp 循环切换."""
         from .qt_compat import QKeySequence
 
         bindings = (
-            ("Ctrl+1", lambda: self._sidebar.setCurrentRow(_PAGE_CONSOLE)),
-            ("Ctrl+2", lambda: self._sidebar.setCurrentRow(_PAGE_FEA)),
-            ("Ctrl+3", lambda: self._sidebar.setCurrentRow(_PAGE_TEMPLATE)),
+            ("Ctrl+1", lambda: self._stack.setCurrentIndex(_PAGE_CONSOLE)),
+            ("Ctrl+2", lambda: self._stack.setCurrentIndex(_PAGE_FEA)),
+            ("Ctrl+3", lambda: self._stack.setCurrentIndex(_PAGE_TEMPLATE)),
             ("Ctrl+PageDown", self._cycle_next_page),
             ("Ctrl+PageUp", self._cycle_prev_page),
-            ("Ctrl+B", self._toggle_sidebar),
+            ("Ctrl+B", self._toggle_project_dock),
             ("F5", self._global_run),
         )
         for key, handler in bindings:
@@ -402,15 +435,15 @@ class MainWindow(QMainWindow):
 
     def _cycle_next_page(self) -> None:
         """Ctrl+PgDn：切换到下一页（循环回到首页）."""
-        current = self._sidebar.currentRow()
-        total = self._sidebar.count()
-        self._sidebar.setCurrentRow((current + 1) % total)
+        current = self._stack.currentIndex()
+        total = self._stack.count()
+        self._stack.setCurrentIndex((current + 1) % total)
 
     def _cycle_prev_page(self) -> None:
         """Ctrl+PgUp：切换到上一页（循环到末页）."""
-        current = self._sidebar.currentRow()
-        total = self._sidebar.count()
-        self._sidebar.setCurrentRow((current - 1) % total)
+        current = self._stack.currentIndex()
+        total = self._stack.count()
+        self._stack.setCurrentIndex((current - 1) % total)
 
     def _global_run(self) -> None:
         """F5 全局运行：按当前激活页分发到对应 run 方法.
@@ -419,7 +452,7 @@ class MainWindow(QMainWindow):
         - 流程图页：暂不支持直接运行
         - 参数化计算页：run()（运行当前 DSL 参数化计算）
         """
-        row = self._sidebar.currentRow()
+        row = self._stack.currentIndex()
         if row == _PAGE_CONSOLE:
             self.statusBar().showMessage("笔记本：运行全部单元（F5）…")
             self._notebook_page.run_all()
@@ -437,7 +470,7 @@ class MainWindow(QMainWindow):
             Command(
                 "go.notebook",
                 "转到：笔记本",
-                lambda: self._sidebar.setCurrentRow(_PAGE_CONSOLE),
+                lambda: self._stack.setCurrentIndex(_PAGE_CONSOLE),
                 keywords="goto notebook",
             )
         )
@@ -445,7 +478,7 @@ class MainWindow(QMainWindow):
             Command(
                 "go.analysis",
                 "转到：流程图",
-                lambda: self._sidebar.setCurrentRow(_PAGE_FEA),
+                lambda: self._stack.setCurrentIndex(_PAGE_FEA),
                 keywords="goto analysis fea",
             )
         )
@@ -453,7 +486,7 @@ class MainWindow(QMainWindow):
             Command(
                 "go.template",
                 "转到：参数化计算",
-                lambda: self._sidebar.setCurrentRow(_PAGE_TEMPLATE),
+                lambda: self._stack.setCurrentIndex(_PAGE_TEMPLATE),
                 keywords="goto template dsl",
             )
         )
@@ -461,6 +494,7 @@ class MainWindow(QMainWindow):
             Command("template.load", "加载 DSL 参数化计算", self._open_template_page, keywords="load template dsl yaml")
         )
         register(Command("go.about", "关于 zylab", self._open_about_dialog, keywords="goto about help"))
+        register(Command("go.settings", "设置", self._open_settings_dialog, keywords="goto settings preferences"))
         register(Command("notebook.new", "新建笔记本", page.new_notebook, keywords="new notebook", shortcut="Ctrl+N"))
         register(
             Command("notebook.open", "打开笔记本", page.open_notebook, keywords="open notebook", shortcut="Ctrl+O")
@@ -496,7 +530,7 @@ class MainWindow(QMainWindow):
 
     def _open_template_page(self) -> None:
         """跳转参数化计算页并直接弹出参数化计算文件选择（命令面板一键加载）."""
-        self._sidebar.setCurrentRow(_PAGE_TEMPLATE)
+        self._stack.setCurrentIndex(_PAGE_TEMPLATE)
         self._template_page.load_template_file()
 
     def eventFilter(self, obj, event) -> bool:  # Qt 命名约定
@@ -506,44 +540,27 @@ class MainWindow(QMainWindow):
             return True
         return super().eventFilter(obj, event)
 
-    def _toggle_sidebar(self) -> None:
-        """切换侧边栏折叠状态."""
-        self._sidebar_folded = not self._sidebar_folded
-        self._apply_sidebar_folded()
+    def _on_project_tree_double_clicked(self, item: QTreeWidgetItem, _col: int) -> None:
+        """项目树双击：page 类型切页，workspace 类型后续扩展."""
+        data = item.data(0, Qt.UserRole)
+        if isinstance(data, tuple) and data[0] == "page":
+            self._stack.setCurrentIndex(int(data[1]))
 
-    def _apply_sidebar_folded(self) -> None:
-        """应用折叠状态：改变宽度 + 隐藏/显示导航项文字 + 刷新手柄."""
-        theme.current_palette()
-        if self._sidebar_folded:
-            self._sidebar.setFixedWidth(48)
-            self._sidebar_container.setFixedWidth(48)
-            for row in range(self._sidebar.count()):
-                item = self._sidebar.item(row)
-                item.setText("")
-                item.setToolTip(item.toolTip() if item.toolTip() else _NAV_LABELS[row])
-        else:
-            self._sidebar.setFixedWidth(theme.SIDEBAR_WIDTH)
-            self._sidebar_container.setFixedWidth(theme.SIDEBAR_WIDTH)
-            labels = _NAV_LABELS
-            for row in range(self._sidebar.count()):
-                item = self._sidebar.item(row)
-                item.setText(labels[row])
-                item.setToolTip("")
-        self._refresh_sidebar_icons()
-        w = self._splitter.width()
-        h = self._splitter.handleWidth()
-        sw = self._sidebar_container.width()
-        self._splitter.setSizes([sw, w - sw - h])
+    def _toggle_project_dock(self) -> None:
+        """切换项目树 Dock 可见性（Ctrl+B）."""
+        self._project_dock_visible = not self._project_dock_visible
+        self._project_dock.setVisible(self._project_dock_visible)
+        self._save_gui_state()
 
     def _load_gui_state(self) -> None:
-        """加载 gui_state.json（侧边栏折叠、窗口几何等）."""
+        """加载 gui_state.json（项目树 Dock 可见性等）."""
         import json
 
         try:
             path = default_data_dir() / "gui_state.json"
             if path.is_file():
                 state = json.loads(path.read_text(encoding="utf-8"))
-                self._sidebar_folded = bool(state.get("sidebar_folded", False))
+                self._project_dock_visible = bool(state.get("project_dock_visible", True))
         except (OSError, ValueError):
             pass  # 文件不存在或损坏，忽略
 
@@ -554,18 +571,19 @@ class MainWindow(QMainWindow):
         try:
             path = default_data_dir() / "gui_state.json"
             path.write_text(
-                json.dumps({"sidebar_folded": self._sidebar_folded}, indent=2),
+                json.dumps({"project_dock_visible": self._project_dock_visible}, indent=2),
                 encoding="utf-8",
             )
         except OSError:
             pass
 
     def resizeEvent(self, event) -> None:  # Qt 命名约定
-        """窗口宽度 <1000px 自动折叠侧边栏（窄屏响应）."""
+        """窗口宽度 <1000px 自动隐藏项目 Dock（窄屏响应）."""
         super().resizeEvent(event)
-        if self.width() < 1000 and not self._sidebar_folded:
-            self._sidebar_folded = True
-            self._apply_sidebar_folded()
+        if self.width() < 1000 and self._project_dock_visible:
+            self._project_dock_visible = False
+            self._project_dock.setVisible(False)
+            self._save_gui_state()
 
     # ------------------------------------------------------------------ 运行状态 indicator
 

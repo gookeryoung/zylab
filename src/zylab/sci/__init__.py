@@ -51,9 +51,11 @@ from .plotting import (
     TOPIC_PLOT_REQUESTED,
     PlotRequest,
     apply_matplotlib_defaults,
+    fig_to_png_bytes,
     make_plot_function,
     plot_band,
     plot_reg,
+    save_figure,
 )
 from .workspace import (
     CURRENT_WORKSPACE_FILE,
@@ -92,6 +94,7 @@ __all__ = [
     "e",
     "exp",
     "eye",
+    "fig_to_png_bytes",
     "format_whos",
     "inf",
     "linspace",
@@ -107,6 +110,7 @@ __all__ = [
     "plot_band",
     "plot_reg",
     "resolve_curve_color",
+    "save_figure",
     "save_notebook",
     "sin",
     "sqrt",

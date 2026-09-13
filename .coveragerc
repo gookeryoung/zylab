@@ -1,6 +1,6 @@
 [run]
 branch = true
-concurrency = thread
+concurrency = thread,multiprocessing
 omit = tests/*
 source = zylab
 

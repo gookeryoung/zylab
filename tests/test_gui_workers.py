@@ -146,6 +146,23 @@ class TestWorkerControllerApi:
         assert worker.is_cancelled
         assert calls == ["isRunning", "quit"]
 
+    def test_start_calls_thread_start(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """WorkerController.start() 调用 QThread.start（monkeypatch）."""
+        from zylab.gui.workers.task_worker import QThread as _QT
+
+        worker = _SimpleWorker()
+        controller = WorkerController(worker)
+
+        start_called: list[bool] = []
+
+        def _fake_start(self: _QT) -> None:
+            start_called.append(True)
+
+        monkeypatch.setattr(_QT, "start", _fake_start)
+
+        controller.start()
+        assert start_called == [True]
+
 
 # -------------------------------------------------------------------- WorkerTask
 

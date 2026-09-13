@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Any
 
 import numpy as np
@@ -27,9 +28,11 @@ __all__ = [
     "TOPIC_PLOT_REQUESTED",
     "PlotRequest",
     "apply_matplotlib_defaults",
+    "fig_to_png_bytes",
     "make_plot_function",
     "plot_band",
     "plot_reg",
+    "save_figure",
 ]
 
 logger = logging.getLogger(__name__)
@@ -320,3 +323,73 @@ def make_plot_function(bus: EventBus) -> Any:
         )
 
     return plot
+
+
+# ---------------------------------------------------------------- 报告层导出
+
+
+def save_figure(
+    fig: Any,
+    path: str | Path,
+    *,
+    dpi: int = 150,
+    bbox_inches: str | None = "tight",
+    **kwargs: Any,
+) -> Path:
+    """把 matplotlib Figure 导出为图像文件（PNG / PDF / SVG，按后缀自动识别）.
+
+    复用已配置的中文字体（调用方须先跑 :func:pply_matplotlib_defaults，
+    通常 notebook 启动时已自动调用）。导出 PNG 时通过临时 BytesIO 中转，
+    避免磁盘中间态残留。
+
+    Args:
+        fig: matplotlib Figure 对象（非 Figure 则 TypeError）。
+        path: 输出路径，后缀决定格式：.png / .pdf / .svg。
+        dpi: 图像分辨率，默认 150（屏幕报告 150 足够，印刷建议 300）。
+        bbox_inches: 裁剪方式，默认 "tight" 紧贴内容；None 保留完整画布。
+        **kwargs: 透传给 `fig.savefig`（如 facecolor / transparent / pad_inches）。
+
+    Returns:
+        写入完成的 `path`（Path 类型，与入参类型一致）。
+
+    Raises:
+        TypeError: `fig` 非 matplotlib Figure。
+        OSError: 目标目录不可写。
+    """
+    import matplotlib.figure  # 懒加载
+
+    if not isinstance(fig, matplotlib.figure.Figure):
+        raise TypeError(f"save_figure: fig 必须是 matplotlib Figure，收到 {type(fig).__name__}")
+
+    from pathlib import Path as _Path
+
+    p = _Path(path)
+    p.parent.mkdir(parents=True, exist_ok=True)
+    fig.savefig(str(p), dpi=dpi, bbox_inches=bbox_inches, **kwargs)
+    logger.info("matplotlib figure 已导出: %s (%ddpi)", p, dpi)
+    return p
+
+
+def fig_to_png_bytes(fig: Any, *, dpi: int = 150) -> bytes:
+    """把 matplotlib Figure 渲染为 PNG 字节串（零磁盘 I/O，供报告嵌入 / clipboard）.
+
+    Args:
+        fig: matplotlib Figure 对象。
+        dpi: 渲染分辨率，默认 150。
+
+    Returns:
+        PNG 图像字节串（可直接写入文件或转 QImage）。
+
+    Raises:
+        TypeError: `fig` 非 matplotlib Figure。
+    """
+    import io
+
+    import matplotlib.figure  # 懒加载
+
+    if not isinstance(fig, matplotlib.figure.Figure):
+        raise TypeError(f"fig_to_png_bytes: fig 必须是 matplotlib Figure，收到 {type(fig).__name__}")
+
+    buf = io.BytesIO()
+    fig.savefig(buf, format="png", dpi=dpi, bbox_inches="tight")
+    return buf.getvalue()

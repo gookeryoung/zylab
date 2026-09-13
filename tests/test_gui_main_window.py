@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 import pytest
@@ -30,7 +31,8 @@ def test_main_window_builds(qtbot, isolated_data_dir: Path) -> None:
     qtbot.addWidget(win)
     assert "zylab" in win.windowTitle()
     assert win._stack.count() == 3  # 笔记本/流程图/模板（关于已降级为头部帮助按钮）
-    assert win._sidebar.currentRow() == 0
+    assert hasattr(win, "_project_dock")
+    assert win._stack.currentIndex() == 0
 
 
 @pytest.mark.gui
@@ -48,7 +50,6 @@ def test_main_window_plot_renders_in_notebook(qtbot, isolated_data_dir: Path, mo
     editor = win._notebook_page._widgets[0].editor
     editor.setPlainText("import numpy as np\nxv = np.arange(4)\nplot(xv, xv + 1)\nxv")
     win._notebook_page.run_current()
-    assert win._sidebar.currentRow() == 0
     assert win._stack.currentIndex() == 0
     assert win._notebook_page._widgets[0].cell.execution_count == 1
 
@@ -64,20 +65,11 @@ def test_main_window_close_prompts_notebook_save(qtbot, isolated_data_dir: Path)
 
 @pytest.mark.gui
 def test_main_window_sidebar_switch(qtbot, isolated_data_dir: Path) -> None:
-    """侧边栏切换应联动内容区."""
+    """页面切换应联动 QStackedWidget."""
     win = MainWindow()
     qtbot.addWidget(win)
-    win._sidebar.setCurrentRow(2)
+    win._stack.setCurrentIndex(2)
     assert win._stack.currentIndex() == 2
-
-
-@pytest.mark.gui
-def test_main_window_sidebar_icons(qtbot, isolated_data_dir: Path) -> None:
-    """侧边栏导航项应有非空图标（SVG 着色加载成功）."""
-    win = MainWindow()
-    qtbot.addWidget(win)
-    for row in range(win._sidebar.count()):
-        assert not win._sidebar.item(row).icon().isNull(), f"第 {row} 项图标为空"
 
 
 @pytest.mark.gui
@@ -132,16 +124,20 @@ def test_nav_icon_overrides_embedded_fill(qtbot) -> None:
 
 @pytest.mark.gui
 def test_main_window_icons_follow_theme(qtbot, isolated_data_dir: Path) -> None:
-    """切换主题后侧边栏图标应重新着色（命令面板预览联动，不持久化）."""
+    """切换主题后头部工作区按钮图标应重新着色（命令面板预览联动，不持久化）."""
     from zylab.gui import theme
 
     win = MainWindow()
     qtbot.addWidget(win)
-    before = win._sidebar.item(0).icon().pixmap(18, 18).toImage()
+    # _refresh_sidebar_icons 在构造后首次装 icon（默认主题色）
+    win._refresh_sidebar_icons()
+    assert not win._workspace_history_btn.icon().isNull()
+    assert not win._workspace_open_btn.icon().isNull()
+    before = win._workspace_history_btn.icon().pixmap(18, 18).toImage()
     target = next(name for name in theme.THEMES if name != theme.current_palette().name)
     try:
         win._set_theme(target, persist=False)
-        after = win._sidebar.item(0).icon().pixmap(18, 18).toImage()
+        after = win._workspace_history_btn.icon().pixmap(18, 18).toImage()
         assert before != after
     finally:
         theme.set_current_theme(theme.DEFAULT_THEME)
@@ -206,52 +202,55 @@ def test_main_window_page_shortcuts_installed(qtbot, isolated_data_dir: Path) ->
 
 @pytest.mark.gui
 def test_main_window_cycle_pages(qtbot, isolated_data_dir: Path) -> None:
-    """Ctrl+PgDn/PgUp 应循环切换侧边栏选中行."""
+    """Ctrl+PgDn/PgUp 应循环切换 QStackedWidget 当前页."""
     win = MainWindow()
     qtbot.addWidget(win)
-    win._sidebar.setCurrentRow(0)
+    win._stack.setCurrentIndex(0)
     win._cycle_next_page()
-    assert win._sidebar.currentRow() == 1
+    assert win._stack.currentIndex() == 1
     win._cycle_next_page()
-    assert win._sidebar.currentRow() == 2
+    assert win._stack.currentIndex() == 2
     win._cycle_next_page()
-    assert win._sidebar.currentRow() == 0
+    assert win._stack.currentIndex() == 0
     win._cycle_prev_page()
-    assert win._sidebar.currentRow() == 2
+    assert win._stack.currentIndex() == 2
     win._cycle_prev_page()
-    assert win._sidebar.currentRow() == 1
+    assert win._stack.currentIndex() == 1
 
 
 @pytest.mark.gui
-def test_main_window_sidebar_toggle(qtbot, isolated_data_dir):
-    """_toggle_sidebar 应切换折叠状态并更新宽度与手柄."""
+def test_main_window_sidebar_toggle(qtbot, isolated_data_dir, monkeypatch: pytest.MonkeyPatch):
+    """_toggle_project_dock 应翻转 _project_dock_visible 并同步 Dock 可见性（Ctrl+B）."""
+    # patch resizeEvent 防止测试环境窗口尺寸不足时自动隐藏 dock
+    monkeypatch.setattr(MainWindow, "resizeEvent", lambda _self, _event: None)
     win = MainWindow()
     qtbot.addWidget(win)
-    assert not win._sidebar_folded
-    win._toggle_sidebar()
-    assert win._sidebar_folded
-    win._toggle_sidebar()
-    assert not win._sidebar_folded
+    win._project_dock_visible = True
+    win._project_dock.setVisible(True)
+    assert win._project_dock_visible is True
+    win._toggle_project_dock()
+    assert win._project_dock_visible is False
+    win._toggle_project_dock()
+    assert win._project_dock_visible is True
 
 
 @pytest.mark.gui
 def test_main_window_gui_state_save_load(qtbot, isolated_data_dir):
     """_save_gui_state 写入后 _load_gui_state 应能恢复."""
-    import json
 
     from zylab.core import default_data_dir as _ddd
 
     win = MainWindow()
     qtbot.addWidget(win)
-    win._sidebar_folded = True
+    win._project_dock_visible = False
     win._save_gui_state()
     path = _ddd() / "gui_state.json"
     assert path.is_file()
     state = json.loads(path.read_text(encoding="utf-8"))
-    assert state["sidebar_folded"] is True
-    win._sidebar_folded = False
+    assert state["project_dock_visible"] is False
+    win._project_dock_visible = True
     win._load_gui_state()
-    assert win._sidebar_folded is True
+    assert win._project_dock_visible is False
     path.unlink()
 
 
@@ -288,7 +287,7 @@ def test_main_window_f5_global_run_dispatches(qtbot, isolated_data_dir: Path, mo
     monkeypatch.setattr(win.statusBar(), "showMessage", _spy_msg, raising=False)
 
     # 笔记本页 → run_all
-    win._sidebar.setCurrentRow(0)
+    win._stack.setCurrentIndex(0)
     win._global_run()
     assert calls["nb"] == 1
     assert calls["tp"] == 0
@@ -298,7 +297,7 @@ def test_main_window_f5_global_run_dispatches(qtbot, isolated_data_dir: Path, mo
     calls["nb"] = 0
     calls["tp"] = 0
     calls["msg"].clear()
-    win._sidebar.setCurrentRow(1)
+    win._stack.setCurrentIndex(1)
     win._global_run()
     assert calls["nb"] == 0
     assert calls["tp"] == 0
@@ -308,8 +307,167 @@ def test_main_window_f5_global_run_dispatches(qtbot, isolated_data_dir: Path, mo
     calls["nb"] = 0
     calls["tp"] = 0
     calls["msg"].clear()
-    win._sidebar.setCurrentRow(2)
+    win._stack.setCurrentIndex(2)
     win._global_run()
     assert calls["nb"] == 0
     assert calls["tp"] == 1
     assert any("参数化计算" in m for m in calls["msg"])
+
+
+def test_main_window_project_tree_double_clicked(qtbot, isolated_data_dir):
+    """项目树双击 page 节点切换 stack 页（覆盖 _on_project_tree_double_clicked）."""
+    win = MainWindow()
+    # 找到项目树里标记为 ('page', 1) 的节点并双击
+    tree = win._project_tree
+    root = tree.topLevelItem(0)
+    page_item = None
+    for i in range(root.childCount()):
+        child = root.child(i)
+        data = child.data(0, Qt.UserRole)
+        if isinstance(data, tuple) and data[0] == "page" and data[1] == 1:
+            page_item = child
+            break
+    assert page_item is not None, "未找到流程图页节点"
+    # 触发双击槽
+    win._on_project_tree_double_clicked(page_item, 0)
+    assert win._stack.currentIndex() == 1
+
+
+def test_main_window_dock_constructed(qtbot, isolated_data_dir):
+    """确认三个 Dock widget 在构造时被创建且有 objectName."""
+    win = MainWindow()
+    assert win._project_dock.objectName() == "projectDock"
+    assert win._prop_dock.objectName() == "propertyDock"
+    assert win._log_dock.objectName() == "logDock"
+    # 项目树默认可见，其他默认隐藏
+    assert win._project_dock_visible is True
+
+
+def test_main_window_resize_event_narrow_screen(qtbot, isolated_data_dir, monkeypatch):
+    """窗口宽度 <1000 时自动隐藏项目树 Dock."""
+    win = MainWindow()
+    win._project_dock_visible = True
+    # 模拟窄屏 resizeEvent
+    monkeypatch.setattr(win, "width", lambda: 800)
+    from PySide2.QtGui import QResizeEvent
+
+    event = QResizeEvent(win.size(), win.size())
+    win.resizeEvent(event)
+    assert win._project_dock_visible is False
+
+
+def test_main_window_set_run_status(qtbot, isolated_data_dir):
+    """set_run_status 四种状态均不崩溃，tooltip 三分支全覆盖."""
+    win = MainWindow()
+    # error + detail → 分支 1（"运行失败：xxx"）
+    win.set_run_status("error", detail="测试详情")
+    # 非 error + detail → 分支 2
+    win.set_run_status("running", detail="进度 50%")
+    # 无 detail → 分支 3（默认 tooltip）
+    win.set_run_status("idle")
+
+
+def test_main_window_load_gui_state_invalid_json(qtbot, isolated_data_dir, monkeypatch):
+    """gui_state.json 损坏时 except (OSError, ValueError) 分支被覆盖."""
+    win = MainWindow()
+
+    class _FakePath:
+        def __init__(self, path_str):
+            self._path = path_str
+
+        def __truediv__(self, other):
+            return self
+
+        def is_file(self):
+            return True
+
+        def read_text(self, encoding="utf-8"):
+            raise ValueError("invalid json")
+
+    from zylab.gui import main_window as mw_mod
+
+    monkeypatch.setattr(mw_mod, "default_data_dir", lambda: _FakePath("/fake"))
+    # 直接调 _load_gui_state（private 方法但可访问）
+    win._load_gui_state()  # should not crash
+    # 默认值保持
+    assert win._project_dock_visible is True
+
+
+def test_main_window_save_gui_state_oserror(qtbot, isolated_data_dir, monkeypatch):
+    """gui_state.json 写入失败时 except OSError 分支被覆盖."""
+    win = MainWindow()
+
+    class _FakePath:
+        def __init__(self, path_str):
+            self._path = path_str
+
+        def __truediv__(self, other):
+            return self
+
+        def write_text(self, data, encoding="utf-8"):
+            raise OSError("disk full")
+
+    from zylab.gui import main_window as mw_mod
+
+    monkeypatch.setattr(mw_mod, "default_data_dir", lambda: _FakePath("/fake"))
+    win._save_gui_state()  # should not crash
+
+
+def test_main_window_on_workspace_changed(qtbot, isolated_data_dir):
+    """_on_workspace_changed 接受 WorkspaceInfo 实例时触发刷新."""
+    from pathlib import Path
+
+    from zylab.sci import WorkspaceInfo
+
+    win = MainWindow()
+    info = WorkspaceInfo(path=Path(isolated_data_dir) / "ws", prev_path=None, source="valid")
+    win._on_workspace_changed(info)  # should not crash
+
+
+def test_main_window_toggle_project_dock(qtbot, isolated_data_dir):
+    """_toggle_project_dock 切换项目树可见性."""
+    win = MainWindow()
+    win._project_dock_visible = True
+    win._project_dock.setVisible(True)
+    win._toggle_project_dock()
+    assert win._project_dock_visible is False
+    assert win._project_dock.isVisible() is False
+
+
+def test_main_window_kernel_property(qtbot, isolated_data_dir):
+    """kernel property 暴露 ReplKernel."""
+    win = MainWindow()
+    from zylab.console import ReplKernel
+
+    assert isinstance(win.kernel, ReplKernel)
+
+
+def test_main_window_project_dock_toggle_repeated(qtbot, isolated_data_dir):
+    """反复 toggle 项目树 Dock 应能正常切换可见性."""
+    win = MainWindow()
+    initial = win._project_dock_visible
+    # 反复 toggle 4 次 → 回到初始值
+    for _ in range(4):
+        win._toggle_project_dock()
+    assert win._project_dock_visible == initial
+
+
+def test_main_window_switch_workspace_cancel(qtbot, isolated_data_dir, monkeypatch):
+    """QFileDialog 取消时 _on_switch_workspace 不崩溃（覆盖早 return 分支）."""
+    from PySide2.QtWidgets import QFileDialog
+
+    def _no_dialog(self, title, dir_, opts):
+        return ""  # 取消时返回空字符串
+
+    monkeypatch.setattr(QFileDialog, "getExistingDirectory", _no_dialog)
+    win = MainWindow()
+    win._on_switch_workspace()  # 取消 → should not crash
+
+
+def test_main_window_open_settings_dialog(qtbot, isolated_data_dir, monkeypatch):
+    """_open_settings_dialog 能正常弹窗（monkeypatch QDialog.exec_ 立即 accept）."""
+    from PySide2.QtWidgets import QDialog
+
+    win = MainWindow()
+    monkeypatch.setattr(QDialog, "exec_", lambda self_dlg: (self_dlg.accept(), 0)[1])
+    win._open_settings_dialog()

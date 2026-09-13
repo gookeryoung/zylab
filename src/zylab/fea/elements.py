@@ -15,7 +15,25 @@
 
 from __future__ import annotations
 
+# numba JIT 装饰器：可用则加速，不可用（未安装/平台不支持/单测隔离）退化为 identity
+import os as _os
+
 import numpy as np
+
+try:
+    from numba import njit as _nb_njit
+
+    if _os.environ.get("NUMBA_DISABLE_JIT", "0") != "1":
+        _JIT = _nb_njit(fastmath=True, cache=False)
+    else:
+
+        def _JIT(f):
+            return f
+except Exception:  # pragma: no cover（numba 未安装时回退）
+
+    def _JIT(f):  # type: ignore[no-redef]
+        return f
+
 
 from .errors import ElementError
 from .material import LinearElastic, Section
@@ -43,6 +61,7 @@ _GAUSS_ABSCISSA = 1.0 / np.sqrt(3.0)
 # ---------------------------------------------------------------------------
 
 
+@_JIT
 def _truss2_stiffness(coords: np.ndarray, e_modulus: float, area: float) -> np.ndarray:
     """杆单元刚度（全局坐标，自由度 = 每节点 dim 个）."""
     delta = coords[1] - coords[0]
@@ -59,6 +78,7 @@ def _truss2_stiffness(coords: np.ndarray, e_modulus: float, area: float) -> np.n
     return t.T @ k_local @ t
 
 
+@_JIT
 def _truss2_mass(coords: np.ndarray, density: float, area: float) -> np.ndarray:
     """杆单元一致质量（ρAL/6 [2,1;1,2] 各向同性块对角展开到全局）.
 
@@ -74,6 +94,7 @@ def _truss2_mass(coords: np.ndarray, density: float, area: float) -> np.ndarray:
     return np.kron(m_scalar, np.eye(dim))
 
 
+@_JIT
 def _truss2_axial_stress(coords: np.ndarray, e_modulus: float, u_elem: np.ndarray) -> float:
     """杆单元轴向应力（拉为正）."""
     delta = coords[1] - coords[0]
@@ -90,6 +111,7 @@ def _truss2_axial_stress(coords: np.ndarray, e_modulus: float, u_elem: np.ndarra
 # ---------------------------------------------------------------------------
 
 
+@_JIT
 def _beam2_stiffness(coords: np.ndarray, e_modulus: float, area: float, inertia: float) -> np.ndarray:
     """平面梁单元刚度（全局坐标，6x6，自由度序 u1x/u1y/θ1/u2x/u2y/θ2）."""
     delta = coords[1] - coords[0]
@@ -125,6 +147,7 @@ def _beam2_stiffness(coords: np.ndarray, e_modulus: float, area: float, inertia:
     return t.T @ k_local @ t
 
 
+@_JIT
 def _beam2_mass(coords: np.ndarray, density: float, area: float) -> np.ndarray:
     """平面梁单元一致质量（轴向线性插值 + 横向 Hermite 插值，经坐标变换）.
 
@@ -157,6 +180,7 @@ def _beam2_mass(coords: np.ndarray, density: float, area: float) -> np.ndarray:
     return t.T @ m_local @ t
 
 
+@_JIT
 def _truss2_geometric_stiffness(coords: np.ndarray, axial_force: float) -> np.ndarray:
     """杆单元几何刚度（初应力刚度，全局坐标）.
 
@@ -178,6 +202,7 @@ def _truss2_geometric_stiffness(coords: np.ndarray, axial_force: float) -> np.nd
     return axial_force / length * np.outer(g, g)
 
 
+@_JIT
 def _beam2_geometric_stiffness(coords: np.ndarray, axial_force: float) -> np.ndarray:
     """平面梁单元几何刚度（初应力刚度，经坐标变换）.
 
@@ -212,6 +237,7 @@ def _beam2_geometric_stiffness(coords: np.ndarray, axial_force: float) -> np.nda
     return t.T @ kg_local @ t
 
 
+@_JIT
 def _beam2_stress(
     coords: np.ndarray,
     e_modulus: float,
@@ -236,7 +262,7 @@ def _beam2_stress(
         t[base + 1, base] = -s
         t[base + 1, base + 1] = c
         t[base + 2, base + 2] = 1.0
-    u_local = t @ np.asarray(u_elem, dtype=float)
+    u_local = t @ np.asarray(u_elem, dtype=np.float64)
     axial_stress = e_modulus * (u_local[3] - u_local[0]) / length
     # 端部弯矩 = EI * v''(端部)，由 Hermite 插值 v'' = 1/L² (-6v1 + 2Lθ1... )，
     # 等价于局部平衡方程 M1 = EI(4θ1 + 2θ2)/L - 6EI(v2 - v1)/L²
@@ -251,6 +277,7 @@ def _beam2_stress(
 # ---------------------------------------------------------------------------
 
 
+@_JIT
 def _tria3_b_matrix(coords: np.ndarray) -> tuple[np.ndarray, float]:
     """CST 应变矩阵 B (3, 6) 与面积.
 
@@ -273,12 +300,14 @@ def _tria3_b_matrix(coords: np.ndarray) -> tuple[np.ndarray, float]:
     return b, area
 
 
+@_JIT
 def _tria3_stiffness(coords: np.ndarray, dmat: np.ndarray, thickness: float) -> np.ndarray:
     """CST 单元刚度（平面，自由度 = 每节点 2 个）."""
     b, area = _tria3_b_matrix(coords)
     return thickness * area * (b.T @ dmat @ b)
 
 
+@_JIT
 def _tria3_mass(coords: np.ndarray, density: float, thickness: float) -> np.ndarray:
     """CST 一致质量（ρtA/12 [2,1,1;...] 标量块展开为 2 DOF 块对角）."""
     _, area = _tria3_b_matrix(coords)
@@ -303,6 +332,7 @@ def _tria3_mass(coords: np.ndarray, density: float, thickness: float) -> np.ndar
 # ---------------------------------------------------------------------------
 
 
+@_JIT
 def _quad4_shape_derivs(xi: float, eta: float) -> np.ndarray:
     """Q4 形函数对自然坐标的导数 (2, 4)：行 0 为 dN/dxi，行 1 为 dN/deta."""
     return 0.25 * np.array(
@@ -313,6 +343,7 @@ def _quad4_shape_derivs(xi: float, eta: float) -> np.ndarray:
     )
 
 
+@_JIT
 def _quad4_shape_values(xi: float, eta: float) -> np.ndarray:
     """Q4 形函数值 (4,)（节点顺序与导数函数一致）."""
     return 0.25 * np.array(
@@ -325,6 +356,7 @@ def _quad4_shape_values(xi: float, eta: float) -> np.ndarray:
     )
 
 
+@_JIT
 def _quad4_b_matrix(coords: np.ndarray, xi: float, eta: float) -> tuple[np.ndarray, float]:
     """Q4 在指定高斯点的应变矩阵 B (3, 8) 与 |detJ|.
 
@@ -345,6 +377,7 @@ def _quad4_b_matrix(coords: np.ndarray, xi: float, eta: float) -> tuple[np.ndarr
     return b, abs(det_j)
 
 
+@_JIT
 def _quad4_stiffness(coords: np.ndarray, dmat: np.ndarray, thickness: float) -> np.ndarray:
     """Q4 单元刚度（2x2 高斯全积分）."""
     ke = np.zeros((8, 8))
@@ -355,6 +388,7 @@ def _quad4_stiffness(coords: np.ndarray, dmat: np.ndarray, thickness: float) -> 
     return ke
 
 
+@_JIT
 def _quad4_mass(coords: np.ndarray, density: float, thickness: float) -> np.ndarray:
     """Q4 一致质量（2x2 高斯积分 ρt Σ w |J| N^T N，标量块展开为 2 DOF）."""
     m_scalar = np.zeros((4, 4))
@@ -366,6 +400,7 @@ def _quad4_mass(coords: np.ndarray, density: float, thickness: float) -> np.ndar
     return np.kron(density * thickness * m_scalar, np.eye(2))
 
 
+@_JIT
 def _quad4_stress(coords: np.ndarray, dmat: np.ndarray, u_elem: np.ndarray) -> np.ndarray:
     """Q4 高斯点应力取平均（(3,) 向量）."""
     stress = np.zeros(3)
@@ -381,13 +416,16 @@ def _quad4_stress(coords: np.ndarray, dmat: np.ndarray, u_elem: np.ndarray) -> n
 # ---------------------------------------------------------------------------
 
 
+@_JIT
 def _tet4_geometry(coords: np.ndarray) -> tuple[np.ndarray, float]:
     """TET4 应变矩阵 B (6, 12) 与体积（形函数梯度经逆矩阵求取）.
 
     Returns:
         (B, volume)：volume 为四面体体积（取绝对值）。
     """
-    m = np.column_stack([np.ones(4), coords])  # (4, 4)：[1, x, y, z]
+    m = np.zeros((4, 4))
+    m[:, 0] = 1.0
+    m[:, 1:] = coords  # (4, 3)
     det_m = float(np.linalg.det(m))
     volume = abs(det_m) / 6.0
     if volume <= _GEOM_TOL:
@@ -411,12 +449,14 @@ def _tet4_geometry(coords: np.ndarray) -> tuple[np.ndarray, float]:
     return b, volume
 
 
+@_JIT
 def _tet4_stiffness(coords: np.ndarray, dmat: np.ndarray) -> np.ndarray:
     """TET4 单元刚度（常应变）."""
     b, volume = _tet4_geometry(coords)
     return volume * (b.T @ dmat @ b)
 
 
+@_JIT
 def _tet4_mass(coords: np.ndarray, density: float) -> np.ndarray:
     """TET4 一致质量（ρV/20 [2,1,1,1;...] 标量块展开为 3 DOF）."""
     _, volume = _tet4_geometry(coords)
@@ -444,6 +484,7 @@ _HEX8_SIGNS = np.array(
 )
 
 
+@_JIT
 def _hex8_shape_derivs(xi: float, eta: float, zeta: float) -> np.ndarray:
     """HEX8 形函数对自然坐标的导数 (3, 8)."""
     signs = _HEX8_SIGNS
@@ -456,12 +497,14 @@ def _hex8_shape_derivs(xi: float, eta: float, zeta: float) -> np.ndarray:
     return dn
 
 
+@_JIT
 def _hex8_shape_values(xi: float, eta: float, zeta: float) -> np.ndarray:
     """HEX8 形函数值 (8,)（节点顺序与符号表一致）."""
     signs = _HEX8_SIGNS
     return np.array([(1.0 + xi * sx) * (1.0 + eta * se) * (1.0 + zeta * sz) / 8.0 for sx, se, sz in signs])
 
 
+@_JIT
 def _hex8_b_matrix(coords: np.ndarray, xi: float, eta: float, zeta: float) -> tuple[np.ndarray, float]:
     """HEX8 在指定高斯点的应变矩阵 B (6, 24) 与 |detJ|.
 
@@ -490,6 +533,7 @@ def _hex8_b_matrix(coords: np.ndarray, xi: float, eta: float, zeta: float) -> tu
     return b, abs(det_j)
 
 
+@_JIT
 def _hex8_stiffness(coords: np.ndarray, dmat: np.ndarray) -> np.ndarray:
     """HEX8 单元刚度（2x2x2 高斯全积分）."""
     ke = np.zeros((24, 24))
@@ -501,6 +545,7 @@ def _hex8_stiffness(coords: np.ndarray, dmat: np.ndarray) -> np.ndarray:
     return ke
 
 
+@_JIT
 def _hex8_mass(coords: np.ndarray, density: float) -> np.ndarray:
     """HEX8 一致质量（2x2x2 高斯积分 ρ Σ w |J| N^T N，标量块展开为 3 DOF）."""
     m_scalar = np.zeros((8, 8))
@@ -513,6 +558,7 @@ def _hex8_mass(coords: np.ndarray, density: float) -> np.ndarray:
     return np.kron(density * m_scalar, np.eye(3))
 
 
+@_JIT
 def _hex8_stress(coords: np.ndarray, dmat: np.ndarray, u_elem: np.ndarray) -> np.ndarray:
     """HEX8 高斯点应力取平均（(6,) 向量）."""
     stress = np.zeros(6)
@@ -641,6 +687,7 @@ def element_mass(
     raise ElementError(f"不支持的单元类型: {etype}")  # pragma: no cover（枚举闭合）
 
 
+@_JIT
 def _truss2_current_length(coords: np.ndarray, u_elem: np.ndarray) -> tuple[np.ndarray, float, float]:
     """计算当前构型杆向量、当前长度与原长.
 
