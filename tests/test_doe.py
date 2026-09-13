@@ -243,6 +243,15 @@ class TestDesignSpace:
         with pytest.raises(DoeError):
             ds.to_input_rows(np.array([1.0, 2.0, 3.0]))
 
+    def test_sample_unit_method_wraps_module_level(self) -> None:
+        """DesignSpace.sample_unit 实例方法：包装模块级 sample_unit（覆盖 design_space 行 83）."""
+        ds = DesignSpace.from_variables(
+            [DesignVariable.continuous("x", 0.0, 1.0), DesignVariable.continuous("y", 0.0, 1.0)]
+        )
+        U = ds.sample_unit(SamplingMethod.LATIN_HYPERCUBE, n_samples=5, seed=42)
+        assert U.shape == (5, 2)
+        assert np.all(U >= 0.0) and np.all(U <= 1.0)
+
 
 # ====================================================================== 6. 集成：DOE 采样 → 构造 ParameterStore 输入 → 单次 workflow
 
