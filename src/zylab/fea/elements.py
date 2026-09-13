@@ -24,7 +24,7 @@ try:
     from numba import njit as _nb_njit
 
     if _os.environ.get("NUMBA_DISABLE_JIT", "0") != "1":
-        _JIT = _nb_njit(fastmath=True, cache=False)
+        _JIT = _nb_njit(fastmath=True, cache=True)
     else:
 
         def _JIT(f):
