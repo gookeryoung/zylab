@@ -1,4 +1,4 @@
-﻿/* zylab 全局样式表（语义令牌，string.Template 替换；禁止硬编码色值）。
+/* zylab 全局样式表（语义令牌，string.Template 替换；禁止硬编码色值）。
    令牌来源：theme.Palette（QSS_ 前缀）+ 非色令牌（FONT、RADIUS、CONTROL 系列）。
    注意：注释内严禁出现星号紧跟斜杠的写法，否则会提前闭合 CSS 注释导致整表解析失败。 */
 
@@ -201,6 +201,31 @@ QFrame#summaryDivider {
     border: none;
     border-top: 1px solid ${QSS_BORDER};
     max-height: 1px;
+}
+
+/* ------------------------------------------------ 项目浏览器（左侧 Dock 树形） */
+/* 缩进量：代码层 setIndentation(12) + QSS padding 配合；VS Code 风格紧凑树形 */
+QTreeWidget#projectTree {
+    background-color: ${QSS_BG_APP};
+    color: ${QSS_TEXT_PRIMARY};
+    border: none;
+    outline: none;
+    font-size: ${FONT_BODY};
+}
+QTreeWidget#projectTree::item {
+    padding: 3px 2px;
+    min-height: 22px;
+}
+QTreeWidget#projectTree::item:hover:!selected {
+    background-color: ${QSS_BG_MUTED};
+}
+QTreeWidget#projectTree::item:selected {
+    background-color: ${QSS_SELECTION_BG};
+    color: ${QSS_SELECTION_TEXT};
+}
+/* 折叠展开图标：极简小三角，hover 态增强 */
+QTreeWidget#projectTree::branch {
+    background-color: transparent;
 }
 
 /* ------------------------------------------------ 侧边栏 */

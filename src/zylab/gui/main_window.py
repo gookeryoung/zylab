@@ -100,6 +100,8 @@ class MainWindow(QMainWindow):
         # ---- 左侧 Dock：项目树 ----
         self._project_tree = QTreeWidget(objectName="projectTree")
         self._project_tree.setHeaderLabels(["项目浏览器"])
+        # 缩进量：Qt 默认 20px 过大，VS Code 风格紧凑树形取 12px
+        self._project_tree.setIndentation(12)
         self._build_default_project_tree()
         self._project_dock = QDockWidget("项目", self)
         self._project_dock.setObjectName("projectDock")
@@ -133,14 +135,23 @@ class MainWindow(QMainWindow):
 
     def _build_default_project_tree(self) -> None:
         """构建默认项目树根节点（工作区目录扫描 + 页面快捷入口）."""
+        from .icons import NAV_ICON_NAMES
+
+        pal = theme.current_palette()
+        # 图标尺寸：与 QTreeWidget 行高 22px 匹配，留 2px 间隙
+        self._project_tree.setIconSize(QSize(16, 16))
+
         root = QTreeWidgetItem(self._project_tree, ["当前工作区"])
         root.setData(0, Qt.UserRole, ("workspace", ""))
         root.setExpanded(True)
 
-        # 页面快捷入口
+        # 页面快捷入口（三种类型各有专属图标，区分视觉语义）
         for idx, label in enumerate(_NAV_LABELS):
-            item = QTreeWidgetItem(root, [f"📄 {label}"])
+            item = QTreeWidgetItem(root, [label])
             item.setData(0, Qt.UserRole, ("page", idx))
+            # NAV_ICON_NAMES 与 _NAV_LABELS 顺序一致：notebook / analysis / template
+            icon = nav_icon(NAV_ICON_NAMES[idx], pal.text_primary)
+            item.setIcon(0, icon)
 
     def _build_header(self) -> QFrame:
         """构建头部条：左侧标题 + 居中 MATLAB 风格工作区地址栏 + 右侧功能搜索框."""
@@ -228,6 +239,7 @@ class MainWindow(QMainWindow):
             apply_theme(QApplication.instance(), name)
         self._refresh_sidebar_icons()
         self._refresh_workspace_ui()
+        self._refresh_project_tree_icons()
         self._notebook_page.refresh_theme()
         self._flowchart_page.refresh_theme()
         self._template_page.refresh_theme()
@@ -240,6 +252,25 @@ class MainWindow(QMainWindow):
         pal = theme.current_palette()
         self._workspace_history_btn.setIcon(nav_icon("arrow_down", pal.nav_text))
         self._workspace_open_btn.setIcon(nav_icon("open_file", pal.nav_text))
+
+    def _refresh_project_tree_icons(self) -> None:
+        """按当前主题色重绘项目浏览器树节点图标（主题切换时联动）."""
+        from .icons import NAV_ICON_NAMES
+        from .qt_compat import Qt
+
+        pal = theme.current_palette()
+        root = self._project_tree.topLevelItem(0)
+        if root is None:
+            return
+        for idx in range(root.childCount()):
+            child = root.child(idx)
+            if child is None:
+                continue
+            data = child.data(0, Qt.UserRole)
+            if isinstance(data, tuple) and data[0] == "page":
+                page_idx = int(data[1])
+                if 0 <= page_idx < len(NAV_ICON_NAMES):
+                    child.setIcon(0, nav_icon(NAV_ICON_NAMES[page_idx], pal.text_primary))
 
     def _refresh_workspace_ui(self) -> None:
         """刷新头部和状态栏的工作区路径显示（只读 self._workspace_manager）."""
