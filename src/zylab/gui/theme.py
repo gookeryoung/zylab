@@ -276,8 +276,18 @@ def current_palette() -> Palette:
 
 
 def qss_tokens(pal: Palette) -> dict[str, str]:
-    """色板 + 非色令牌合成 QSS 占位符映射（``string.Template.substitute`` 入参）."""
-    tokens: dict[str, str] = {f"QSS_{key.upper()}": value for key, value in vars(pal).items()}
+    """色板 + 非色令牌合成 QSS 占位符映射（``string.Template.substitute`` 入参）.
+
+    颜色令牌额外生成 ``_NOHASH`` 变体（不带 ``#`` 前缀），专供 data URI
+    内嵌场景使用——data URI 中 ``#`` 会被 Qt 解析为 URL fragment 标识符，
+    导致 SVG 被截断；须用 ``%23${QSS_XXX_NOHASH}`` 代替 ``#${QSS_XXX}``。
+    """
+    tokens: dict[str, str] = {}
+    for key, value in vars(pal).items():
+        upper = f"QSS_{key.upper()}"
+        tokens[upper] = value
+        if isinstance(value, str) and value.startswith("#"):
+            tokens[f"{upper}_NOHASH"] = value[1:]
     tokens.update(
         {
             "FONT_FAMILY": FONT_FAMILY,

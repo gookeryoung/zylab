@@ -240,12 +240,13 @@ QTreeWidget#projectTree::branch {
     image-position: center;
 }
 /* 折叠状态（有子节点收起）：右向小三角 ▶ */
+/* 注意：fill 色值必须用 %23（# 的 URL 编码），否则 # 会被 Qt 解析为 fragment 截断 SVG */
 QTreeWidget#projectTree::branch:closed:has-children {
-    image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath fill='${QSS_TEXT_SECONDARY}' d='M5 4l6 4-6 4V4z'/%3E%3C/svg%3E");
+    image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath fill='%23${QSS_TEXT_SECONDARY_NOHASH}' d='M5 4l6 4-6 4V4z'/%3E%3C/svg%3E");
 }
 /* 展开状态（有子节点已展开）：下向小三角 ▼ */
 QTreeWidget#projectTree::branch:open:has-children {
-    image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath fill='${QSS_TEXT_SECONDARY}' d='M4 5l4 6 4-6H4z'/%3E%3C/svg%3E");
+    image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath fill='%23${QSS_TEXT_SECONDARY_NOHASH}' d='M4 5l4 6 4-6H4z'/%3E%3C/svg%3E");
 }
 /* 叶子节点（无子节点）：branch 区域透明空，不画任何 indicator */
 QTreeWidget#projectTree::branch:!has-children {
