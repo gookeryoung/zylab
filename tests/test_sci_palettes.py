@@ -95,7 +95,10 @@ def test_notebook_page_uses_shared_palette():
     import ast
     from pathlib import Path
 
-    src = Path(r"src/zylab/gui/pages/notebook_page.py").read_text(encoding="utf-8")
+    # 用 __file__ 锚定项目根目录，避免 pytest runner cwd 不同导致 FileNotFoundError
+    repo_root = Path(__file__).resolve().parent.parent
+    src_path = repo_root / "src" / "zylab" / "gui" / "pages" / "notebook_page.py"
+    src = src_path.read_text(encoding="utf-8")
     tree = ast.parse(src)
     names = {node.id for node in ast.walk(tree) if isinstance(node, ast.Name)}
     assert "_CURVE_KEYS" not in names, "notebook_page 不应再有本地 _CURVE_KEYS"
