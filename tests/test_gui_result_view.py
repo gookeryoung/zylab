@@ -471,6 +471,7 @@ def test_toolbar_single_row_compact(qtbot) -> None:
         view._mode_spin,
         view._view_combo,
         view._play_btn,
+        view._speed_spin,
         view._frame_slider,
         view._frame_label,
         view._cmap_combo,

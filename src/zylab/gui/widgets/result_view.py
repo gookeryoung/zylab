@@ -45,6 +45,7 @@ from ..qt_compat import (
     QApplication,
     QColor,
     QComboBox,
+    QDoubleSpinBox,
     QEvent,
     QFileDialog,
     QFontMetrics,
@@ -203,6 +204,9 @@ class ResultView(QWidget):
         self._frame_index = 0
         self._anim_mesh: Mesh | None = None
         self._anim_scale = 1.0
+        # 动画速度：基准间隔 120ms/帧，速度倍率动态换算 interval
+        self._BASE_INTERVAL = 120  # ms/帧，基准 1x
+        self._anim_speed = 1.0
         # 标量场动画状态（瞬态温度云图）：帧序列（场数组, 标签）
         self._scalar_frames: list[tuple[np.ndarray, str]] = []
         self._scalar_mesh: Mesh | None = None
@@ -243,6 +247,16 @@ class ResultView(QWidget):
         self._play_btn.clicked.connect(self._on_play_toggled)
         self._play_btn.setVisible(False)
         bar.addWidget(self._play_btn)
+        self._speed_spin = QDoubleSpinBox()
+        self._speed_spin.setRange(0.25, 4.0)
+        self._speed_spin.setSingleStep(0.25)
+        self._speed_spin.setDecimals(2)
+        self._speed_spin.setSuffix("x")
+        self._speed_spin.setValue(1.0)
+        self._speed_spin.setToolTip("动画播放速度倍率（0.25x ~ 4.0x）")
+        self._speed_spin.valueChanged.connect(self._on_speed_changed)
+        self._speed_spin.setVisible(False)
+        bar.addWidget(self._speed_spin)
         self._frame_slider = QSlider(Qt.Horizontal)
         self._frame_slider.valueChanged.connect(self._on_frame_slider)
         self._frame_slider.setVisible(False)
@@ -278,7 +292,7 @@ class ResultView(QWidget):
         self._export_png_btn.setVisible(False)
         bar.addWidget(self._export_png_btn)
         self._anim_timer = QTimer(self)
-        self._anim_timer.setInterval(120)  # ms/帧
+        self._anim_timer.setInterval(self._BASE_INTERVAL)
         self._anim_timer.timeout.connect(self._on_anim_tick)
         self._refresh_button_icons()
         layout.addWidget(self._toolbar)
@@ -462,6 +476,11 @@ class ResultView(QWidget):
         self._anim_mesh = None
         self._scalar_frames = []
         self._scalar_mesh = None
+        # 速度控件重置（保留步长/范围到默认）
+        self._anim_speed = 1.0
+        self._speed_spin.blockSignals(True)
+        self._speed_spin.setValue(1.0)
+        self._speed_spin.blockSignals(False)
         self._remove_data_tab()
         self._mode_spin.setVisible(False)
         self._view_combo.setVisible(False)
@@ -506,12 +525,13 @@ class ResultView(QWidget):
     def _project(self, coords: np.ndarray) -> tuple[np.ndarray, np.ndarray | None]:
         """坐标投影到屏幕平面（2D 直通；3D 等轴测投影并返回观察深度）.
 
-        3D 时切换交互模式（禁平移 + 标记可拖拽旋转），2D 时恢复。
+        3D 判定：坐标至少 3 列且 z 方向有实际变化（排除 z 全零的平面结构）。
+        3D 模式下仅通过 eventFilter 拦截左键拖拽做视角旋转，不禁用滚轮缩放
+        （pyqtgraph 的 setMouseEnabled 会连同 wheelEvent 一起禁用，导致用户无法缩放）。
         """
-        is3d = coords.shape[1] >= 3
+        is3d = coords.shape[1] >= 3 and float(np.ptp(coords[:, 2])) > 1e-10
         if is3d != self._is3d:
             self._is3d = is3d
-            self._plot.setMouseEnabled(x=not is3d, y=not is3d)
         if not is3d:
             return coords[:, :2], None
         xy, depth = project3d(coords[:, :3], self._azim, self._elev)
@@ -619,7 +639,7 @@ class ResultView(QWidget):
         self._frame_slider.setRange(0, len(frames) - 1)
         self._frame_slider.setValue(first_index)
         self._frame_slider.blockSignals(False)
-        for widget in (self._play_btn, self._frame_slider, self._frame_label):
+        for widget in (self._play_btn, self._frame_slider, self._frame_label, self._speed_spin):
             widget.setVisible(True)
         self._frame_index = first_index
         self._show_frame(first_index)
@@ -680,7 +700,7 @@ class ResultView(QWidget):
         self._frame_slider.setRange(0, len(self._scalar_frames) - 1)
         self._frame_slider.setValue(first_index)
         self._frame_slider.blockSignals(False)
-        for widget in (self._play_btn, self._frame_slider, self._frame_label):
+        for widget in (self._play_btn, self._frame_slider, self._frame_label, self._speed_spin):
             widget.setVisible(True)
         self._frame_index = first_index
         self._show_frame(first_index)
@@ -695,6 +715,7 @@ class ResultView(QWidget):
                 return
             self._frame_index = 0 if self._frame_index >= self._active_frame_count() - 1 else self._frame_index
             self._show_frame(self._frame_index)
+            self._anim_timer.setInterval(max(15, round(self._BASE_INTERVAL / self._anim_speed)))
             self._anim_timer.start()
             self._set_play_icon(True)
 
@@ -721,8 +742,14 @@ class ResultView(QWidget):
         """停止播放并隐藏动画控件."""
         self._anim_timer.stop()
         self._set_play_icon(False)
-        for widget in (self._play_btn, self._frame_slider, self._frame_label):
+        for widget in (self._play_btn, self._frame_slider, self._frame_label, self._speed_spin):
             widget.setVisible(False)
+
+    def _on_speed_changed(self, value: float) -> None:
+        """速度倍率变化：更新状态并在播放中实时调整 timer 间隔."""
+        self._anim_speed = float(value)
+        if self._anim_timer.isActive():
+            self._anim_timer.setInterval(max(15, round(self._BASE_INTERVAL / self._anim_speed)))
 
     def _render_modal(self, solution: ModalSolution) -> None:
         """填充频率表并渲染首阶振型云图."""
