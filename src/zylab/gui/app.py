@@ -58,6 +58,10 @@ _ARROW_DOWN_PATH = "M0 0 L10 0 L5 6 Z"
 #: close 按钮 SVG 模板（从 assets/icons/close.svg 读取后注入主题色）
 _CLOSE_SVG_PATH = Path(__file__).resolve().parent.parent / "assets" / "icons" / "close.svg"
 
+#: 项目树 branch indicator（展开/收起 chevron 图标）
+_CHEVRON_RIGHT_SVG = Path(__file__).resolve().parent.parent / "assets" / "icons" / "chevron_right.svg"
+_CHEVRON_DOWN_SVG = Path(__file__).resolve().parent.parent / "assets" / "icons" / "chevron_down.svg"
+
 
 def _write_theme_svgs(pal: theme.Palette) -> dict[str, str]:
     """按主题色生成箭头 + close 按钮 SVG 到临时缓存目录，返回 QSS 令牌映射.
@@ -95,6 +99,20 @@ def _write_theme_svgs(pal: theme.Palette) -> dict[str, str]:
         close_hover.write_text(close_template.replace("<svg ", f'<svg fill="{pal.danger_text}" ', 1), encoding="utf-8")
         tokens["QSS_CLOSE_ICON_HOVER"] = close_hover.as_posix()
         stale.extend(p for p in cache.glob(f"close-hover-{os.getpid()}-*.svg") if p != close_hover)
+
+    # --- 项目树 branch indicator（chevron-right 折叠态 / chevron-down 展开态） ---
+    chevron_color = pal.text_secondary
+    svg_path_map = (
+        ("chevron-right", _CHEVRON_RIGHT_SVG, "QSS_CHEVRON_RIGHT"),
+        ("chevron-down", _CHEVRON_DOWN_SVG, "QSS_CHEVRON_DOWN"),
+    )
+    for fname, src, token_key in svg_path_map:
+        if src.exists():
+            template = src.read_text(encoding="utf-8")
+            target = cache / f"{fname}-{tag}.svg"
+            target.write_text(template.replace("<svg ", f'<svg fill="{chevron_color}" ', 1), encoding="utf-8")
+            tokens[token_key] = target.as_posix()
+            stale.extend(p for p in cache.glob(f"{fname}-{os.getpid()}-*.svg") if p != target)
 
     # 清理本进程旧主题残留（失败无害，忽略）
     for path in stale:
