@@ -204,7 +204,15 @@ QFrame#summaryDivider {
 }
 
 /* ------------------------------------------------ 项目浏览器（左侧 Dock 树形） */
-/* 缩进量：代码层 setIndentation(12) + QSS padding 配合；VS Code 风格紧凑树形 */
+/*
+ * 层级标识体系：
+ *   - branch indicator（折叠/展开箭头）：data URI 内联 SVG，fill 色由
+ *     string.Template 注入当前主题 QSS_TEXT_SECONDARY；主题切换自动换色。
+ *   - 缩进量：代码层 setIndentation(12) + QSS height: 22px 配合；
+ *     VS Code 风格紧凑树形，不画连接线（纯缩进 + 箭头 + item icon 表达层级）。
+ *   - item 行高 22px，icon 16px + padding 6px 留白，与 branch 同高对齐。
+ *   - 叶子节点（!has-children）branch 区域透明，不画任何 indicator。
+ */
 QTreeWidget#projectTree {
     background-color: ${QSS_BG_APP};
     color: ${QSS_TEXT_PRIMARY};
@@ -223,8 +231,25 @@ QTreeWidget#projectTree::item:selected {
     background-color: ${QSS_SELECTION_BG};
     color: ${QSS_SELECTION_TEXT};
 }
-/* 折叠展开图标：极简小三角，hover 态增强 */
+
+/* branch 容器：固定 22px 高（与 item 行高一致） */
 QTreeWidget#projectTree::branch {
+    background-color: transparent;
+    height: 22px;
+    width: 12px;
+    image-position: center;
+}
+/* 折叠状态（有子节点收起）：右向小三角 ▶ */
+QTreeWidget#projectTree::branch:closed:has-children {
+    image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath fill='${QSS_TEXT_SECONDARY}' d='M5 4l6 4-6 4V4z'/%3E%3C/svg%3E");
+}
+/* 展开状态（有子节点已展开）：下向小三角 ▼ */
+QTreeWidget#projectTree::branch:open:has-children {
+    image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath fill='${QSS_TEXT_SECONDARY}' d='M4 5l4 6 4-6H4z'/%3E%3C/svg%3E");
+}
+/* 叶子节点（无子节点）：branch 区域透明空，不画任何 indicator */
+QTreeWidget#projectTree::branch:!has-children {
+    image: none;
     background-color: transparent;
 }
 
@@ -455,6 +480,18 @@ QTabWidget#resultTabs > QTabBar::tab:selected {
 }
 QTabWidget#resultTabs > QTabBar::tab:hover:!selected {
     background-color: ${QSS_SELECTION_BG};
+}
+/* resultTabs 关闭按钮：简洁 X 图标，普通态低调、hover 危险色提示关闭动作 */
+QTabWidget#resultTabs > QTabBar::close-button {
+    image: url(${QSS_CLOSE_ICON});
+    subcontrol-position: right;
+    padding: 0;
+    margin: 0 2px 0 2px;
+    width: 12px;
+    height: 12px;
+}
+QTabWidget#resultTabs > QTabBar::close-button:hover {
+    image: url(${QSS_CLOSE_ICON_HOVER});
 }
 
 /* ------------------------------------------------ 按钮 */

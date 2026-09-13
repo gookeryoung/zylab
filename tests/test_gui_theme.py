@@ -150,23 +150,28 @@ class TestQssTokens:
 
     @pytest.mark.parametrize("pal", ALL_THEMES, ids=lambda p: p.name)
     def test_arrow_svg_tokens_resolved(self, pal: theme.Palette) -> None:
-        """箭头 SVG 资源路径应注入 QSS 且文件存在、颜色随主题."""
+        """箭头 + close 按钮 SVG 资源路径应注入 QSS 且文件存在、颜色随主题."""
         qss = load_stylesheet(pal)
         urls = re.findall(r"image: url\(([^)]+\.svg)\)", qss)
-        assert len(urls) == 3  # 通用下拉 + spinbox 上下（主题下拉箭头已随命令面板移除）
+        # 2 箭头（arrow-up/down，arrow-down 被 QComboBox + QSpinBox 各引用一次）
+        # + 2 close 按钮（normal + hover）
+        assert len(urls) == 5
         for url in urls:
             assert Path(url).exists()
-        # 生成的 SVG 含当前主题次级文字色
-        content = Path(urls[0]).read_text(encoding="utf-8")
+        # 生成的 SVG 含当前主题次级文字色（取第一个 arrow 文件验证）
+        unique_arrow_down = next(u for u in urls if "arrow-down" in u)
+        content = Path(unique_arrow_down).read_text(encoding="utf-8")
         assert pal.text_secondary.lstrip("#").lower() in content.lower()
 
     def test_arrow_svg_isolated_per_process_and_theme(self) -> None:
         """箭头文件名须含进程号+主题名（xdist 并行写同一文件曾致半截 SVG）."""
-        from zylab.gui.app import _write_arrow_svgs
+        from zylab.gui.app import _write_theme_svgs
 
-        light = _write_arrow_svgs(theme.LIGHT)
-        dark = _write_arrow_svgs(theme.DARK)
+        light = _write_theme_svgs(theme.LIGHT)
+        dark = _write_theme_svgs(theme.DARK)
         assert light["QSS_ARROW_DOWN"] != dark["QSS_ARROW_DOWN"]
+        # close 图标令牌也须随主题切换
+        assert light.get("QSS_CLOSE_ICON") != dark.get("QSS_CLOSE_ICON")
         # 切换主题后旧主题文件被清理（同进程），新主题文件存在
         assert not Path(light["QSS_ARROW_DOWN"]).exists()
         assert Path(dark["QSS_ARROW_DOWN"]).exists()

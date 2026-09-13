@@ -55,26 +55,49 @@ _ARROW_SVG = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 10 6"><path d
 _ARROW_UP_PATH = "M0 6 L5 0 L10 6 Z"
 _ARROW_DOWN_PATH = "M0 0 L10 0 L5 6 Z"
 
+#: close 按钮 SVG 模板（从 assets/icons/close.svg 读取后注入主题色）
+_CLOSE_SVG_PATH = Path(__file__).resolve().parent.parent / "assets" / "icons" / "close.svg"
 
-def _write_arrow_svgs(pal: theme.Palette) -> dict[str, str]:
-    """按主题色生成上/下箭头 SVG 到临时缓存目录，返回 QSS 令牌映射.
+
+def _write_theme_svgs(pal: theme.Palette) -> dict[str, str]:
+    """按主题色生成箭头 + close 按钮 SVG 到临时缓存目录，返回 QSS 令牌映射.
 
     文件名含进程号 + 主题名：xdist 并行测试/多进程场景下各进程
     写各自文件，避免并发重写同一文件导致读到半截 SVG（Qt 解析
-    失败即箭头不渲染）。同进程切换主题后清理本进程旧主题文件。
+    失败即图标不渲染）。同进程切换主题后清理本进程旧主题文件。
     """
     cache = Path(tempfile.gettempdir()) / "zylab-icons"
     cache.mkdir(parents=True, exist_ok=True)
-    color = pal.text_secondary
     tag = f"{os.getpid()}-{pal.name}"
     stale: list[Path] = []
     tokens: dict[str, str] = {}
+
+    # --- 箭头（QComboBox/DoubleSpinBox 下拉指示器） ---
+    arrow_color = pal.text_secondary
     for name, path_data in (("arrow-up", _ARROW_UP_PATH), ("arrow-down", _ARROW_DOWN_PATH)):
         target = cache / f"{name}-{tag}.svg"
-        target.write_text(_ARROW_SVG.format(path=path_data, color=color), encoding="utf-8")
+        target.write_text(_ARROW_SVG.format(path=path_data, color=arrow_color), encoding="utf-8")
         tokens[f"QSS_{name.upper().replace('-', '_')}"] = target.as_posix()
         stale.extend(p for p in cache.glob(f"{name}-{os.getpid()}-*.svg") if p != target)
-    for path in stale:  # 清理本进程旧主题残留（失败无害，忽略）
+
+    # --- close 按钮（QTabBar 关闭标签） ---
+    if _CLOSE_SVG_PATH.exists():
+        close_template = _CLOSE_SVG_PATH.read_text(encoding="utf-8")
+        # 普通态：次要文字色（低调不抢眼）
+        close_normal = cache / f"close-normal-{tag}.svg"
+        close_normal.write_text(
+            close_template.replace("<svg ", f'<svg fill="{pal.text_secondary}" ', 1), encoding="utf-8"
+        )
+        tokens["QSS_CLOSE_ICON"] = close_normal.as_posix()
+        stale.extend(p for p in cache.glob(f"close-normal-{os.getpid()}-*.svg") if p != close_normal)
+        # hover 态：危险色（关闭动作用危险色提示，符合预期）
+        close_hover = cache / f"close-hover-{tag}.svg"
+        close_hover.write_text(close_template.replace("<svg ", f'<svg fill="{pal.danger_text}" ', 1), encoding="utf-8")
+        tokens["QSS_CLOSE_ICON_HOVER"] = close_hover.as_posix()
+        stale.extend(p for p in cache.glob(f"close-hover-{os.getpid()}-*.svg") if p != close_hover)
+
+    # 清理本进程旧主题残留（失败无害，忽略）
+    for path in stale:
         with contextlib.suppress(OSError):
             path.unlink()
     return tokens
@@ -84,7 +107,7 @@ def load_stylesheet(palette: theme.Palette | None = None) -> str:
     """加载 QSS 并替换当前主题的设计令牌占位符（含箭头 SVG 资源路径）."""
     pal = palette if palette is not None else theme.current_palette()
     qss_path = Path(__file__).parent / "style.qss"
-    tokens = {**theme.qss_tokens(pal), **_write_arrow_svgs(pal)}
+    tokens = {**theme.qss_tokens(pal), **_write_theme_svgs(pal)}
     return Template(qss_path.read_text(encoding="utf-8")).substitute(tokens)
 
 

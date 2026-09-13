@@ -99,9 +99,16 @@ class MainWindow(QMainWindow):
 
         # ---- 左侧 Dock：项目树 ----
         self._project_tree = QTreeWidget(objectName="projectTree")
-        self._project_tree.setHeaderLabels(["项目浏览器"])
+        # 表头：项目浏览器不需要显式表头，item 左对齐顶满
+        self._project_tree.setHeaderHidden(True)
         # 缩进量：Qt 默认 20px 过大，VS Code 风格紧凑树形取 12px
         self._project_tree.setIndentation(12)
+        # 层级装饰：branch indicator 由 QSS 自定义（右/下三角）
+        self._project_tree.setRootIsDecorated(True)
+        # 统一行高：渲染加速，配合 QSS min-height: 22px
+        self._project_tree.setUniformRowHeights(True)
+        # 展开/折叠：禁用动画，快速切换（大量节点时性能友好）
+        self._project_tree.setAnimated(False)
         self._build_default_project_tree()
         self._project_dock = QDockWidget("项目", self)
         self._project_dock.setObjectName("projectDock")
