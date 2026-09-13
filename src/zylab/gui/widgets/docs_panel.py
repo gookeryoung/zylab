@@ -173,9 +173,8 @@ class DocsPanel(QWidget):
 
         # 文本：markdown 渲染（plain 文本经转换亦安全）
         if text:
-            palette = theme.current_palette()
             self._text_browser.setHtml(markdown_to_html(text))
-            self._text_browser.setStyleSheet(f"border: none; background: transparent; color: {palette.text_primary};")
+            # 背景/边框/颜色全由 QTextBrowser#docsText（fragments 40_domain.qss）驱动，无需内联样式
             self._text_browser.setVisible(True)
         else:
             self._text_browser.clear()
@@ -199,11 +198,12 @@ class DocsPanel(QWidget):
         self._sync_sizes()
 
     def refresh_theme(self) -> None:
-        """主题切换后重刷图标着色与正文配色."""
+        """主题切换后重刷图标着色；QSS 自动处理背景/边框/颜色."""
         self._header._refresh_icon()
         if self._text_browser.isVisible():
-            palette = theme.current_palette()
-            self._text_browser.setStyleSheet(f"border: none; background: transparent; color: {palette.text_primary};")
+            # 让 QSS 重新求值（fragments 40_domain.qss 的 QTextBrowser#docsText）
+            self._text_browser.style().unpolish(self._text_browser)
+            self._text_browser.style().polish(self._text_browser)
 
     # ------------------------------------------------------------------ 内部
 

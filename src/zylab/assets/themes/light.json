@@ -27,5 +27,9 @@
   "success_text": "#1B7A3A",
   "warning_text": "#8C5E00",
   "danger_text": "#C0392B",
-  "error_text": "#C0392B"
+  "error_text": "#C0392B",
+  "info_bar": "#3B82F6",
+  "success_bar": "#10B981",
+  "warning_bar": "#F59E0B",
+  "danger_bar": "#EF4444"
 }

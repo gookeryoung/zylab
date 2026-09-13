@@ -412,8 +412,8 @@ class CellWidget(QFrame):
         label.setFont(mono_font())
         label.setTextFormat(Qt.RichText)
         label.setWordWrap(True)
-        label.setText(f'<pre style="margin:0">{html.escape(out.text.rstrip())}</pre>')
-        label.setStyleSheet(f"color: {color}; padding: 4px 0;")
+        # 颜色在 HTML <pre> 内联，padding 交给 QSS QLabel#cellStream
+        label.setText(f'<pre style="margin:0; color: {color}">{html.escape(out.text.rstrip())}</pre>')
         self._output_layout.addWidget(label)
 
     def _add_result(self, out: ResultOutput) -> None:
@@ -429,7 +429,6 @@ class CellWidget(QFrame):
             f'<pre style="margin:0; color: {pal.success_text}">{html.escape(out.repr_text)}</pre>'
             f'<span style="color: {pal.text_secondary}; font-size: 11px">{html.escape(summary)}</span>'
         )
-        label.setStyleSheet("padding: 4px 0;")
         self._output_layout.addWidget(label)
 
     def _add_error(self, out: ErrorOutput) -> None:
@@ -443,7 +442,6 @@ class CellWidget(QFrame):
             f'<pre style="margin:0; color: {pal.danger_text}">'
             f"<b>{html.escape(out.ename)}</b>\n{html.escape(out.traceback_text.rstrip())}</pre>"
         )
-        label.setStyleSheet("padding: 4px 0;")
         self._output_layout.addWidget(label)
 
     def _add_plot(self, out: PlotOutput) -> None:

@@ -128,6 +128,10 @@ class Palette:
     warning_text: str
     danger_text: str
     error_text: str
+    info_bar: str
+    success_bar: str
+    warning_bar: str
+    danger_bar: str
 
 
 # ---------------------------------------------------------------------------

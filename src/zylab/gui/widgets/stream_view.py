@@ -48,14 +48,6 @@ _STREAM_CURVE_HEIGHT = 300
 #: 分组页内表格块高度上限（px，超出内部滚动）.
 _STREAM_TABLE_MAX_HEIGHT = 320
 
-#: 语义色到 QSS 属性选择器颜色的映射（与 style.qss resultCell[semantic="*"] 规则配套）.
-_SEMANTIC_BAR_COLORS: dict[str, str] = {
-    "info": "#3B82F6",
-    "success": "#10B981",
-    "warning": "#F59E0B",
-    "danger": "#EF4444",
-}
-
 #: 结果类型 → (图标文件基名, 中文显示文本) 映射.
 _KIND_BADGES: dict[str, tuple[str, str]] = {
     "text": ("result_text", "文本"),
@@ -93,16 +85,14 @@ def _kind_badge(payload: ViewData | str) -> tuple[str, str]:
 def _build_text_body(data: TextData) -> QWidget:
     """文本正文：markdown 用 QTextBrowser.setHtml，plain 用 QLabel.
 
-    样式全由 style.qss 的 resultPlainText / resultMarkdownBody 规则控制，
-    零内联 padding。
+    样式全由 QSS QTextBrowser#resultMarkdownBody（fragments 40_domain.qss）控制，零内联样式。
     """
     if data.format == "markdown":
         html_out = markdown_to_html(data.text)
         browser = QTextBrowser(objectName="resultMarkdownBody")
         browser.setHtml(html_out)
         browser.setOpenExternalLinks(False)
-        palette = theme.current_palette()
-        browser.setStyleSheet(f"border: none; background: transparent; color: {palette.text_primary};")
+        # 背景/边框/颜色全由 QTextBrowser#resultMarkdownBody 驱动，无需内联样式
         browser.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
         return browser
 

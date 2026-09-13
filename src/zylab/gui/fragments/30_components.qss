@@ -1,0 +1,327 @@
+/* 30_components —— 组件级：头部、侧边栏、项目树、结果页签、工作区条.
+ * 容器层之后，业务层之前。*/
+
+/* ======================================================== 头部条 */
+QFrame#headerBar {
+    background-color: ${QSS_NAV_BG};
+    border-bottom: 1px solid ${QSS_NAV_ACCENT};
+    min-height: 32px;
+    max-height: 32px;
+}
+QLabel#headerTitle {
+    color: ${QSS_NAV_ACCENT};
+    font-size: ${FONT_HEADING};
+    font-weight: bold;
+    letter-spacing: 1px;
+}
+/* 分组容器：与环境版本胶囊同高 */
+QFrame#headerGroup {
+    background-color: ${QSS_NAV_BG_HOVER};
+    border: 1px solid ${QSS_NAV_ACCENT};
+    border-radius: ${RADIUS_SM};
+    min-height: 28px;
+}
+QLabel#headerTag {
+    color: ${QSS_NAV_ACCENT};
+    font-size: ${FONT_CAPTION};
+    font-weight: bold;
+}
+QLabel#headerMeta {
+    color: ${QSS_NAV_TEXT};
+    font-size: ${FONT_CAPTION};
+}
+QLabel#headerVersion {
+    color: ${QSS_NAV_ACCENT};
+    font-size: ${FONT_CAPTION};
+    font-weight: bold;
+}
+QLabel#headerSeparator {
+    background-color: ${QSS_NAV_ACCENT};
+    border: none;
+    min-height: 28px;
+}
+
+/* ======================================================== 头部：工作区地址栏胶囊 */
+QFrame#workspaceBar {
+    background-color: ${QSS_NAV_BG_HOVER};
+    border: 1px solid ${QSS_NAV_ACCENT};
+    border-radius: 10px;
+    min-height: 24px;
+    max-height: 24px;
+}
+QFrame#workspaceBar:hover { border-color: ${QSS_NAV_ACCENT}; }
+QLabel#workspaceTag {
+    color: ${QSS_NAV_ACCENT};
+    font-size: ${FONT_CAPTION};
+    font-weight: bold;
+    background: transparent;
+    border: none;
+    padding: 0;
+}
+QLabel#workspaceSeparator {
+    background-color: ${QSS_NAV_ACCENT};
+    border: none;
+    max-width: 1px;
+    min-height: 12px;
+    max-height: 12px;
+    margin: 0 2px;
+}
+QLabel#workspaceLabel {
+    color: ${QSS_NAV_TEXT};
+    font-family: ${FONT_MONO};
+    font-size: ${FONT_BODY};
+    background: transparent;
+    border: none;
+    padding: 0;
+}
+QToolButton#workspaceHistoryBtn,
+QPushButton#workspaceOpenBtn {
+    background: transparent;
+    color: ${QSS_NAV_TEXT};
+    border: 1px solid transparent;
+    border-radius: ${RADIUS_SM};
+    padding: 0;
+    min-height: 0px;
+    max-height: 22px;
+    min-width: 0px;
+    max-width: 22px;
+}
+QToolButton#workspaceHistoryBtn:hover,
+QPushButton#workspaceOpenBtn:hover {
+    background-color: ${QSS_NAV_BG_SELECTED};
+    border-color: ${QSS_NAV_ACCENT};
+    color: ${QSS_NAV_ACCENT};
+}
+QToolButton#workspaceHistoryBtn:pressed,
+QPushButton#workspaceOpenBtn:pressed {
+    background-color: ${QSS_SELECTION_BG};
+}
+QToolButton#workspaceHistoryBtn::menu-indicator {
+    width: 0;
+    height: 0;
+}
+/* 头部帮助按钮（与 workspaceOpenBtn 同规格） */
+QPushButton#headerHelpBtn {
+    background: transparent;
+    color: ${QSS_NAV_TEXT};
+    border: 1px solid transparent;
+    border-radius: ${RADIUS_SM};
+    padding: 0;
+    min-height: 0px;
+    max-height: 22px;
+    min-width: 0px;
+    max-width: 22px;
+}
+QPushButton#headerHelpBtn:hover {
+    background-color: ${QSS_NAV_BG_SELECTED};
+    border-color: ${QSS_NAV_ACCENT};
+    color: ${QSS_NAV_ACCENT};
+}
+QPushButton#headerHelpBtn:pressed {
+    background-color: ${QSS_SELECTION_BG};
+}
+
+/* ======================================================== 头部：命令搜索框 */
+QLineEdit#commandSearch {
+    background-color: ${QSS_NAV_BG_HOVER};
+    color: ${QSS_NAV_TEXT};
+    border: 1px solid transparent;
+    border-radius: 10px;
+    padding: 2px 10px;
+    min-height: 0;
+}
+QLineEdit#commandSearch:hover { border-color: ${QSS_NAV_ACCENT}; }
+QLineEdit#commandSearch:focus {
+    border-color: ${QSS_NAV_ACCENT};
+    background-color: ${QSS_BG_APP};
+}
+
+/* ======================================================== 侧边栏 */
+QWidget#sidebarContainer {
+    background-color: ${QSS_NAV_BG};
+}
+QListWidget#sidebar {
+    background-color: ${QSS_NAV_BG};
+    color: ${QSS_NAV_TEXT};
+    border: none;
+    font-size: ${FONT_BODY};
+    outline: none;
+    padding: 8px 0;
+}
+QListWidget#sidebar::item {
+    height: 36px;
+    padding-left: 13px;
+    border-left: 3px solid transparent;
+    color: ${QSS_NAV_TEXT};
+}
+QListWidget#sidebar::item:selected {
+    background-color: ${QSS_NAV_BG_SELECTED};
+    border-left: 3px solid ${QSS_NAV_ACCENT};
+    color: ${QSS_NAV_TEXT};
+}
+QListWidget#sidebar::item:hover { background-color: ${QSS_NAV_BG_HOVER}; }
+
+/* 侧边栏折叠手柄 */
+QPushButton#sidebarHandle {
+    background: transparent;
+    color: ${QSS_NAV_TEXT};
+    border: none;
+    border-left: 3px solid transparent;
+    border-radius: 0;
+    padding: 0;
+    min-height: 36px;
+    max-height: 36px;
+    text-align: center;
+}
+QPushButton#sidebarHandle:hover {
+    background-color: ${QSS_NAV_BG_HOVER};
+    color: ${QSS_NAV_ACCENT};
+    border-left: 3px solid ${QSS_NAV_ACCENT};
+}
+QPushButton#sidebarHandle:pressed {
+    background-color: ${QSS_NAV_BG_SELECTED};
+}
+
+/* ======================================================== 项目浏览器（左侧 Dock 树形） */
+QTreeWidget#projectTree {
+    background-color: ${QSS_BG_APP};
+    color: ${QSS_TEXT_PRIMARY};
+    border: none;
+    outline: none;
+    font-size: ${FONT_BODY};
+}
+QTreeWidget#projectTree::item {
+    padding: 3px 2px;
+    min-height: 22px;
+}
+QTreeWidget#projectTree::item:hover:!selected {
+    background-color: ${QSS_BG_MUTED};
+}
+QTreeWidget#projectTree::item:selected {
+    background-color: ${QSS_SELECTION_BG};
+    color: ${QSS_SELECTION_TEXT};
+}
+/* branch 容器 */
+QTreeWidget#projectTree::branch {
+    background-color: transparent;
+    height: 22px;
+    width: 12px;
+    image-position: center;
+}
+QTreeWidget#projectTree::branch:closed:has-children {
+    image: url(${QSS_CHEVRON_RIGHT});
+}
+QTreeWidget#projectTree::branch:open:has-children {
+    image: url(${QSS_CHEVRON_DOWN});
+}
+QTreeWidget#projectTree::branch:!has-children {
+    image: none;
+    background-color: transparent;
+}
+
+/* ======================================================== 结果页多 TAB（分析页，Workbench 风格） */
+QTabWidget#resultTabs::pane {
+    border: 1px solid ${QSS_BORDER};
+    border-radius: ${RADIUS_SM};
+    top: -1px;
+    background-color: ${QSS_BG_APP};
+}
+QTabWidget#resultTabs > QTabBar::tab {
+    background-color: ${QSS_BG_MUTED};
+    color: ${QSS_TEXT_SECONDARY};
+    padding: 3px 12px;
+    margin-right: 2px;
+    border-top-left-radius: ${RADIUS_SM};
+    border-top-right-radius: ${RADIUS_SM};
+    border: 1px solid ${QSS_BORDER};
+    border-bottom: none;
+}
+QTabWidget#resultTabs > QTabBar::tab:selected {
+    background-color: ${QSS_BG_APP};
+    color: ${QSS_PRIMARY};
+    border-bottom: 2px solid ${QSS_PRIMARY};
+}
+QTabWidget#resultTabs > QTabBar::tab:hover:!selected {
+    background-color: ${QSS_SELECTION_BG};
+}
+QTabWidget#resultTabs > QTabBar::close-button {
+    image: url(${QSS_CLOSE_ICON});
+    subcontrol-position: right;
+    padding: 0;
+    margin: 0 2px 0 2px;
+    width: 12px;
+    height: 12px;
+}
+QTabWidget#resultTabs > QTabBar::close-button:hover {
+    image: url(${QSS_CLOSE_ICON_HOVER});
+}
+
+/* 结果视图绘图区子页签（云图/数据，South 位） */
+QTabWidget#resultSubTabs::pane {
+    border: 1px solid ${QSS_BORDER};
+    border-radius: ${RADIUS_SM};
+    background-color: ${QSS_BG_APP};
+}
+QTabWidget#resultSubTabs > QTabBar::tab {
+    background-color: ${QSS_BG_MUTED};
+    color: ${QSS_TEXT_SECONDARY};
+    padding: 2px 12px;
+    margin-right: 2px;
+    border-bottom-left-radius: ${RADIUS_SM};
+    border-bottom-right-radius: ${RADIUS_SM};
+    border: 1px solid ${QSS_BORDER};
+    border-top: none;
+}
+QTabWidget#resultSubTabs > QTabBar::tab:selected {
+    background-color: ${QSS_BG_APP};
+    color: ${QSS_PRIMARY};
+    border-top: 2px solid ${QSS_PRIMARY};
+}
+QTabWidget#resultSubTabs > QTabBar::tab:hover:!selected {
+    background-color: ${QSS_SELECTION_BG};
+}
+
+/* ======================================================== 流程图顶部/底部工具栏 */
+QFrame#toolBar {
+    background-color: ${QSS_BG_APP};
+    border: none;
+    border-bottom: 1px solid ${QSS_BORDER};
+}
+QFrame#bottomBar {
+    background-color: ${QSS_BG_APP};
+    border: none;
+    border-top: 1px solid ${QSS_BORDER};
+}
+QFrame#runBar {
+    background-color: ${QSS_BG_APP};
+    border: none;
+    border-top: 1px solid ${QSS_BORDER};
+}
+
+/* ======================================================== 侧栏 */
+QFrame#sidePanel {
+    background-color: ${QSS_BG_APP};
+    border: none;
+}
+QTabWidget#sideTabs::pane {
+    border: none;
+    top: -1px;
+    background-color: ${QSS_BG_APP};
+}
+QTabWidget#sideTabs > QTabBar::tab {
+    background-color: transparent;
+    color: ${QSS_TEXT_SECONDARY};
+    padding: 6px 16px;
+    border: none;
+    border-bottom: 2px solid transparent;
+    font-size: ${FONT_BODY};
+    min-height: 28px;
+}
+QTabWidget#sideTabs > QTabBar::tab:selected {
+    color: ${QSS_PRIMARY};
+    border-bottom: 2px solid ${QSS_PRIMARY};
+    font-weight: bold;
+}
+QTabWidget#sideTabs > QTabBar::tab:hover:!selected {
+    color: ${QSS_TEXT_PRIMARY};
+}

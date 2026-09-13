@@ -1,0 +1,66 @@
+/* 01_base —— 全局基础、字体、滚动条、选区、工具提示.
+ * 放在最前，所有后续 fragment 都能覆盖。令牌来自 theme.Palette
+ * （QSS_ 前缀）+ 非色令牌（FONT/RADIUS/CONTROL 系列）。*/
+
+/* ---- 全局字体与基础色 ---- */
+QWidget {
+    color: ${QSS_TEXT_PRIMARY};
+    font-family: ${FONT_FAMILY};
+    font-size: ${FONT_BODY};
+}
+QMainWindow, QDialog { background-color: ${QSS_BG_APP}; }
+
+/* ---- 滚动区背景链（viewport + 内容 widget 统一 bg_app）---- */
+QScrollArea { background: transparent; border: none; }
+QScrollArea > QWidget { background-color: ${QSS_BG_APP}; }
+QScrollArea > QWidget > QWidget { background-color: ${QSS_BG_APP}; }
+
+/* ---- QLabel 语义化变体 ---- */
+QLabel:disabled { color: ${QSS_TEXT_DISABLED}; }
+QLabel#secondaryText {
+    color: ${QSS_TEXT_SECONDARY};
+    font-size: ${FONT_CAPTION};
+}
+QLabel#errorText { color: ${QSS_ERROR_TEXT}; }
+QLabel#resultText { color: ${QSS_TEXT_SECONDARY}; }
+QLabel#pageTitle {
+    font-size: ${FONT_TITLE};
+    font-weight: bold;
+    color: ${QSS_TEXT_PRIMARY};
+}
+
+/* ---- 全局文本选区（编辑框/REPL/表格内选中文字）---- */
+QLineEdit, QPlainTextEdit, QTextEdit, QComboBox, QSpinBox, QDoubleSpinBox,
+QTreeView, QTableView, QListView, QTextBrowser {
+    selection-background-color: ${QSS_SELECTION_BG};
+    selection-color: ${QSS_SELECTION_TEXT};
+}
+
+/* ---- 滚动条（垂直+水平）---- */
+QScrollBar:vertical { background: transparent; width: 10px; margin: 0; }
+QScrollBar::handle:vertical {
+    background: ${QSS_SCROLLBAR};
+    border-radius: 5px;
+    min-height: 32px;
+}
+QScrollBar::handle:vertical:hover { background: ${QSS_SCROLLBAR_HOVER}; }
+QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical { height: 0; }
+
+QScrollBar:horizontal { background: transparent; height: 10px; margin: 0; }
+QScrollBar::handle:horizontal {
+    background: ${QSS_SCROLLBAR};
+    border-radius: 5px;
+    min-width: 32px;
+}
+QScrollBar::handle:horizontal:hover { background: ${QSS_SCROLLBAR_HOVER}; }
+QScrollBar::add-line:horizontal, QScrollBar::sub-line:horizontal { width: 0; }
+
+QScrollBar::add-page, QScrollBar::sub-page { background: transparent; }
+
+/* ---- 工具提示 ---- */
+QToolTip {
+    background-color: ${QSS_BG_MUTED};
+    color: ${QSS_TEXT_PRIMARY};
+    border: 1px solid ${QSS_BORDER_STRONG};
+    padding: 4px 8px;
+}

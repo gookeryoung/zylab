@@ -153,7 +153,7 @@ def _build_block(title: str, payload: ViewData | str) -> QGroupBox:  # pragma: n
         body = build_curve_widget(payload)
         body.setFixedHeight(_GROUPED_CURVE_HEIGHT)
     elif isinstance(payload, TableData):
-        body = build_table_widget(payload, include_zebra=True, include_theme_style=True)
+        body = build_table_widget(payload, include_zebra=True)
         body.setMaximumHeight(_GROUPED_TABLE_MAX_HEIGHT)
     elif isinstance(payload, TextData):
         body = build_text_widget(payload)

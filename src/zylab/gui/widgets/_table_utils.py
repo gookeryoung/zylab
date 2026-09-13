@@ -13,7 +13,6 @@ from typing import Any
 
 from zylab.flowchart.results import TableColumn, TableData
 
-from .. import theme
 from ..qt_compat import QHeaderView, Qt, QTableWidget, QTableWidgetItem
 
 __all__ = [
@@ -56,14 +55,12 @@ def build_table_widget(
     data: TableData,
     *,
     include_zebra: bool = False,
-    include_theme_style: bool = False,
 ) -> QTableWidget:
     """按 TableData 构建只读 QTableWidget.
 
     Args:
         data: DSL 声明的表格视图数据。
         include_zebra: 偶数行背景透明（由 QSS 斑马纹规则渲染，需配合 QSS）。
-        include_theme_style: 注入内联样式覆盖 gridline-color 与表头背景色。
 
     Returns:
         构建好的 QTableWidget（objectName="dslTable"，可编辑已禁用，列宽均分）。
@@ -87,10 +84,5 @@ def build_table_widget(
                 item.setBackground(Qt.GlobalColor.transparent)  # QSS zebra 处理
             table.setItem(row, column, item)
 
-    if include_theme_style:
-        palette = theme.current_palette()
-        table.setStyleSheet(
-            f"QTableWidget#dslTable {{ gridline-color: {palette.border}; }}"
-            f"QHeaderView::section {{ background: {palette.bg_muted}; }}"
-        )
+    # gridline-color + header 背景全由 QTableWidget#dslTable（fragments 20_containers.qss）驱动
     return table

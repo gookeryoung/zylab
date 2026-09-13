@@ -1,4 +1,10 @@
-"""zylab GUI 应用装配（QApplication 工厂、主题加载、样式加载、入口）."""
+"""zylab GUI 应用装配（QApplication 工厂、主题加载、样式加载、入口）.
+
+三层样式架构：
+- QPalette 层：:func:`style.build_qpalette` 让 Qt 原生控件系统绘制跟随主题
+- QSS Fragment 层：:func:`style.load_stylesheet` 加载 fragments/*.qss 聚合令牌
+- QProxyStyle 层：:class:`proxy_style.ProxyStyle` 包装 Fusion，polish 时同步 QPalette
+"""
 
 from __future__ import annotations
 
@@ -8,9 +14,10 @@ import os
 import sys
 import tempfile
 from pathlib import Path
-from string import Template
 
 from ..core import set_root_level, update_runtime_config
+from . import proxy_style as _proxy_style_module
+from . import style as _style_layer
 from . import theme
 from .qt_compat import QApplication, QFontDatabase, QLibraryInfo, QLocale, QTranslator, exec_app
 
@@ -124,15 +131,40 @@ def _write_theme_svgs(pal: theme.Palette) -> dict[str, str]:
 
 
 def load_stylesheet(palette: theme.Palette | None = None) -> str:
-    """加载 QSS 并替换当前主题的设计令牌占位符（含箭头 SVG 资源路径）."""
+    """加载 QSS 并替换当前主题的设计令牌占位符（含箭头 SVG 资源路径）.
+
+    底层委托 :func:`style.load_stylesheet`（QSS Fragment 聚合 + 令牌替换），
+    本函数只负责生成 SVG 令牌并传入。这样拆分后 Fragment 层与 SVG 生成
+    解耦，测试时可直接调 ``style.load_stylesheet(svg_tokens={})`` 跳过
+    临时文件写入。
+    """
     pal = palette if palette is not None else theme.current_palette()
-    qss_path = Path(__file__).parent / "style.qss"
-    tokens = {**theme.qss_tokens(pal), **_write_theme_svgs(pal)}
-    return Template(qss_path.read_text(encoding="utf-8")).substitute(tokens)
+    svg_tokens = _write_theme_svgs(pal)
+    return _style_layer.load_stylesheet(pal, svg_tokens=svg_tokens)
+
+
+def _ensure_proxy_style(app: QApplication) -> None:
+    """确保 QProxyStyle 已安装到 QApplication.
+
+    create_app 在首次创建时安装；主题切换重复调用无害（安装同一个
+    ProxyStyle 实例时 Qt 内部会先卸载旧的再装新的，不累积）。
+    """
+    from .proxy_style import ProxyStyle
+
+    current = app.style()
+    # 已安装 ProxyStyle 则跳过（避免每次切主题都重新创建 style 对象）
+    if isinstance(current, ProxyStyle):
+        return
+    app.setStyle(ProxyStyle(current))
 
 
 def apply_theme(app: QApplication, name: str) -> theme.Palette:
-    """运行时切换主题：更新当前色板并重刷全局样式表.
+    """运行时切换主题：更新色板 + QPalette + QSS.
+
+    三层同步：
+    1. theme.set_current_theme — 模块级当前色板
+    2. app.setPalette — Qt QPalette ColorRole 全部从新色板映射
+    3. app.setStyleSheet — QSS Fragment + ${TOKEN} 重渲染
 
     Args:
         app: QApplication 实例。
@@ -146,12 +178,21 @@ def apply_theme(app: QApplication, name: str) -> theme.Palette:
     """
     pal = theme.palette(name)  # 未知名先抛错，不动当前状态
     theme.set_current_theme(name)
+
+    # Layer 1: QPalette 同步
+    app.setPalette(_style_layer.build_qpalette(pal))
+
+    # Layer 3: 确保 ProxyStyle 已安装（polish 钩子会把新 QPalette 同步到全部控件）
+    _ensure_proxy_style(app)
+
+    # Layer 2: QSS Fragment 重渲染
     app.setStyleSheet(load_stylesheet(pal))
+
     logger.debug("主题已切换: %s", name)
     return pal
 
 
-def apply_settings(  # noqa: PLR0913  签名显式枚举全部运行时字段，调用方（SettingsPanel 保存后）一次传齐
+def apply_settings(  # noqa: PLR0913  签名显式枚举全部运行时字段
     app: QApplication,
     *,
     theme_name: str | None = None,
@@ -208,8 +249,13 @@ def apply_settings(  # noqa: PLR0913  签名显式枚举全部运行时字段，
         except ValueError as exc:
             logger.warning("日志级别设置失败（已忽略）: %s", exc)
 
-    # 4. 统一重刷样式表（主题 + 字体 + 字号令牌都从当前模块级状态取值）
-    app.setStyleSheet(load_stylesheet())
+    # 4. 确保 ProxyStyle + QPalette 同步（即使主题未变，字体/字号变了也可能需要 polish）
+    pal = theme.current_palette()
+    app.setPalette(_style_layer.build_qpalette(pal))
+    _ensure_proxy_style(app)
+
+    # 5. 统一重刷样式表（主题 + 字体 + 字号令牌都从当前模块级状态取值）
+    app.setStyleSheet(load_stylesheet(pal))
     logger.debug(
         "设置已应用: theme=%s log=%s workers=%s",
         theme_name or "unchanged",
@@ -219,7 +265,12 @@ def apply_settings(  # noqa: PLR0913  签名显式枚举全部运行时字段，
 
 
 def create_app(argv: list[str] | None = None, theme_name: str = theme.DEFAULT_THEME) -> QApplication:
-    """创建 QApplication（Fusion 风格 + 指定主题样式表 + Qt 标准对话框本地化）.
+    """创建 QApplication（Fusion + ProxyStyle + 指定主题 + Qt 标准对话框本地化）.
+
+    三层样式在此首次装配：
+    - setStyle("Fusion") → 基础原生风格
+    - ProxyStyle(Fusion) → polish 钩子 + pixelMetric 覆盖
+    - apply_theme → QPalette + QSS 令牌渲染 + SVG 注入
 
     加载系统 locale 对应的 Qt 翻译文件（如 ``qtbase_zh_CN.qm``），
     使 QMessageBox/QFileDialog/QInputDialog 等标准对话框的按钮文字
@@ -227,7 +278,10 @@ def create_app(argv: list[str] | None = None, theme_name: str = theme.DEFAULT_TH
     """
     existing = QApplication.instance()
     app = existing if isinstance(existing, QApplication) else QApplication(argv if argv is not None else sys.argv)
+    # 1. Fusion 基础风格
     app.setStyle("Fusion")
+    # 2. 包装 ProxyStyle（后续 apply_theme 会再次确保已安装）
+    app.setStyle(_proxy_style_module.ProxyStyle(app.style()))
     _load_qt_translations(app)
     register_fonts()
     apply_theme(app, theme_name)

@@ -1,0 +1,178 @@
+/* 10_controls —— 控件级：按钮、输入、菜单、勾选框、进度条.
+ * 放在基础层之后，容器层之前。所有样式由主题令牌（QSS_COLOR、FONT_* 等）驱动，无硬编码色值。*/
+
+/* ======================================================== 按钮 */
+QPushButton {
+    background-color: ${QSS_PRIMARY};
+    color: ${QSS_PRIMARY_TEXT};
+    border: none;
+    border-radius: ${RADIUS_SM};
+    padding: 6px 16px;
+    min-height: ${CONTROL_HEIGHT};
+    font-weight: bold;
+}
+QPushButton:hover { background-color: ${QSS_PRIMARY_HOVER}; }
+QPushButton:pressed { background-color: ${QSS_PRIMARY_PRESSED}; }
+QPushButton:focus { border: 1px solid ${QSS_BORDER_STRONG}; }
+QPushButton:disabled {
+    background-color: ${QSS_BG_MUTED};
+    color: ${QSS_TEXT_DISABLED};
+}
+/* 危险按钮 */
+QPushButton#dangerBtn { background-color: ${QSS_DANGER_TEXT}; }
+QPushButton#dangerBtn:hover { background-color: ${QSS_DANGER_TEXT}; }
+/* 平面次要按钮 */
+QPushButton#flatBtn {
+    background: transparent;
+    color: ${QSS_PRIMARY};
+    border: 1px solid ${QSS_BORDER};
+    font-weight: normal;
+}
+QPushButton#flatBtn:hover {
+    background-color: ${QSS_BG_MUTED};
+    border-color: ${QSS_BORDER_STRONG};
+    color: ${QSS_PRIMARY};
+}
+QPushButton#flatBtn:disabled { color: ${QSS_TEXT_DISABLED}; }
+/* 工具行紧凑按钮 */
+QPushButton#toolBtn {
+    padding: 4px 10px;
+    min-height: 0;
+}
+/* 图标按钮（纯图标 + tooltip） */
+QPushButton#iconBtn {
+    background: transparent;
+    color: ${QSS_TEXT_SECONDARY};
+    border: 1px solid transparent;
+    border-radius: ${RADIUS_SM};
+    padding: 3px;
+    min-height: 0;
+    min-width: 24px;
+}
+QPushButton#iconBtn:hover {
+    background-color: ${QSS_BG_MUTED};
+    border-color: ${QSS_BORDER};
+    color: ${QSS_TEXT_PRIMARY};
+}
+
+/* ======================================================== 文本输入 */
+QLineEdit, QTextEdit, QPlainTextEdit {
+    background-color: ${QSS_BG_INPUT};
+    color: ${QSS_TEXT_PRIMARY};
+    border: 1px solid ${QSS_BORDER};
+    border-radius: ${RADIUS_SM};
+    padding: 4px 8px;
+    min-height: ${CONTROL_HEIGHT_SM};
+}
+QLineEdit:focus, QTextEdit:focus, QPlainTextEdit:focus { border: 1px solid ${QSS_BORDER_STRONG}; }
+QLineEdit:disabled, QTextEdit:disabled, QPlainTextEdit:disabled {
+    background-color: ${QSS_BG_MUTED};
+    color: ${QSS_TEXT_DISABLED};
+}
+QLineEdit[error="true"] { border: 1px solid ${QSS_DANGER_TEXT}; }
+
+/* ======================================================== 下拉框 */
+QComboBox {
+    background-color: ${QSS_BG_INPUT};
+    color: ${QSS_TEXT_PRIMARY};
+    border: 1px solid ${QSS_BORDER};
+    border-radius: ${RADIUS_SM};
+    padding: 4px 28px 4px 8px;
+    min-height: ${CONTROL_HEIGHT_SM};
+}
+QComboBox:hover { border-color: ${QSS_BORDER_STRONG}; }
+QComboBox:focus { border: 1px solid ${QSS_BORDER_STRONG}; }
+QComboBox:disabled {
+    background-color: ${QSS_BG_MUTED};
+    color: ${QSS_TEXT_DISABLED};
+}
+QComboBox::drop-down { border: none; width: 22px; }
+QComboBox::down-arrow {
+    image: url(${QSS_ARROW_DOWN});
+    width: 10px;
+    height: 6px;
+}
+QComboBox QAbstractItemView {
+    background-color: ${QSS_BG_APP};
+    color: ${QSS_TEXT_PRIMARY};
+    border: 1px solid ${QSS_BORDER};
+    selection-background-color: ${QSS_SELECTION_BG};
+    selection-color: ${QSS_SELECTION_TEXT};
+}
+
+/* ======================================================== 微调框 */
+QSpinBox, QDoubleSpinBox {
+    background-color: ${QSS_BG_INPUT};
+    color: ${QSS_TEXT_PRIMARY};
+    border: 1px solid ${QSS_BORDER};
+    border-radius: ${RADIUS_SM};
+    padding: 4px 8px;
+    min-height: ${CONTROL_HEIGHT_SM};
+}
+QSpinBox:focus, QDoubleSpinBox:focus { border: 1px solid ${QSS_BORDER_STRONG}; }
+QSpinBox:disabled, QDoubleSpinBox:disabled {
+    background-color: ${QSS_BG_MUTED};
+    color: ${QSS_TEXT_DISABLED};
+}
+QSpinBox::up-button, QDoubleSpinBox::up-button {
+    subcontrol-origin: border;
+    subcontrol-position: top right;
+    border-left: 1px solid ${QSS_BORDER};
+    border-top: 1px solid transparent;
+    border-right: 1px solid transparent;
+    width: 18px;
+}
+QSpinBox::down-button, QDoubleSpinBox::down-button {
+    subcontrol-origin: border;
+    subcontrol-position: bottom right;
+    border-left: 1px solid ${QSS_BORDER};
+    border-bottom: 1px solid transparent;
+    border-right: 1px solid transparent;
+    width: 18px;
+}
+QSpinBox::up-arrow, QDoubleSpinBox::up-arrow {
+    image: url(${QSS_ARROW_UP});
+    width: 10px;
+    height: 6px;
+}
+QSpinBox::down-arrow, QDoubleSpinBox::down-arrow {
+    image: url(${QSS_ARROW_DOWN});
+    width: 10px;
+    height: 6px;
+}
+
+/* ======================================================== 勾选框 */
+QCheckBox, QRadioButton { color: ${QSS_TEXT_PRIMARY}; spacing: 6px; }
+QCheckBox:disabled, QRadioButton:disabled { color: ${QSS_TEXT_DISABLED}; }
+
+/* ======================================================== 进度条 */
+QProgressBar {
+    background-color: ${QSS_BG_MUTED};
+    color: ${QSS_TEXT_PRIMARY};
+    border: 1px solid ${QSS_BORDER};
+    border-radius: ${RADIUS_SM};
+    text-align: center;
+    min-height: 16px;
+    max-height: 16px;
+}
+QProgressBar::chunk {
+    background-color: ${QSS_PRIMARY};
+    border-radius: ${RADIUS_SM};
+}
+
+/* ======================================================== 菜单 */
+QMenuBar { background-color: ${QSS_BG_APP}; color: ${QSS_TEXT_PRIMARY}; }
+QMenuBar::item:selected { background-color: ${QSS_SELECTION_BG}; }
+QMenu {
+    background-color: ${QSS_BG_APP};
+    color: ${QSS_TEXT_PRIMARY};
+    border: 1px solid ${QSS_BORDER};
+    border-radius: ${RADIUS_SM};
+    padding: 4px;
+}
+QMenu::item { padding: 5px 24px; border-radius: ${RADIUS_SM}; }
+QMenu::item:selected {
+    background-color: ${QSS_SELECTION_BG};
+    color: ${QSS_SELECTION_TEXT};
+}
+QMenu::separator { height: 1px; background-color: ${QSS_BORDER}; margin: 4px 8px; }

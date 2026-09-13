@@ -1,0 +1,262 @@
+/* 40_domain —— 业务级：notebook/result/docs/template/about/summary/命令面板.
+ * 最后加载，可以覆盖所有上层规则。*/
+
+/* ======================================================== 命令面板弹层 */
+QDialog#commandPalette {
+    background-color: ${QSS_BG_APP};
+    border: 1px solid ${QSS_BORDER_STRONG};
+    border-radius: ${RADIUS_MD};
+}
+QLineEdit#paletteSearch {
+    background-color: ${QSS_BG_INPUT};
+    color: ${QSS_TEXT_PRIMARY};
+    border: 1px solid ${QSS_BORDER_STRONG};
+    border-radius: ${RADIUS_SM};
+    padding: 6px 10px;
+}
+QListWidget#paletteList {
+    background-color: transparent;
+    border: none;
+    outline: none;
+}
+QListWidget#paletteList::item {
+    border-radius: ${RADIUS_SM};
+    margin: 2px 6px;
+}
+QListWidget#paletteList::item:selected {
+    background-color: ${QSS_SELECTION_BG};
+}
+QLabel#paletteTitle { color: ${QSS_TEXT_PRIMARY}; }
+QLabel#paletteHint { color: ${QSS_TEXT_SECONDARY}; }
+QLabel#paletteTitle, QLabel#paletteHint { min-height: 20px; }
+
+/* ======================================================== 笔记本页（Jupyter 式单元流） */
+QFrame#notebookCell {
+    background-color: transparent;
+    border: 1px solid transparent;
+    border-left: 3px solid transparent;
+    border-radius: ${RADIUS_SM};
+}
+QFrame#notebookCell:hover {
+    background-color: ${QSS_BG_MUTED};
+}
+QFrame#notebookCell[selected="true"] {
+    background-color: ${QSS_BG_MUTED};
+    border: 1px solid ${QSS_BORDER_STRONG};
+    border-left: 3px solid ${QSS_PRIMARY};
+}
+QLabel#cellCount {
+    background-color: ${QSS_BG_MUTED};
+    color: ${QSS_TEXT_SECONDARY};
+    font-family: ${FONT_MONO};
+    font-size: ${FONT_CAPTION};
+    border-radius: ${RADIUS_SM};
+    padding: 2px 4px;
+}
+QLabel#cellCount[executed="true"] {
+    background-color: ${QSS_SELECTION_BG};
+    color: ${QSS_PRIMARY};
+}
+QFrame#notebookCell[selected="true"] QLabel#cellCount {
+    background-color: ${QSS_SELECTION_BG};
+    color: ${QSS_PRIMARY};
+}
+QPlainTextEdit#cellEditor {
+    font-family: ${FONT_MONO};
+    background-color: ${QSS_BG_INPUT};
+    border: 1px solid ${QSS_BORDER};
+    border-radius: ${RADIUS_SM};
+    padding: 8px 10px;
+    selection-background-color: ${QSS_SELECTION_BG};
+}
+QPlainTextEdit#cellEditor:focus {
+    background-color: ${QSS_BG_APP};
+    border-color: ${QSS_BORDER_STRONG};
+}
+QWidget#cellToolbar { background: transparent; }
+QPushButton#cellToolButton {
+    background-color: ${QSS_BG_MUTED};
+    color: ${QSS_TEXT_SECONDARY};
+    border: 1px solid ${QSS_BORDER};
+    border-radius: ${RADIUS_SM};
+    padding: 0;
+}
+QPushButton#cellToolButton:hover {
+    background-color: ${QSS_SELECTION_BG};
+    color: ${QSS_TEXT_PRIMARY};
+    border-color: ${QSS_PRIMARY};
+}
+QPushButton#cellToolButton:pressed {
+    background-color: ${QSS_NAV_BG_SELECTED};
+    color: ${QSS_NAV_TEXT};
+}
+QLabel#notebookStatus {
+    color: ${QSS_TEXT_SECONDARY};
+    font-size: ${FONT_CAPTION};
+}
+QPushButton#notebookVarToggle {
+    padding: 4px 10px;
+    min-height: 0;
+    min-width: 30px;
+}
+QPushButton#notebookVarToggle:checked {
+    background-color: ${QSS_PRIMARY_PRESSED};
+    border: 1px solid ${QSS_NAV_ACCENT};
+}
+
+/* 笔记本输出流标签（替代内联 setStyleSheet） */
+QLabel#cellStream { padding: 4px 0; }
+QLabel#cellResult { padding: 4px 0; }
+QLabel#cellError { padding: 4px 0; }
+
+/* ======================================================== 结果分块卡片 */
+QFrame#resultCell {
+    background-color: transparent;
+    border: 1px solid transparent;
+    border-left: 3px solid transparent;
+    border-radius: ${RADIUS_SM};
+}
+QFrame#resultCell:hover {
+    background-color: ${QSS_BG_MUTED};
+}
+/* 语义色左边框（全部改用主题令牌，消除硬编码 hex） */
+QFrame#resultCell[semantic="default"]  { border-left: 3px solid ${QSS_PRIMARY}; }
+QFrame#resultCell[semantic="info"]     { border-left: 3px solid ${QSS_INFO_BAR}; }
+QFrame#resultCell[semantic="success"]  { border-left: 3px solid ${QSS_SUCCESS_BAR}; }
+QFrame#resultCell[semantic="warning"]  { border-left: 3px solid ${QSS_WARNING_BAR}; }
+QFrame#resultCell[semantic="danger"]   { border-left: 3px solid ${QSS_DANGER_BAR}; }
+
+QFrame#resultCellHeader { background-color: transparent; }
+QLabel#resultKindBadge {
+    background-color: ${QSS_BG_MUTED};
+    color: ${QSS_TEXT_SECONDARY};
+    border: 1px solid ${QSS_BORDER};
+    border-radius: 10px;
+    padding: 1px 8px;
+    font-size: ${FONT_CAPTION};
+}
+QLabel#resultCellCaret {
+    color: ${QSS_TEXT_SECONDARY};
+    font-size: ${FONT_BODY};
+}
+QLabel#streamRunHeader { padding: 4px 16px; }
+
+/* 结果 markdown 正文（QTextBrowser，替代内联 setStyleSheet） */
+QTextBrowser#resultMarkdownBody {
+    border: none;
+    background: transparent;
+    color: ${QSS_TEXT_PRIMARY};
+}
+QLabel#resultText { /* 已在 01_base.qss 定义，这里不重复 */ }
+
+/* ======================================================== 模板选择对话框 */
+QTreeWidget#templateTree {
+    background-color: ${QSS_BG_APP};
+    border: 1px solid ${QSS_BORDER};
+    border-radius: ${RADIUS_SM};
+    outline: none;
+}
+QTreeWidget#templateTree::item {
+    height: 26px;
+    padding-left: 4px;
+}
+QTreeWidget#templateTree::item:selected {
+    background-color: ${QSS_SELECTION_BG};
+    color: ${QSS_TEXT_PRIMARY};
+}
+QTreeWidget#templateTree::item:hover:!selected {
+    background-color: ${QSS_BG_MUTED};
+}
+QTreeWidget#templateTree::branch {
+    background-color: transparent;
+}
+
+/* ======================================================== 说明卡（docsCard） */
+QFrame#docsCard {
+    background-color: transparent;
+    border: 1px solid transparent;
+    border-left: 3px solid ${QSS_PRIMARY};
+    border-radius: ${RADIUS_SM};
+}
+QFrame#docsCard:hover {
+    background-color: ${QSS_BG_MUTED};
+}
+QFrame#docsHeader {
+    background-color: transparent;
+    border: none;
+    border-radius: ${RADIUS_SM};
+}
+QLabel#docsTitle {
+    color: ${QSS_PRIMARY};
+    font-size: ${FONT_BODY};
+    font-weight: bold;
+}
+QLabel#docsImage {
+    background-color: ${QSS_BG_MUTED};
+    border: 1px solid ${QSS_BORDER};
+    border-radius: ${RADIUS_MD};
+    padding: 6px;
+}
+/* docsCard 正文 QTextBrowser（替代内联 setStyleSheet） */
+QTextBrowser#docsText {
+    border: none;
+    background: transparent;
+    color: ${QSS_TEXT_PRIMARY};
+}
+
+/* ======================================================== 关于页面 */
+QScrollArea#aboutScroll {
+    background-color: ${QSS_BG_APP};
+    border: none;
+}
+QWidget#aboutContainer {
+    background-color: ${QSS_BG_APP};
+}
+QFrame#aboutBrand {
+    background-color: ${QSS_PRIMARY};
+    border: none;
+    border-radius: ${RADIUS_MD};
+}
+QLabel#aboutAppName {
+    color: ${QSS_PRIMARY_TEXT};
+    font-size: 28px;
+    font-weight: bold;
+    letter-spacing: 2px;
+}
+QLabel#aboutAppDesc {
+    color: ${QSS_PRIMARY_TEXT};
+    font-size: ${FONT_BODY};
+}
+QFrame#aboutCard {
+    background-color: ${QSS_BG_MUTED};
+    border: 1px solid ${QSS_BORDER};
+    border-radius: ${RADIUS_MD};
+}
+QLabel#aboutCardTitle {
+    color: ${QSS_TEXT_PRIMARY};
+    font-size: ${FONT_HEADING};
+    font-weight: bold;
+}
+QLabel#aboutBody {
+    color: ${QSS_TEXT_SECONDARY};
+    font-size: ${FONT_BODY};
+}
+QLabel#aboutInfoTitle {
+    color: ${QSS_TEXT_SECONDARY};
+    font-size: ${FONT_CAPTION};
+}
+QLabel#aboutInfoValue {
+    color: ${QSS_TEXT_PRIMARY};
+    font-family: ${FONT_MONO};
+    font-size: ${FONT_BODY};
+    font-weight: bold;
+}
+
+/* ======================================================== 变量详情摘要网格 */
+QLabel#summaryKey { color: ${QSS_TEXT_SECONDARY}; }
+QLabel#summaryValue { color: ${QSS_TEXT_PRIMARY}; }
+QFrame#summaryDivider {
+    border: none;
+    border-top: 1px solid ${QSS_BORDER};
+    max-height: 1px;
+}

@@ -1,0 +1,103 @@
+/* 20_containers —— 容器级：分组框、Tab、状态栏、QSplitter、表格.
+ * 控件级之后，组件级之前。*/
+
+/* ======================================================== 分组框 */
+QGroupBox {
+    background-color: ${QSS_BG_MUTED};
+    border: 1px solid ${QSS_BORDER};
+    border-radius: ${RADIUS_MD};
+    margin-top: 6px;
+    padding: 2px 6px 6px 6px;
+    color: ${QSS_TEXT_PRIMARY};
+}
+QGroupBox::title {
+    subcontrol-origin: margin;
+    subcontrol-position: top left;
+    left: 6px;
+    padding: 0 4px;
+    color: ${QSS_TEXT_PRIMARY};
+    font-weight: bold;
+}
+
+/* ======================================================== 通用 TabWidget/TabBar */
+QTabWidget::pane {
+    border: 1px solid ${QSS_BORDER};
+    border-radius: ${RADIUS_MD};
+    background-color: ${QSS_BG_APP};
+}
+QTabBar::tab {
+    padding: 6px 16px;
+    color: ${QSS_TEXT_SECONDARY};
+    border: none;
+    border-bottom: 2px solid transparent;
+    background: transparent;
+}
+QTabBar::tab:selected {
+    color: ${QSS_TEXT_PRIMARY};
+    border-bottom: 2px solid ${QSS_PRIMARY};
+    font-weight: bold;
+}
+QTabBar::tab:hover { color: ${QSS_TEXT_PRIMARY}; }
+
+/* ======================================================== 状态栏 */
+QStatusBar {
+    background-color: ${QSS_BG_MUTED};
+    color: ${QSS_TEXT_SECONDARY};
+    font-size: ${FONT_CAPTION};
+    min-height: 24px;
+    max-height: 24px;
+}
+QStatusBar::item { border: none; }
+QLabel#statusCwdLabel {
+    background: transparent;
+    color: ${QSS_TEXT_SECONDARY};
+    font-family: ${FONT_MONO};
+    font-size: ${FONT_CAPTION};
+    padding: 0 12px;
+}
+
+/* 运行状态指示器（状态栏右侧，动态属性控制颜色） */
+QLabel#runStatusText { color: ${QSS_TEXT_SECONDARY}; }
+QLabel#runStatusText[state="idle"]    { color: ${QSS_TEXT_SECONDARY}; }
+QLabel#runStatusText[state="running"] { color: ${QSS_PRIMARY}; }
+QLabel#runStatusText[state="success"] { color: ${QSS_SUCCESS_TEXT}; }
+QLabel#runStatusText[state="error"]   { color: ${QSS_DANGER_TEXT}; }
+
+/* ======================================================== 分割器 */
+QSplitter::handle { background-color: ${QSS_BG_MUTED}; }
+QSplitter::handle:hover { background-color: ${QSS_BORDER}; }
+QSplitter::handle:horizontal { width: 1px; }
+QSplitter::handle:vertical { height: 1px; }
+
+/* ======================================================== 表格/列表通用 */
+QTableView, QTreeView, QListView, QListView#varBrowser {
+    background-color: ${QSS_BG_APP};
+    color: ${QSS_TEXT_PRIMARY};
+    border: 1px solid ${QSS_BORDER};
+    border-radius: ${RADIUS_MD};
+    gridline-color: ${QSS_BORDER};
+    alternate-background-color: ${QSS_BG_MUTED};
+}
+QTableView::item, QTreeView::item, QListView::item { padding: 3px; }
+QHeaderView {
+    background-color: ${QSS_BG_MUTED};
+    border: none;
+    border-bottom: 1px solid ${QSS_BORDER};
+}
+QHeaderView::section {
+    background-color: ${QSS_BG_MUTED};
+    color: ${QSS_TEXT_PRIMARY};
+    border: none;
+    border-right: 1px solid ${QSS_BORDER};
+    padding: 5px 8px;
+    font-size: ${FONT_CAPTION};
+    font-weight: bold;
+}
+
+/* DSL 构建的结果表格（objectName="dslTable"） */
+QTableWidget#dslTable {
+    gridline-color: ${QSS_BORDER};
+}
+QTableWidget#dslTable QHeaderView::section {
+    background: ${QSS_BG_MUTED};
+}

@@ -370,16 +370,15 @@ class MainWindow(QMainWindow):
         self.statusBar().addPermanentWidget(self._status_cwd_label, 1)
         # 状态栏永久 widget：运行状态 indicator（右对齐，icon + 颜色 + 文字）
         # PySide2 QLabel 无 setIcon，用 pixmap + text 两个 QLabel 组合
-        pal = theme.current_palette()
         self._run_indicator_widget = QWidget(objectName="runStatusIndicator")
         indicator_layout = QHBoxLayout(self._run_indicator_widget)
         indicator_layout.setContentsMargins(12, 0, 12, 0)
         indicator_layout.setSpacing(4)
         self._indicator_icon = QLabel()
         self._indicator_icon.setFixedSize(16, 16)
-        self._indicator_text = QLabel("就绪")
+        self._indicator_text = QLabel("就绪", objectName="runStatusText")
         self._indicator_text.setAlignment(Qt.AlignCenter)
-        self._indicator_text.setStyleSheet(f"color: {pal.text_secondary};")
+        self._indicator_text.setProperty("state", "idle")
         self._run_indicator_widget.setToolTip("运行状态（流程图/参数化计算运行完成后在此统一显示）")
         indicator_layout.addWidget(self._indicator_icon)
         indicator_layout.addWidget(self._indicator_text)
@@ -714,7 +713,11 @@ class MainWindow(QMainWindow):
         # PySide2 QLabel 无 setIcon，用 tinted_pixmap 渲染为 QPixmap 再 setPixmap
         self._indicator_icon.setPixmap(tinted_pixmap(icon_name, color, 16))
         self._indicator_text.setText(label)
-        self._indicator_text.setStyleSheet(f"color: {color};")
+        # 动态属性切换：QSS QLabel#runStatusText[state="xxx"] 选择器匹配后自动换色
+        self._indicator_text.setProperty("state", state)
+        # 触发 QSS 重新求值（Qt 不保证 setProperty 后自动重绘，显式 polish 确保状态切换即时生效）
+        self._indicator_text.style().unpolish(self._indicator_text)
+        self._indicator_text.style().polish(self._indicator_text)
         if detail and state == "error":
             self._run_indicator_widget.setToolTip(f"运行失败：{detail[:200]}")
         elif detail:
