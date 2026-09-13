@@ -28,6 +28,8 @@ __all__ = [
     "PlotRequest",
     "apply_matplotlib_defaults",
     "make_plot_function",
+    "plot_band",
+    "plot_reg",
 ]
 
 logger = logging.getLogger(__name__)
@@ -54,10 +56,36 @@ _CN_FONT_CANDIDATES: list[str] = [
     "Source Han Sans SC",
 ]
 
+#: seaborn set_theme 的 rc 覆盖项（统一的 whitegrid 视觉规范）.
+#:
+#: 包含网格样式（虚线 + alpha）、去除上右边框、字号层级、图例外观。
+#: 这些项放进 set_theme 的 rc 参数而非 plt.rcParams.update，
+#: 避免 set_theme 在后续步骤里再次重置。
+_SEABORN_THEME_RC: dict[str, Any] = {
+    # --- 网格 ---
+    "axes.grid": True,
+    "grid.linestyle": "--",
+    "grid.alpha": 0.35,
+    # --- 边框（whitegrid 标志性：去上右边框） ---
+    "axes.spines.top": False,
+    "axes.spines.right": False,
+    "axes.linewidth": 0.8,
+    # --- 字号（context=notebook 默认 12pt，细化层级） ---
+    "axes.titlesize": 13,
+    "axes.labelsize": 12,
+    "xtick.labelsize": 10,
+    "ytick.labelsize": 10,
+    "legend.fontsize": 11,
+    # --- 图例（半透明白底 + 细边框） ---
+    "legend.frameon": True,
+    "legend.framealpha": 0.85,
+    "legend.edgecolor": "#DDDDDD",
+}
+
 #: seaborn set_theme 之后叠加的精简 rcParams（zylab 特有保障项）.
 #:
-#: seaborn whitegrid 已接管 grid / font / axes.linewidth，
-#: 这里仅保留 zylab 必须覆盖的项：线条粗细、DPI、负号显示、图例.
+#: seaborn whitegrid + _SEABORN_THEME_RC 已接管 grid / font / legend / spines，
+#: 这里仅保留 zylab 必须覆盖的项：线条粗细、DPI、负号显示（set_theme 会重置）.
 _MPL_RC_OVERRIDES: dict[str, Any] = {
     # --- 线条 ---
     "lines.linewidth": 2.0,
@@ -65,12 +93,8 @@ _MPL_RC_OVERRIDES: dict[str, Any] = {
     # --- DPI ---
     "figure.dpi": 120,
     "savefig.dpi": 150,
-    # --- 图例 ---
-    "legend.fontsize": "medium",
-    "legend.frameon": True,
-    "legend.framealpha": 0.85,
-    # --- 负号 ---
-    "axes.unicode_minus": False,  # 关键：set_theme 会重置为 True
+    # --- 负号（关键：set_theme 会重置为 True，必须在其后再次覆盖） ---
+    "axes.unicode_minus": False,
 }
 
 
@@ -108,8 +132,9 @@ def apply_matplotlib_defaults(ns: dict[str, Any] | None = None) -> frozenset[str
         context="notebook",
         palette=list(CURVE_PALETTE),
         color_codes=False,  # 保持 matplotlib 单字母色码经典行为
+        rc=_SEABORN_THEME_RC,  # 统一的 whitegrid 视觉规范：网格/边框/字号/图例
     )
-    # --- 2. 叠加 zylab 保障项（含 unicode_minus） ---
+    # --- 2. 叠加 zylab 保障项（含 unicode_minus + 线条/DPI，set_theme 会重置这些） ---
     plt.rcParams.update(_MPL_RC_OVERRIDES)
     # --- 3. 中文字体（最后合并，set_theme 会重写 font.sans-serif） ---
     available: set[str] = {f.name for f in font_manager.fontManager.ttflist}
@@ -129,6 +154,108 @@ def apply_matplotlib_defaults(ns: dict[str, Any] | None = None) -> frozenset[str
         ns["cn_font_candidates"] = list(_CN_FONT_CANDIDATES)
         ns["curve_palette"] = list(CURVE_PALETTE)
     return frozenset(available)
+
+
+def plot_band(  # noqa: PLR0913  # 用户 API：参数多为方便一次性调整
+    ys: Any,
+    x: Any | None = None,
+    *,
+    label: str = "",
+    color: str | None = None,
+    ci: str = "sd",
+    ax: Any | None = None,
+) -> tuple[Any, Any, Any]:
+    """多组 y 值的均值曲线 ± 置信带（seaborn lineplot 风格）.
+
+    工程仿真中多次试验/扰动分析的常用快捷函数：传入形状 ``(n_trials, n_points)``
+    的二维数组或等长列表列表，自动计算均值 + 标准差（或 95% 置信区间）带。
+
+    :param ys: 多组纵轴数据，形状 ``(n_trials, n_points)``。一维数组视为单组
+        退化为普通折线（等同 ``plt.plot``）。
+    :param x: 横轴数据，长度须等于 ``ys`` 的列数（或单组时长度）。缺省取
+        ``0..n_points-1``。
+    :param label: 图例名（空字符串不画图例标签）。
+    :param color: 显式曲线颜色（hex 或语义色名），缺省按 CURVE_PALETTE 循环。
+    :param ci: 置信带类型，``"sd"``（均值 ± 标准差，默认）或 ``"95"``
+        （均值 ± 95% t 分布置信区间）。
+    :param ax: matplotlib Axes 对象，缺省取 ``plt.gca()``。
+    :returns: ``(mean_line, lower_band, upper_band)`` —— 均值线 + 带的两条边界
+        （seaborn lineplot 返回值风格，便于事后调样式）。
+    """
+    import matplotlib.pyplot as plt
+    import seaborn as sns
+
+    ys_arr = np.asarray(ys, dtype=float)
+    if ys_arr.ndim == 1:
+        # 单组：退化为普通折线（seaborn lineplot 只画一条线，无带）
+        if x is None:
+            x_arr = np.arange(len(ys_arr))
+        else:
+            x_arr = np.asarray(x, dtype=float)
+        (mean_line,) = sns.lineplot(x=x_arr, y=ys_arr, ax=ax, label=label, color=color).get_lines()
+        return mean_line, None, None
+    # 多组：按列聚合
+    n_trials, n_points = ys_arr.shape
+    if x is None:
+        x_arr = np.arange(n_points)
+    else:
+        x_arr = np.asarray(x, dtype=float)
+        if len(x_arr) != n_points:
+            raise ValueError(f"x 长度 {len(x_arr)} 与 ys 列数 {n_points} 不匹配")
+    if ci == "sd":
+        y_mean = ys_arr.mean(axis=0)
+        y_std = ys_arr.std(axis=0, ddof=1)
+        y_lo, y_hi = y_mean - y_std, y_mean + y_std
+    elif ci == "95":
+        y_mean = ys_arr.mean(axis=0)
+        from scipy import stats  # 懒加载，不增加硬依赖
+
+        se = stats.sem(ys_arr, axis=0)
+        h = se * stats.t.ppf(0.975, df=n_trials - 1)
+        y_lo, y_hi = y_mean - h, y_mean + h
+    else:
+        raise ValueError(f"ci 须为 'sd' 或 '95'，收到 {ci!r}")
+    ax_target = ax if ax is not None else plt.gca()
+    (mean_line,) = ax_target.plot(x_arr, y_mean, label=label, color=color)
+    band_color = color if color is not None else mean_line.get_color()
+    fill = ax_target.fill_between(x_arr, y_lo, y_hi, color=band_color, alpha=0.15)
+    return mean_line, fill, None
+
+
+def plot_reg(  # noqa: PLR0913  # 用户 API：参数多为方便一次性调整
+    x: Any,
+    y: Any,
+    *,
+    order: int = 1,
+    ci: int = 95,
+    color: str | None = None,
+    label: str = "",
+    ax: Any | None = None,
+) -> Any:
+    """散点 + 回归线 + 置信带（seaborn regplot 风格）.
+
+    :param x: 横轴数据。
+    :param y: 纵轴数据（与 x 等长）。
+    :param order: 多项式阶数（1=线性，2=二次）。
+    :param ci: 置信区间百分比（默认 95）。
+    :param color: 回归线颜色（hex 或语义色名），缺省按 CURVE_PALETTE 循环。
+    :param label: 图例名。
+    :param ax: matplotlib Axes 对象，缺省取 ``plt.gca()``。
+    :returns: seaborn Axes 对象（可继续叠加元素）。
+    """
+    import seaborn as sns
+
+    x_arr = np.asarray(x, dtype=float)
+    y_arr = np.asarray(y, dtype=float)
+    return sns.regplot(
+        x=x_arr,
+        y=y_arr,
+        order=order,
+        ci=ci,
+        color=color,
+        label=label or None,
+        ax=ax,
+    )
 
 
 @dataclass(frozen=True)

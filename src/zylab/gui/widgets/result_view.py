@@ -51,7 +51,6 @@ from ..qt_compat import (
     QHBoxLayout,
     QHeaderView,
     QLabel,
-    QMenu,
     QPainter,
     QPushButton,
     QSize,
@@ -65,6 +64,7 @@ from ..qt_compat import (
     QVBoxLayout,
     QWidget,
 )
+from .plot_widget import PlotMenuConfig, apply_plot_context_menu
 
 __all__ = ["ColorBarWidget", "ResultTabs", "ResultView"]
 
@@ -320,23 +320,20 @@ class ResultView(QWidget):
         self._plot.viewport().installEventFilter(self)
 
     def _setup_plot_menu(self) -> None:
-        """以精简中文右键菜单替换 pyqtgraph 默认菜单.
+        """以统一模块替换 pyqtgraph 默认菜单（通过 apply_plot_context_menu）.
 
         默认菜单为英文且依赖内置功能：Average 项在本主题下渲染为白块遮挡、
         Downsampling 项对 ScatterPlotItem 触发 setDownsampling 崩溃，故整体
         关闭 PlotItem 菜单并替换 ViewBox 菜单（保留右键交互习惯）。
+
+        ResultView 专属：导出 CSV 绑定到 fea.export_csv + self._solution。
         """
-        plot_item = self._plot.getPlotItem()
-        # 仅关 PlotItem 菜单（enableViewBoxMenu=None 保留 ViewBox 弹出能力）
-        plot_item.setMenuEnabled(False, enableViewBoxMenu=None)
-        # 场景级菜单（GraphicsScene 内置 "Export..." 英文项）整体置空，杜绝漏网英文
-        self._plot.scene().contextMenu = []
-        menu = QMenu(self._plot)
-        menu.addAction("恢复默认视角", plot_item.autoRange)
-        menu.addAction("复制图像", self._copy_plot)
-        menu.addAction("导出图像 (PNG)", self._on_export_png)
-        menu.addAction("导出数据 (CSV)", self._on_export_csv)
-        plot_item.vb.menu = menu
+        apply_plot_context_menu(
+            self._plot,
+            PlotMenuConfig(
+                export_csv_fn=self._on_export_csv,
+            ),
+        )
 
     def _copy_plot(self) -> None:
         """当前绘图区截图复制到剪贴板（可直接粘贴到文档）."""

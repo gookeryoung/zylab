@@ -9,19 +9,27 @@ ResultView，本视图仅显示占位说明。
 同组多结果（DSL ``group`` 声明）由 :class:`DslGroupedResultView` 合并
 为单页分块渲染（曲线定高/表格限高滚动/文本自动换行），页内滚动查看，
 避免内容少的结果各占一页。
+
+本模块曲线视图使用统一组件 :class:`ZyPlotWidget`（预配置主题背景/网格/
+轴色/图例 + 可组合中文右键菜单），并提供 ``build_curve_widget`` 工厂函数
+为单页/分组页共同调用，保证视觉一致性。
 """
 
 from __future__ import annotations
 
+import csv
+from pathlib import Path
 from typing import Any
 
 import pyqtgraph as pg
 
 from zylab.flowchart.results import CloudData, CurveData, TableData, TextData, ViewData
-from zylab.sci.palettes import CURVE_PALETTE, resolve_curve_color
+from zylab.sci.palettes import CURVE_PALETTE, PG_CURVE_DEFAULTS, resolve_curve_color
 
 from .. import theme
 from ..qt_compat import (
+    QBrush,
+    QColor,
     QGroupBox,
     QHeaderView,
     QLabel,
@@ -32,6 +40,7 @@ from ..qt_compat import (
     QVBoxLayout,
     QWidget,
 )
+from .plot_widget import PlotMenuConfig, ZyPlotWidget
 
 __all__ = ["DslGroupedResultView", "DslResultView"]
 
@@ -163,15 +172,17 @@ def _build_block(title: str, payload: ViewData | str) -> QGroupBox:  # pragma: n
     return box
 
 
-def build_curve_widget(data: CurveData) -> QWidget:
-    """pyqtgraph 曲线（多序列图例 + 轴标签 + 对数轴 + 峰值标注 + 系列样式覆盖）."""
-    plot = pg.PlotWidget(background=theme.current_palette().bg_app)
-    plot.showGrid(x=True, y=True, alpha=0.3)
-    # 对数轴
-    if data.log_x or data.log_y:
-        plot.plotItem.setLogMode(x=data.log_x, y=data.log_y)
+def build_curve_widget(data: CurveData) -> ZyPlotWidget:
+    """DSL 曲线视图（统一组件 + 多序列图例 + 轴标签 + 对数轴 + 峰值标注 +
+    系列样式覆盖 + seaborn whitegrid 对齐 + 完整中文右键菜单）."""
+    defaults = PG_CURVE_DEFAULTS
+    # 使用统一绘图组件（构造时传入对数轴参数）
+    plot = ZyPlotWidget(log_x=data.log_x, log_y=data.log_y)
     if data.series:
-        plot.addLegend(offset=(12, 12))
+        legend = plot.addLegend(offset=defaults["legend_offset"])
+        # 图例：半透明白底 + 细边框（ZyPlotWidget 已预配置主题色）
+        legend.setBrush(QBrush(QColor(255, 255, 255, defaults["legend_bg_alpha"])))
+        legend.setPen(pg.mkPen(color=defaults["legend_border"]))
     if data.x_label:
         plot.setLabel("bottom", data.x_label)
     if data.y_label:
@@ -180,7 +191,7 @@ def build_curve_widget(data: CurveData) -> QWidget:
         # 系列样式覆盖：color / dash / width
         style = data.series_styles[index] if index < len(data.series_styles) else {}
         color = style.get("color")
-        width = float(style.get("width", 2))
+        width = float(style.get("width", defaults["curve_width"]))
         dash = style.get("dash")  # "solid"/"dashed"/"dotted"/"-"
         if color:
             pen = pg.mkPen(_resolve_color(color), width=width)
@@ -208,7 +219,32 @@ def build_curve_widget(data: CurveData) -> QWidget:
                 symbolBrush="#EF4444",
                 symbolSize=8,
             )
+    # 完整中文右键菜单（DSL 参数化计算曲线的用户体验 bug 修复点）
+    plot.setup_context_menu(
+        PlotMenuConfig(
+            export_csv_fn=lambda path: _export_curve_csv(data, path),
+        )
+    )
     return plot
+
+
+def _export_curve_csv(data: CurveData, path: str) -> None:
+    """将 CurveData.series 导出为多列 CSV（第一个序列的 x 列作为公共索引）."""
+    target = Path(path)
+    with target.open("w", newline="", encoding="utf-8") as fh:
+        writer = csv.writer(fh)
+        # 表头：x 列 + 各序列 y 列（用序列名，缺省用 Series_N）
+        headers = ["x"]
+        for i, series in enumerate(data.series):
+            headers.append(series.name or f"Series_{i + 1}")
+        writer.writerow(headers)
+        # 取各序列最短长度（避免越界）
+        n = min(len(s.x) for s in data.series) if data.series else 0
+        for i in range(n):
+            row: list[Any] = [data.series[0].x[i]]
+            for series in data.series:
+                row.append(series.y[i])
+            writer.writerow(row)
 
 
 def _resolve_color(color: str) -> str:  # pragma: no cover

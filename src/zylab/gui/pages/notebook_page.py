@@ -21,6 +21,7 @@ from zylab.console import ReplKernel
 from zylab.core import EventBus
 from zylab.sci import (
     CURVE_PALETTE,
+    PG_CURVE_DEFAULTS,
     ErrorOutput,
     Notebook,
     NotebookCell,
@@ -39,6 +40,8 @@ from ..highlight import PythonHighlighter
 from ..icons import nav_icon
 from ..qt_compat import (
     QApplication,
+    QBrush,
+    QColor,
     QFileDialog,
     QFrame,
     QHBoxLayout,
@@ -64,6 +67,7 @@ from ..qt_compat import (
     exec_dialog,
     exec_menu,
 )
+from ..widgets.plot_widget import PlotMenuConfig, ZyPlotWidget
 from .var_browser import VarDetailDialog, VarTableModel, VarTagDelegate, mono_font
 
 __all__ = ["CellEditor", "CellWidget", "NotebookPage", "VarTableModel"]  # VarTableModel 经 var_browser re-export
@@ -445,26 +449,24 @@ class CellWidget(QFrame):
         self._output_layout.addWidget(label)
 
     def _add_plot(self, out: PlotOutput) -> None:
-        """绘图输出：内嵌 pyqtgraph（多 series 同图、主题色循环、轴色随主题）."""
+        """绘图输出：内嵌 ZyPlotWidget（多 series 同图、主题色循环、轴色随主题、
+        seaborn whitegrid 对齐、增强中文右键菜单）."""
         pal = theme.current_palette()
-        plot = pg.PlotWidget(background=pal.bg_app, parent=self)
-        plot.showGrid(x=True, y=True, alpha=0.3)
-        # 轴线/刻度/文字随主题前景色（深色主题下默认黑不可见）
-        axis_pen = pg.mkPen(pal.border_strong, width=1)
-        for axis_name in ("bottom", "left"):
-            axis = plot.getAxis(axis_name)
-            axis.setPen(axis_pen)
-            axis.setTextPen(pg.mkPen(pal.text_primary, width=1))
-        legend = plot.addLegend(offset=(8, 8)) if any(s.label for s in out.series) else None
+        defaults = PG_CURVE_DEFAULTS
+        plot = ZyPlotWidget(parent=self)
+        # 图例：半透明白底 + 细边框（seaborn legend.framealpha/edgecolor）
+        legend = plot.addLegend(offset=defaults["legend_offset"]) if any(s.label for s in out.series) else None
         if legend is not None:
             legend.setLabelTextColor(pal.text_primary)
+            legend.setBrush(QBrush(QColor(255, 255, 255, defaults["legend_bg_alpha"])))
+            legend.setPen(pg.mkPen(color=defaults["legend_border"]))
         plot.setMinimumHeight(180)
         for index, series in enumerate(out.series):
             color = CURVE_PALETTE[index % len(CURVE_PALETTE)]
             plot.plot(
                 series.x,
                 series.y,
-                pen=pg.mkPen(color, width=2),
+                pen=pg.mkPen(color, width=defaults["curve_width"]),
                 name=series.label or None,
             )
         if out.title:
@@ -473,14 +475,18 @@ class CellWidget(QFrame):
             plot.setLabel("bottom", out.xlabel)
         if out.ylabel:
             plot.setLabel("left", out.ylabel)
-        # 替换 pyqtgraph 默认英文右键菜单为精简中文菜单（同 result_view 模式）
-        _plot_item = plot.getPlotItem()
-        _plot_item.setMenuEnabled(False, enableViewBoxMenu=None)
-        plot.scene().contextMenu = []
-        _menu = QMenu(plot)
-        _menu.addAction("恢复默认视角", _plot_item.autoRange)
-        _plot_item.vb.menu = _menu
+        # 统一中文右键菜单（恢复默认视角 / 复制图像 / 导出PNG / 轴自适应 / 清除本格输出）
+        plot.setup_context_menu(
+            PlotMenuConfig(
+                notebook_clear_output_fn=self._clear_single_cell_output,
+            )
+        )
         self._output_layout.addWidget(plot)
+
+    def _clear_single_cell_output(self) -> None:
+        """右键菜单触发：清除当前单元输出（保留源码与执行计数）."""
+        self._cell.outputs.clear()
+        self.render_outputs()
 
 
 class NotebookPage(QWidget):

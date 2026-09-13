@@ -33,6 +33,8 @@ from zylab.sci import (
     apply_matplotlib_defaults,
     format_whos,
     make_plot_function,
+    plot_band,
+    plot_reg,
     whos,
 )
 from zylab.sci.notebook import (
@@ -228,6 +230,8 @@ class ReplKernel:
 
         ns["whos"] = _whos
         ns["plot"] = make_plot_function(self.bus)
+        ns["plot_band"] = plot_band
+        ns["plot_reg"] = plot_reg
         ns["run"] = self.run_file
         ns["cls"] = _cls
         ns["clc"] = _cls
@@ -235,6 +239,13 @@ class ReplKernel:
         ns["help"] = _help
         ns["cd"] = _cd
         ns["cwd"] = Path.cwd().resolve()
+        # seaborn 快捷符号（已硬依赖，用户手写代码直接 sns.set_theme/lineplot）
+        try:
+            import seaborn as sns  # pragma: no cover - 硬依赖
+
+            ns["sns"] = sns
+        except ImportError:  # pragma: no cover - 硬依赖永不触发
+            pass
         # matplotlib rcParams 默认配置（含中文字体）
         apply_matplotlib_defaults(ns)
         self.builtin_names = frozenset(ns)

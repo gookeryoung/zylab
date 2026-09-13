@@ -43,6 +43,7 @@ from .notebook import (
 )
 from .palettes import (
     CURVE_PALETTE,
+    PG_CURVE_DEFAULTS,
     SEMANTIC_CURVE_COLORS,
     resolve_curve_color,
 )
@@ -51,6 +52,8 @@ from .plotting import (
     PlotRequest,
     apply_matplotlib_defaults,
     make_plot_function,
+    plot_band,
+    plot_reg,
 )
 from .workspace import (
     CURRENT_WORKSPACE_FILE,
@@ -65,6 +68,7 @@ from .workspace import (
 __all__ = [
     "CURRENT_WORKSPACE_FILE",
     "CURVE_PALETTE",
+    "PG_CURVE_DEFAULTS",
     "SEMANTIC_CURVE_COLORS",
     "TOPIC_PLOT_REQUESTED",
     "TOPIC_WORKSPACE_CHANGED",
@@ -100,6 +104,8 @@ __all__ = [
     "np",
     "ones",
     "pi",
+    "plot_band",
+    "plot_reg",
     "resolve_curve_color",
     "save_notebook",
     "sin",

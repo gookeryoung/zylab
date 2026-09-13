@@ -16,14 +16,23 @@ def _beam_bundle():
 
 @pytest.mark.gui
 def test_plot_context_menu_replaced(qtbot) -> None:
-    """云图右键菜单替换为精简中文菜单（默认英文菜单整体关闭）."""
+    """云图右键菜单替换为统一中文菜单（默认英文菜单整体关闭）.
+
+    菜单项：恢复默认视角 / 复制图像 / 导出PNG / 导出CSV / 轴自适应子菜单.
+    """
     view = ResultView()
     qtbot.addWidget(view)
     plot_item = view._plot.getPlotItem()
     assert plot_item._menuEnabled is False  # Plot Options/Average/Downsampling 等不再出现
     assert plot_item.getContextMenus(None) is None
-    texts = [a.text() for a in plot_item.vb.menu.actions()]
-    assert texts == ["恢复默认视角", "复制图像", "导出图像 (PNG)", "导出数据 (CSV)"]
+    actions = plot_item.vb.menu.actions()
+    # 提取非 separator 项的文本（separator.text() == ""）
+    texts = [a.text() for a in actions if a.text()]
+    assert "恢复默认视角" in texts
+    assert "复制图像" in texts
+    assert any(t.startswith("导出图像 (PNG)") for t in texts)
+    assert any(t.startswith("导出数据 (CSV)") for t in texts)
+    assert any(t == "轴自适应" for t in texts)
     # 场景级菜单（GraphicsScene 内置 "Export..." 英文项）已置空，无漏网英文
     assert view._plot.scene().contextMenu == []
 

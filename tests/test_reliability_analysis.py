@@ -6,6 +6,7 @@ import numpy as np
 import pytest
 
 from zylab.reliability.analysis import (
+    SensitivityEstimate,
     SensitivityTestResult,
     dixon_mood,
     karber,
@@ -424,3 +425,20 @@ def test_profile_ci_auto_step_fallback() -> None:
     """profile_ci 在 se=0 时走 value_hat 幅值 fallback."""
     res = run_sensitivity_test(method="updown", model="normal", seed=42)
     assert res.mu_hat is not None
+
+
+def test_profile_ci_se_zero_fallback() -> None:
+    """profile_ci 在 se_mu=0 时用 fallback 步长分支（analysis.py 行 424）."""
+    from unittest.mock import patch
+
+    rng = np.random.default_rng(23)
+    x = rng.uniform(7.0, 13.0, 200)
+    p = 1.0 / (1.0 + np.exp(-(x - 10.0) / 1.2))
+    y = (rng.random(200) < p).astype(int)
+
+    # mock mle_estimate 返回 se_mu=0 → 触发 np.isfinite(se) and se > 0 → False
+    fake_mle = SensitivityEstimate(mu=10.0, sigma=1.2, se_mu=0.0, se_sigma=0.1, converged=True)
+    with patch("zylab.reliability.analysis.mle_estimate", return_value=fake_mle):
+        ci = profile_ci("logistic", x, y, "mu")
+    assert ci is not None
+    assert ci[0] < ci[1]

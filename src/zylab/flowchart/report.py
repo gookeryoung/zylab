@@ -46,6 +46,14 @@ _SVG_PAD_R = 16
 _SVG_PAD_T = 16
 _SVG_PAD_B = 48  # 底边距（横轴标签 + 刻度）
 
+#: SVG 曲线视觉常量（对齐 seaborn whitegrid，Qt-free）.
+_SVG_STYLE_GRID = "#E8E8E8"  # 网格线（seaborn grid.alpha=0.35 的等效灰色）
+_SVG_STYLE_SPINE = "#CCCCCC"  # 保留的左+下边框色（whitegrid 去上右）
+_SVG_STYLE_TEXT = "#555555"  # 轴刻度文本
+_SVG_STYLE_LABEL = "#444444"  # 轴标签
+_SVG_STYLE_LEGEND_BG = "#FFFFFF"  # 图例背景（白底，纸张风格）
+_SVG_STYLE_LEGEND_BORDER = "#DDDDDD"  # 图例边框
+
 
 def build_markdown(template: DslTemplate, outputs: Mapping[str, Any], values: Mapping[str, Any] | None = None) -> str:
     """生成 Markdown 报告.
@@ -302,10 +310,10 @@ def _svg_data_uri(svg: str) -> str:
 
 
 def _curve_svg(data: CurveData) -> str:
-    """纯 Python 拼装曲线 SVG（多序列折线 + 轴标签 + 图例）.
+    """纯 Python 拼装曲线 SVG（seaborn whitegrid 风格：网格 + 去上右边框 + 图例框 + 单序列填充带）.
 
     无绘图库依赖：坐标按全部序列的取值范围归一化到画布（退化区间
-    保护为 ±1），序列色取 :data:`_CURVE_COLORS` 循环。
+    保护为 ±1），序列色取 :data:`sci.palettes.CURVE_PALETTE` 循环。
     """
     xs = [x for series in data.series for x in series.x]
     ys = [y for series in data.series for y in series.y]
@@ -330,45 +338,127 @@ def _curve_svg(data: CurveData) -> str:
         y_min, y_max = y_min - 1.0, y_max + 1.0
     plot_w = _SVG_W - _SVG_PAD_L - _SVG_PAD_R
     plot_h = _SVG_H - _SVG_PAD_T - _SVG_PAD_B
-    parts = [f'<svg xmlns="http://www.w3.org/2000/svg" width="{_SVG_W}" height="{_SVG_H}">']
+    parts: list[str] = [f'<svg xmlns="http://www.w3.org/2000/svg" width="{_SVG_W}" height="{_SVG_H}">']
     parts.append(f'<rect width="{_SVG_W}" height="{_SVG_H}" fill="#ffffff"/>')
-    parts.append(
-        f'<rect x="{_SVG_PAD_L}" y="{_SVG_PAD_T}" width="{plot_w}" height="{plot_h}" fill="none" stroke="#cccccc"/>',
-    )
+    # --- 网格（seaborn whitegrid 的浅灰虚线，6 等分水平/垂直） ---
+    parts += _svg_grid_lines(plot_w, plot_h)
+    # --- 曲线（先画填充带，再画 polyline，保证线在填充之上） ---
+    _sx, _sy = _build_coord_transform(data, (x_min, x_max, y_min, y_max), (plot_w, plot_h))
+    n_series = len(data.series)
     for index, series in enumerate(data.series):
         style = data.series_styles[index] if index < len(data.series_styles) else {}
-
-        def _sx(x: float) -> float:
-            if data.log_x and x > 0 and x_min > 0:
-                v = (math.log10(x) - math.log10(x_min)) / (math.log10(x_max) - math.log10(x_min))
-            else:
-                v = (x - x_min) / (x_max - x_min)
-            return _SVG_PAD_L + v * plot_w
-
-        def _sy(y: float) -> float:
-            if data.log_y and y > 0 and y_min > 0:
-                v = (math.log10(y_max) - math.log10(y)) / (math.log10(y_max) - math.log10(y_min))
-            else:
-                v = 1.0 - (y - y_min) / (y_max - y_min)
-            return _SVG_PAD_T + v * plot_h
-
-        points = " ".join(f"{_sx(x):.1f},{_sy(y):.1f}" for x, y in zip(series.x, series.y, strict=False))
         color = resolve_curve_color(style.get("color"), index)
         stroke_w = float(style.get("width", 2))
         dash = style.get("dash")
         dash_attr = (
             ' stroke-dasharray="4,2"' if dash == "dashed" else (' stroke-dasharray="1,2"' if dash == "dotted" else "")
         )
+        xy = [(x, y) for x, y in zip(series.x, series.y, strict=False)]
+        points = " ".join(f"{_sx(x):.1f},{_sy(y):.1f}" for x, y in xy)
+        # 单序列时叠填充带（seaborn density 曲线风格的视觉暗示）
+        if n_series == 1 and len(xy) > 1:
+            fill_path = _build_fill_path(xy, _sx, _sy, y_min, plot_h)
+            parts.append(f'<path d="{fill_path}" fill="{color}" fill-opacity="0.15"/>')
         parts.append(f'<polyline points="{points}" fill="none" stroke="{color}" stroke-width="{stroke_w}"{dash_attr}/>')
         if data.mark_peak and len(series.y) > 0:
             peak_idx = max(range(len(series.y)), key=lambda i: abs(series.y[i]))  # type: ignore[arg-type]
             parts.append(
                 f'<circle cx="{_sx(series.x[peak_idx]):.1f}" cy="{_sy(series.y[peak_idx]):.1f}" r="4" fill="#EF4444"/>',
             )
+    # --- Spines（seaborn whitegrid：只画左+下，上+右省略） ---
+    parts.append(
+        f'<line x1="{_SVG_PAD_L}" y1="{_SVG_PAD_T}" x2="{_SVG_PAD_L}" y2="{_SVG_PAD_T + plot_h}" '
+        f'stroke="{_SVG_STYLE_SPINE}" stroke-width="0.8"/>',
+    )
+    parts.append(
+        f'<line x1="{_SVG_PAD_L}" y1="{_SVG_PAD_T + plot_h}" x2="{_SVG_PAD_L + plot_w}" y2="{_SVG_PAD_T + plot_h}" '
+        f'stroke="{_SVG_STYLE_SPINE}" stroke-width="0.8"/>',
+    )
     parts += _svg_axes(data, (x_min, x_max, y_min, y_max), (plot_w, plot_h))
     parts += _svg_legend(data)
     parts.append("</svg>")
     return "".join(parts)
+
+
+def _svg_grid_lines(plot_w: int, plot_h: int, n_ticks: int = 6) -> list[str]:
+    """生成网格虚线（seaborn whitegrid 风格）.
+
+    :param plot_w: 绘图区宽。
+    :param plot_h: 绘图区高。
+    :param n_ticks: 每方向等分份数（默认 6）。
+    """
+    parts: list[str] = []
+    dx = plot_w / n_ticks
+    dy = plot_h / n_ticks
+    # 水平线
+    for i in range(1, n_ticks):
+        y = _SVG_PAD_T + i * dy
+        parts.append(
+            f'<line x1="{_SVG_PAD_L}" y1="{y:.1f}" x2="{_SVG_PAD_L + plot_w}" y2="{y:.1f}" '
+            f'stroke="{_SVG_STYLE_GRID}" stroke-width="0.6" stroke-dasharray="4,3"/>',
+        )
+    # 垂直线
+    for i in range(1, n_ticks):
+        x = _SVG_PAD_L + i * dx
+        parts.append(
+            f'<line x1="{x:.1f}" y1="{_SVG_PAD_T}" x2="{x:.1f}" y2="{_SVG_PAD_T + plot_h}" '
+            f'stroke="{_SVG_STYLE_GRID}" stroke-width="0.6" stroke-dasharray="4,3"/>',
+        )
+    return parts
+
+
+def _build_coord_transform(
+    data: CurveData,
+    bounds: tuple[float, float, float, float],
+    plot: tuple[int, int],
+):
+    """构造 (sx, sy) 屏幕坐标映射闭包（提取公共逻辑供曲线+填充带复用）.
+
+    :returns: ``(sx, sy)`` 两个 callable：数据值 → SVG 屏幕像素。
+    """
+    x_min, x_max, y_min, y_max = bounds
+    plot_w, plot_h = plot
+
+    def _sx(x: float) -> float:
+        if data.log_x and x > 0 and x_min > 0:
+            v = (math.log10(x) - math.log10(x_min)) / (math.log10(x_max) - math.log10(x_min))
+        else:
+            v = (x - x_min) / (x_max - x_min)
+        return _SVG_PAD_L + v * plot_w
+
+    def _sy(y: float) -> float:
+        if data.log_y and y > 0 and y_min > 0:
+            v = (math.log10(y_max) - math.log10(y)) / (math.log10(y_max) - math.log10(y_min))
+        else:
+            v = 1.0 - (y - y_min) / (y_max - y_min)
+        return _SVG_PAD_T + v * plot_h
+
+    return _sx, _sy
+
+
+def _build_fill_path(
+    xy: list[tuple[float, float]],
+    sx,
+    sy,
+    y_min_data: float,
+    plot_h: int,
+) -> str:
+    """为单序列曲线构造填充带 path 数据（曲线 + 底部闭合）.
+
+    :param xy: ``[(x, y), ...]`` 数据点序列。
+    :param sx: x 坐标映射。
+    :param sy: y 坐标映射。
+    :param y_min_data: y 数据最小值（用于计算底部闭合点的屏幕 y）。
+    :param plot_h: 绘图区高。
+    :returns: SVG ``path`` 的 ``d`` 属性值。
+    """
+    # 计算底部 y 位置（曲线数据的 y_min 对应的屏幕坐标，或者直接 plot_h 底部）
+    # 用 y_min_data 对应屏幕坐标更精确（不同对数轴下可能有偏移）
+    bottom_y = max(sy(y_min_data), _SVG_PAD_T + plot_h)  # 强制贴绘图区底
+    start = f"M{sx(xy[0][0]):.1f},{bottom_y:.1f}"
+    curve = " ".join(f"L{sx(x):.1f},{sy(y):.1f}" for x, y in xy)
+    close = f"L{sx(xy[-1][0]):.1f},{bottom_y:.1f} Z"
+    return f"{start} {curve} {close}"
 
 
 def _svg_axes(data: CurveData, bounds: tuple[float, float, float, float], plot: tuple[int, int]) -> list[str]:
@@ -382,7 +472,8 @@ def _svg_axes(data: CurveData, bounds: tuple[float, float, float, float], plot: 
 
     def text(x: float, y: float, content: str, anchor: str = "middle") -> str:
         return (
-            f'<text x="{x:.0f}" y="{y:.0f}" font-size="12" fill="#666" text-anchor="{anchor}">{escape(content)}</text>'
+            f'<text x="{x:.0f}" y="{y:.0f}" font-size="12" fill="{_SVG_STYLE_TEXT}" '
+            f'text-anchor="{anchor}">{escape(content)}</text>'
         )
 
     parts: list[str] = []
@@ -390,7 +481,7 @@ def _svg_axes(data: CurveData, bounds: tuple[float, float, float, float], plot: 
         parts.append(text(_SVG_PAD_L + plot_w / 2, _SVG_H - 6, data.x_label))
     if data.y_label:
         parts.append(
-            f'<text x="14" y="{_SVG_PAD_T + plot_h / 2:.0f}" font-size="12" fill="#666" '
+            f'<text x="14" y="{_SVG_PAD_T + plot_h / 2:.0f}" font-size="12" fill="{_SVG_STYLE_LABEL}" '
             f'transform="rotate(-90 14 {_SVG_PAD_T + plot_h / 2:.0f})" text-anchor="middle">{escape(data.y_label)}</text>',
         )
     parts.append(text(_SVG_PAD_L, _SVG_H - _SVG_PAD_B + 16, _fmt(x_min), "start"))
@@ -401,16 +492,27 @@ def _svg_axes(data: CurveData, bounds: tuple[float, float, float, float], plot: 
 
 
 def _svg_legend(data: CurveData) -> list[str]:
-    """图例（右上角色块 + 序列名）."""
+    """图例（seaborn whitegrid 风格：白底 + 浅灰 1px 边框 + 小色块）."""
     parts: list[str] = []
+    if not data.series:
+        return parts
+    # 图例尺寸（右上区域）
+    legend_w = 128
+    legend_h = 12 + len(data.series) * 18 + 4
+    legend_x = _SVG_W - _SVG_PAD_R - legend_w - 4
+    legend_y = _SVG_PAD_T + 4
+    # 图例背景 + 边框
+    parts.append(
+        f'<rect x="{legend_x}" y="{legend_y}" width="{legend_w}" height="{legend_h}" '
+        f'fill="{_SVG_STYLE_LEGEND_BG}" stroke="{_SVG_STYLE_LEGEND_BORDER}" stroke-width="0.8"/>',
+    )
     for index, series in enumerate(data.series):
         style = data.series_styles[index] if index < len(data.series_styles) else {}
         color = resolve_curve_color(style.get("color"), index)
-        x = _SVG_W - _SVG_PAD_R - 140
-        y = _SVG_PAD_T + 8 + index * 18
-        parts.append(f'<rect x="{x}" y="{y}" width="12" height="12" fill="{color}"/>')
+        row_y = legend_y + 8 + index * 18
+        parts.append(f'<rect x="{legend_x + 8}" y="{row_y}" width="10" height="10" fill="{color}"/>')
         parts.append(
-            f'<text x="{x - 6}" y="{y + 11}" font-size="12" fill="#333" text-anchor="end">{escape(series.name)}</text>',
+            f'<text x="{legend_x + 24}" y="{row_y + 9}" font-size="11" fill="{_SVG_STYLE_LABEL}">{escape(series.name)}</text>',
         )
     return parts
 

@@ -261,7 +261,7 @@ def test_cell_widget_renders_all_output_kinds(qtbot) -> None:
     widget = CellWidget(cell)
     qtbot.addWidget(widget)
     kinds = {type(widget._output_layout.itemAt(i).widget()).__name__ for i in range(widget._output_layout.count())}
-    assert kinds == {"QLabel", "PlotWidget"}
+    assert kinds == {"QLabel", "ZyPlotWidget"}
     assert widget._count_label.text() == "In [3]:"
 
 

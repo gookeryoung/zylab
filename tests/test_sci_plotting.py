@@ -112,6 +112,36 @@ def test_apply_defaults_returns_fonts() -> None:
     assert len(result) > 0
 
 
+def test_apply_defaults_without_cn_fonts_skips_merge() -> None:
+    """系统无中文字体时跳过 font.sans-serif 合并（if selected_cn → False 分支）."""
+    from unittest.mock import patch
+
+    import matplotlib.font_manager as fm
+
+    with patch.object(fm.fontManager, "ttflist", new=[]):
+        # 无任何字体 → selected_cn 为空 → 跳过合并分支
+        apply_matplotlib_defaults(ns={})
+
+
+def test_apply_defaults_with_overlapping_fonts_dedupes() -> None:
+    """默认 sans-serif 与中文字体列表有重叠时走去重分支（if name not in seen → False）."""
+    from unittest.mock import patch
+
+    import seaborn as sns
+
+    def _fake_set_theme(*args, **kwargs):
+        # 跳过真实 set_theme，保留 rcParams 中已设置的 font.sans-serif
+        return None
+
+    # 在 seaborn.set_theme 前注入重叠字体，同时 mock 掉 set_theme 防止重置
+    plt.rcParams["font.sans-serif"] = ["Microsoft YaHei", "DejaVu Sans"]
+    with patch.object(sns, "set_theme", side_effect=_fake_set_theme):
+        apply_matplotlib_defaults(ns={})
+    assert "Microsoft YaHei" in plt.rcParams["font.sans-serif"]
+    # Microsoft YaHei 应该只出现一次（去重生效）
+    assert plt.rcParams["font.sans-serif"].count("Microsoft YaHei") == 1
+
+
 def test_apply_defaults_palette_in_prop_cycle() -> None:
     """CURVE_PALETTE 应进入 axes.prop_cycle（seaborn set_theme palette 参数）."""
     from matplotlib.colors import to_hex
@@ -135,3 +165,111 @@ def test_apply_defaults_grid_visuals_from_seaborn() -> None:
     assert plt.rcParams["axes.grid"] is True
     # seaborn whitegrid 使用非零 alpha
     assert plt.rcParams["grid.alpha"] > 0.0
+
+
+# ---------------------------------------------------------------------------
+# plot_band / plot_reg 统计快捷函数
+
+
+@pytest.fixture(autouse=True)
+def _mpl_agg_backend() -> None:
+    """plot_band / plot_reg 内部会切换 matplotlib 后端，这里重置。"""
+    import matplotlib
+
+    matplotlib.use("Agg")
+
+
+def test_plot_band_multi_trial_sd_ci() -> None:
+    """多组数据 + sd 置信带：返回均值线 + fill_between 对象."""
+    from zylab.sci.plotting import plot_band
+
+    rng = __import__("numpy").random.default_rng(42)
+    ys = rng.normal(loc=0, scale=1, size=(5, 20))
+    fig, ax = plt.subplots()
+    mean_line, fill, _upper = plot_band(ys, ax=ax)
+    assert mean_line is not None
+    assert fill is not None  # multi-trial 模式有 fill_between
+    plt.close(fig)
+
+
+def test_plot_band_multi_trial_95_ci() -> None:
+    """多组数据 + 95% 置信区间：懒加载 scipy.stats."""
+    from zylab.sci.plotting import plot_band
+
+    rng = __import__("numpy").random.default_rng(42)
+    ys = rng.normal(loc=0, scale=1, size=(10, 15))
+    fig, ax = plt.subplots()
+    mean_line, fill, _upper = plot_band(ys, ci="95", ax=ax)
+    assert mean_line is not None
+    assert fill is not None
+    plt.close(fig)
+
+
+def test_plot_band_single_trial_degenerates_to_line() -> None:
+    """单组数据（一维数组）退化为普通折线，无 fill_between."""
+    from zylab.sci.plotting import plot_band
+
+    fig, ax = plt.subplots()
+    mean_line, fill, _upper = plot_band(__import__("numpy").sin(__import__("numpy").linspace(0, 6, 20)), ax=ax)
+    assert mean_line is not None
+    assert fill is None  # single-trial 模式无带
+    plt.close(fig)
+
+
+def test_plot_band_single_trial_with_explicit_x() -> None:
+    """单组数据传入 x 参数（覆盖 x_arr = np.asarray(x) 分支）."""
+    import numpy as np
+
+    from zylab.sci.plotting import plot_band
+
+    fig, ax = plt.subplots()
+    mean_line, fill, _upper = plot_band(np.array([1.0, 2.0, 3.0]), x=np.array([0.0, 1.0, 2.0]), ax=ax)
+    assert mean_line is not None
+    assert fill is None
+    plt.close(fig)
+
+
+def test_plot_band_x_length_mismatch_raises() -> None:
+    """多组数据的 x 长度须等于 ys 列数."""
+    from zylab.sci.plotting import plot_band
+
+    rng = __import__("numpy").random.default_rng(42)
+    ys = rng.normal(size=(3, 20))
+    fig, ax = plt.subplots()
+    try:
+        plot_band(ys, x=__import__("numpy").arange(15), ax=ax)
+        pytest.fail("应抛 ValueError")
+    except ValueError as exc:
+        assert "长度" in str(exc)
+    finally:
+        plt.close(fig)
+
+
+def test_plot_band_invalid_ci_raises() -> None:
+    """ci 参数只接受 'sd' 或 '95'."""
+    from zylab.sci.plotting import plot_band
+
+    rng = __import__("numpy").random.default_rng(42)
+    ys = rng.normal(size=(3, 10))
+    fig, ax = plt.subplots()
+    try:
+        plot_band(ys, ci="bad", ax=ax)
+        pytest.fail("应抛 ValueError")
+    except ValueError as exc:
+        assert "ci" in str(exc).lower()
+    finally:
+        plt.close(fig)
+
+
+def test_plot_reg_scatter_with_regression_line() -> None:
+    """plot_reg 调 seaborn.regplot 返回 Axes 对象."""
+    from zylab.sci.plotting import plot_reg
+
+    rng = __import__("numpy").random.default_rng(42)
+    np = __import__("numpy")
+    x = np.linspace(0, 10, 50)
+    y = 2 * x + 1 + rng.normal(size=50)
+    fig, ax = plt.subplots()
+    result = plot_reg(x, y, order=1, ci=95, ax=ax)
+    assert result is ax  # seaborn 返回传入的 ax
+    plt.close(fig)

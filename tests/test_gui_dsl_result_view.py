@@ -116,3 +116,93 @@ def test_build_curve_widget_log_and_peak(qtbot) -> None:
     qtbot.addWidget(w)
     w.show()
     assert w.isVisible()
+
+
+def test_dsl_curve_has_context_menu(qtbot) -> None:
+    """DSL 曲线视图应有完整中文右键菜单（修复：之前完全缺失）."""
+    from zylab.flowchart.results import CurveData, CurveSeries
+    from zylab.gui.widgets.dsl_result_view import build_curve_widget
+    from zylab.gui.widgets.plot_widget import ZyPlotWidget
+
+    curve = CurveData(
+        title="菜单测试",
+        series=(CurveSeries("s1", (1.0, 2.0), (3.0, 4.0)),),
+    )
+    w = build_curve_widget(curve)
+    qtbot.addWidget(w)
+    assert isinstance(w, ZyPlotWidget)
+    plot_item = w.getPlotItem()
+    # 默认英文菜单已关闭
+    assert plot_item._menuEnabled is False
+    assert plot_item.getContextMenus(None) is None
+    # 右键菜单已替换为中文菜单
+    actions = plot_item.vb.menu.actions()
+    texts = [a.text() for a in actions if a.text()]
+    assert "恢复默认视角" in texts
+    assert "复制图像" in texts
+    assert any(t.startswith("导出图像 (PNG)") for t in texts)
+    assert any(t.startswith("导出数据 (CSV)") for t in texts)
+    assert any(t == "轴自适应" for t in texts)
+    # 场景级英文菜单已清空
+    assert w.scene().contextMenu == []
+
+
+def test_dsl_curve_csv_export(tmp_path) -> None:
+    """DSL 曲线 CSV 导出：多序列共用第一个序列 x 列."""
+    from zylab.flowchart.results import CurveData, CurveSeries
+    from zylab.gui.widgets.dsl_result_view import _export_curve_csv
+
+    curve = CurveData(
+        title="CSV 导出测试",
+        series=(
+            CurveSeries("accel", (0.0, 1.0, 2.0), (1.0, 4.0, 9.0)),
+            CurveSeries("vel", (0.0, 1.0, 2.0), (0.0, 2.0, 4.0)),
+        ),
+    )
+    path = str(tmp_path / "test.csv")
+    _export_curve_csv(curve, path)
+    lines = tmp_path.joinpath("test.csv").read_text(encoding="utf-8").splitlines()
+    assert lines[0] == "x,accel,vel"
+    assert lines[1].strip() == "0.0,1.0,0.0"
+    assert lines[2].strip() == "1.0,4.0,2.0"
+    assert lines[3].strip() == "2.0,9.0,4.0"
+
+
+def test_build_curve_widget_no_series_no_legend(qtbot) -> None:
+    """空序列 build_curve_widget 跳过图例创建（if data.series 分支）."""
+    from zylab.flowchart.results import CurveData
+    from zylab.gui.widgets.dsl_result_view import build_curve_widget
+
+    curve = CurveData(title="空序列曲线", series=())
+    w = build_curve_widget(curve)
+    qtbot.addWidget(w)
+    # 空序列时 plotItem.legend 仍为 None（未调用 addLegend）
+    assert w.getPlotItem().legend is None
+
+
+def test_build_curve_widget_dotted_dash(qtbot) -> None:
+    """series_styles 的 dash='dotted' 分支覆盖."""
+    from zylab.flowchart.results import CurveData, CurveSeries
+    from zylab.gui.widgets.dsl_result_view import build_curve_widget
+
+    curve = CurveData(
+        title="dotted 测试",
+        series=(CurveSeries("s1", (1.0, 2.0), (3.0, 4.0)),),
+        series_styles=({"color": "primary", "dash": "dotted", "width": 2},),
+    )
+    w = build_curve_widget(curve)
+    qtbot.addWidget(w)
+    items = w.getPlotItem().listDataItems()
+    assert len(items) == 1
+
+
+def test_dsl_curve_csv_empty_series(tmp_path) -> None:
+    """空序列 CSV 导出：仅表头，无数据行."""
+    from zylab.flowchart.results import CurveData
+    from zylab.gui.widgets.dsl_result_view import _export_curve_csv
+
+    curve = CurveData(title="空序列", series=())
+    path = str(tmp_path / "empty.csv")
+    _export_curve_csv(curve, path)
+    lines = tmp_path.joinpath("empty.csv").read_text(encoding="utf-8").splitlines()
+    assert lines[0] == "x"

@@ -10,6 +10,7 @@ from zylab.reliability.methods import (
     doptimal_next,
     langlie_next,
     neyer_next,
+    ostr_next,
     probit_levels,
     stepstress_levels,
     updown_adaptive_next,
@@ -157,3 +158,31 @@ def test_stepstress_rejects_bad_step() -> None:
         stepstress_levels(6.0, 14.0, 0.0, 10)
     with pytest.raises(ReliabilityError, match="发数须"):
         stepstress_levels(6.0, 14.0, 1.0, 0)
+
+
+def test_ostr_next_boundary_returns_midpoint() -> None:
+    """ostr_next 混合区间上下界重合时直接返回中点（边界分支）."""
+    levels = np.array([3.0])
+    responses = np.array([0])
+    # _mixed_interval(levels=[3], responses=[0], x_low=3, x_high=3) → (3.0, 3.0)
+    # d1 - d0 = 0 <= max(3,3)*1e-12 触发边界分支
+    result = ostr_next(levels, responses, 3.0, 3.0, model="logistic", mu=0.0, sigma=1.0)
+    assert result == pytest.approx(3.0)
+
+
+def test_ostr_next_non_boundary_uses_d_optimal() -> None:
+    """ostr_next 混合区间非退化时走 D-最优候选路径."""
+    levels = np.array([9.0, 11.0])
+    responses = np.array([0, 1])
+    # d0=9, d1=11，非退化 → 走 candidates + _argmax_d_criterion 路径
+    result = ostr_next(levels, responses, 6.0, 14.0, model="logistic", mu=10.0, sigma=1.0)
+    assert 9.0 <= result <= 11.0
+
+
+def test_stepstress_multiple_full_hits_exhausts_remaining() -> None:
+    """连续全响应：remaining_after_full 递减但首次未归零（走 if == 0 → False 分支）."""
+    hits = {7.0: 5, 8.0: 5}  # 两个连续全响应
+    levels, counts = stepstress_levels(6.0, 9.0, 1.0, 5, lambda x: hits.get(x, 0))
+    # 首个全响应后 remaining_after_full=1 → 递减到 0 → break
+    np.testing.assert_allclose(levels, [6.0, 7.0, 8.0])
+    assert counts.tolist() == [0, 5, 5]
