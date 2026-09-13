@@ -3,6 +3,7 @@
 
 PACKAGE := zylab
 COV_THRESHOLD := 95
+PYTEST_JOBS := 8  # pytest-xdist 并行进程数；Windows 默认 8 避免句柄耗尽
 
 .PHONY: help sync build b clean c test cov lint typecheck typecheck-ci check doc tox pub bump patch minor major push
 
@@ -22,10 +23,11 @@ clean c: ## 清理构建产物与缓存
 	find src tests -type f -name "*.py[oc]" -delete
 
 test: ## 运行测试（不含覆盖率）
-	uv run pytest -m "not slow"
+	uv run pytest -m "not slow" -n $(PYTEST_JOBS)
 
-cov: ## 运行测试并检查覆盖率
-	set NUMBA_DISABLE_JIT=1 && uv run pytest -m "not slow" --cov=$(PACKAGE) --cov-fail-under=$(COV_THRESHOLD) -n auto
+cov: ## 运行测试并生成 HTML 覆盖率报告
+	uv run pytest --cov --cov-report=term --cov-fail-under=$(COV_THRESHOLD) --cov-report=html -n $(PYTEST_JOBS)
+	@uv run python -c "print('Coverage report: htmlcov/index.html')"
 
 lint: ## 代码风格检查 (ruff)
 	uv run ruff check .
@@ -59,6 +61,4 @@ pub:  ## 推送到pypi
 
 push: ## 推送代码到所有远程仓库
 	@uv run python -c "import subprocess as sp; [print(f'\u63a8\u9001 {r}...',flush=True) or (sp.run(['git','push',r],check=True) and sp.run(['git','push',r,'--tags'],check=True)) for r in sp.check_output(['git','remote'],text=True).split()]"
-
-
 
