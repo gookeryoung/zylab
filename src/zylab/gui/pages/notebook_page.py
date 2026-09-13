@@ -40,8 +40,6 @@ from ..highlight import PythonHighlighter
 from ..icons import nav_icon
 from ..qt_compat import (
     QApplication,
-    QBrush,
-    QColor,
     QFileDialog,
     QFrame,
     QHBoxLayout,
@@ -454,12 +452,8 @@ class CellWidget(QFrame):
         pal = theme.current_palette()
         defaults = PG_CURVE_DEFAULTS
         plot = ZyPlotWidget(parent=self)
-        # 图例：半透明白底 + 细边框（seaborn legend.framealpha/edgecolor）
-        legend = plot.addLegend(offset=defaults["legend_offset"]) if any(s.label for s in out.series) else None
-        if legend is not None:
-            legend.setLabelTextColor(pal.text_primary)
-            legend.setBrush(QBrush(QColor(255, 255, 255, defaults["legend_bg_alpha"])))
-            legend.setPen(pg.mkPen(color=defaults["legend_border"]))
+        # 图例：由 ZyPlotWidget.addLegend 自动注入当前主题色 brush/pen
+        plot.addLegend(offset=defaults["legend_offset"]) if any(s.label for s in out.series) else None
         plot.setMinimumHeight(180)
         for index, series in enumerate(out.series):
             color = CURVE_PALETTE[index % len(CURVE_PALETTE)]

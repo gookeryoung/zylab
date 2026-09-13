@@ -39,6 +39,7 @@ from ..qt_compat import (
     QFrame,
     QHBoxLayout,
     QLabel,
+    QPalette,
     QPushButton,
     QScrollArea,
     QSplitter,
@@ -122,11 +123,13 @@ class TemplatePage(QWidget):
         self._side_tabs = QTabWidget(objectName="sideTabs")
         self._param_form = DslParamForm()
         self._docs_panel = DocsPanel()
-        # 关键：每个 tab widget 自身设不透明背景。QTabWidget 内部用 QStackedWidget
-        # 叠放所有 tab，非激活 tab 依赖 pane 背景擦除；若 widget 自身允许透明
-        # 或 QSS 链路某环节失效，就会出现文字穿透重叠。
+        # Windows Fusion 下 QTabWidget::pane QSS 不总能覆盖 QStackedWidget 子控件
+        # 的重绘（尤其切 tab 或加载模板重建内容时），需设 setAutoFillBackground(True)
+        # + 注入主题色 palette，避免非激活 tab 内容穿透重叠。
         self._param_form.setAutoFillBackground(True)
         self._docs_panel.setAutoFillBackground(True)
+        self._param_form.setPalette(self._tab_page_palette())
+        self._docs_panel.setPalette(self._tab_page_palette())
         self._side_tabs.addTab(self._param_form, "参数")
         self._side_tabs.addTab(self._docs_panel, "说明")
         # 初始隐藏说明页（加载模板后按 docs 声明决定显隐）
@@ -389,7 +392,22 @@ class TemplatePage(QWidget):
 
     # ------------------------------------------------------------------ 主题/生命周期
 
+    def _tab_page_palette(self) -> QPalette:
+        """为 tab page 子控件构建 QPalette.Window = 主题 bg_app 的调色板.
+
+        配合 ``setAutoFillBackground(True)`` 让 tab page 自身画不透明底，
+        避免 Windows Fusion 下 QStackedWidget 非激活子控件穿透。
+        """
+        pal = QPalette()
+        pal.setColor(QPalette.Window, theme.current_palette().bg_app)
+        return pal
+
     def refresh_theme(self) -> None:
-        """主题切换后刷新运行按钮图标与说明卡正文配色."""
+        """主题切换后刷新运行按钮图标、tab page 背景与说明卡正文配色."""
         self._run_btn.setIcon(nav_icon("play", theme.current_palette().text_on_primary))
+        # tab page 子控件的 palette.Window 必须同步换色，否则 setAutoFillBackground
+        # 仍按旧色画底（深→浅切了白，浅→深切了黑）。
+        tab_pal = self._tab_page_palette()
+        self._param_form.setPalette(tab_pal)
+        self._docs_panel.setPalette(tab_pal)
         self._docs_panel.refresh_theme()

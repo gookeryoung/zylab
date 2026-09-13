@@ -28,8 +28,6 @@ from zylab.sci.palettes import CURVE_PALETTE, PG_CURVE_DEFAULTS, resolve_curve_c
 
 from .. import theme
 from ..qt_compat import (
-    QBrush,
-    QColor,
     QGroupBox,
     QHeaderView,
     QLabel,
@@ -179,10 +177,7 @@ def build_curve_widget(data: CurveData) -> ZyPlotWidget:
     # 使用统一绘图组件（构造时传入对数轴参数）
     plot = ZyPlotWidget(log_x=data.log_x, log_y=data.log_y)
     if data.series:
-        legend = plot.addLegend(offset=defaults["legend_offset"])
-        # 图例：半透明白底 + 细边框（ZyPlotWidget 已预配置主题色）
-        legend.setBrush(QBrush(QColor(255, 255, 255, defaults["legend_bg_alpha"])))
-        legend.setPen(pg.mkPen(color=defaults["legend_border"]))
+        plot.addLegend(offset=defaults["legend_offset"])
     if data.x_label:
         plot.setLabel("bottom", data.x_label)
     if data.y_label:

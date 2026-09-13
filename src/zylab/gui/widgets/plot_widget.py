@@ -191,6 +191,20 @@ class ZyPlotWidget(pg.PlotWidget):
         """
         apply_plot_context_menu(self, config)
 
+    def addLegend(self, *args, **kwargs) -> pg.LegendItem:  # type: ignore[override]
+        """重写 pyqtgraph.addLegend，注入当前主题色 brush/pen.
+
+        PlotWidget.addLegend 通过 __getattr__ 代理到 PlotItem.addLegend，
+        不走正常 MRO 查找，因此必须直接调用 plotItem.addLegend 而非
+        super().addLegend。主题切换后由 :meth:`refresh_theme` 再次刷新型值。
+        """
+        pal = theme.current_palette()
+        kwargs.setdefault("brush", pg.mkBrush(pal.bg_muted))
+        kwargs.setdefault("pen", pg.mkPen(pal.border))
+        kwargs.setdefault("labelTextColor", pal.text_primary)
+        legend = self.getPlotItem().addLegend(*args, **kwargs)
+        return legend
+
     def refresh_theme(self) -> None:
         """主题切换后重刷背景/轴色（网格透明度不变，颜色随主题轴色）.
 
@@ -205,10 +219,13 @@ class ZyPlotWidget(pg.PlotWidget):
         for axis_name in ("bottom", "left"):
             plot_item.getAxis(axis_name).setPen(axis_pen)
             plot_item.getAxis(axis_name).setTextPen(pg.mkPen(pal.text_primary, width=1))
-        # 图例背景 + 文字色（若已创建）
+        # 图例背景 + 边框 + 文字色（若已创建）
         legend = plot_item.legend
         if legend is not None:
             legend.setLabelTextColor(pal.text_primary)
+            legend.opts["brush"] = pg.mkBrush(pal.bg_muted)
+            legend.opts["pen"] = pg.mkPen(pal.border)
+            legend.update()
 
     # ------------------------------------------------------------------ 内部辅助
 

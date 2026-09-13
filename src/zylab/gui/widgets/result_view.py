@@ -301,7 +301,14 @@ class ResultView(QWidget):
         self._setup_plot_menu()
         self._plot.showGrid(x=True, y=True, alpha=0.3)
         self._plot.setAspectLocked(True)
-        self._plot.addLegend(offset=(12, 12))
+        # 图例：初始创建即注入主题色 brush/pen（原生 pg.PlotWidget 不做联动）
+        _pal = theme.current_palette()
+        self._plot.addLegend(
+            offset=(12, 12),
+            brush=pg.mkBrush(_pal.bg_muted),
+            pen=pg.mkPen(_pal.border),
+            labelTextColor=_pal.text_primary,
+        )
         self._plot_row = QWidget()
         plot_layout = QHBoxLayout(self._plot_row)
         # 绘图行外边距：云图与周边控件/页边保留呼吸空间（原零边距贴边过近）
@@ -425,8 +432,16 @@ class ResultView(QWidget):
         self._set_error(False)
 
     def refresh_theme(self) -> None:
-        """主题切换后重刷绘图背景、标尺刻度与工具条图标."""
-        self._plot.setBackground(theme.current_palette().bg_app)
+        """主题切换后重刷绘图背景、标尺刻度、图例与工具条图标."""
+        pal = theme.current_palette()
+        self._plot.setBackground(pal.bg_app)
+        # 图例背景 + 边框 + 文字色
+        legend = self._plot.getPlotItem().legend
+        if legend is not None:
+            legend.opts["brush"] = pg.mkBrush(pal.bg_muted)
+            legend.opts["pen"] = pg.mkPen(pal.border)
+            legend.setLabelTextColor(pal.text_primary)
+            legend.update()
         self._colorbar.refresh_theme()
         self._refresh_button_icons()
 

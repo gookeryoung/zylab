@@ -92,8 +92,10 @@ class TemplateDialog(QDialog):
         detail_layout.addWidget(self._detail_desc)
         detail_layout.addStretch(1)
         splitter.addWidget(detail)
-        splitter.setStretchFactor(0, 3)
-        splitter.setStretchFactor(1, 2)
+        # 左侧列表 60% / 右侧详情 40%（参数化计算市场以目录浏览为主）
+        splitter.setStretchFactor(0, 6)
+        splitter.setStretchFactor(1, 4)
+        splitter.setSizes([432, 288])
         layout.addWidget(splitter, stretch=1)
 
         buttons = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)

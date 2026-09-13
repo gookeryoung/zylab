@@ -48,6 +48,7 @@ try:
         QMouseEvent,
         QPainter,
         QPainterPath,
+        QPalette,
         QPen,
         QPixmap,
         QSyntaxHighlighter,
@@ -147,6 +148,7 @@ except ImportError:  # pragma: no cover（3.8 环境走此分支）
         QMouseEvent,
         QPainter,
         QPainterPath,
+        QPalette,  # type: ignore[missing-import]
         QPen,
         QPixmap,
         QSyntaxHighlighter,  # type: ignore[missing-import]
@@ -257,6 +259,7 @@ __all__ = [
     "QObject",
     "QPainter",
     "QPainterPath",
+    "QPalette",
     "QPen",
     "QPixmap",
     "QPlainTextEdit",

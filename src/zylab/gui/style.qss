@@ -9,9 +9,10 @@ QWidget {
     font-size: ${FONT_BODY};
 }
 QMainWindow, QDialog { background-color: ${QSS_BG_APP}; }
-/* 滚动区与其内容透明，保持与页面背景一致 */
+/* 滚动区：viewport + 内容 widget 统一设 bg_app 背景，不依赖父级链路 */
 QScrollArea { background: transparent; border: none; }
-QScrollArea > QWidget > QWidget { background: transparent; }
+QScrollArea > QWidget { background-color: ${QSS_BG_APP}; }
+QScrollArea > QWidget > QWidget { background-color: ${QSS_BG_APP}; }
 QLabel:disabled { color: ${QSS_TEXT_DISABLED}; }
 QLabel#secondaryText {
     color: ${QSS_TEXT_SECONDARY};
@@ -710,6 +711,7 @@ QHeaderView::section {
 
 /* ------------------------------------------------ 分组框 */
 QGroupBox {
+    background-color: ${QSS_BG_MUTED};
     border: 1px solid ${QSS_BORDER};
     border-radius: ${RADIUS_MD};
     margin-top: 6px;
