@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+import logging
+import time
+
 from zylab import __version__
 from zylab.console import ReplKernel
 from zylab.core import EventBus, default_data_dir
@@ -10,9 +13,6 @@ from zylab.sci import TOPIC_WORKSPACE_CHANGED, WorkspaceInfo, WorkspaceManager
 from . import theme
 from .app import apply_theme, save_theme_name
 from .icons import nav_icon
-from .pages.flowchart_page import FlowchartPage
-from .pages.notebook_page import NotebookPage
-from .pages.template_page import TemplatePage
 from .qt_compat import (
     QDockWidget,
     QEvent,
@@ -39,6 +39,8 @@ from .widgets.command_palette import Command, CommandPalette
 
 __all__ = ["MainWindow"]
 
+logger = logging.getLogger(__name__)
+
 _PAGE_CONSOLE = 0
 _PAGE_FEA = 1
 _PAGE_TEMPLATE = 2
@@ -50,33 +52,50 @@ class MainWindow(QMainWindow):
 
     def __init__(self) -> None:
         """初始化主窗口：装配内核、页面与导航."""
+        _t_total = time.perf_counter()
         super().__init__()
         self.setWindowTitle(f"zylab {__version__}")
         self.setMinimumSize(960, 640)
         self.resize(1280, 800)
 
         self._bus = EventBus()
+
+        _t = time.perf_counter()
         # 工作区管理器先于内核：kernel.set_workspace_manager() 需要 WM 已构造好；
         # WM.load() 会触发 TOPIC_WORKSPACE_CHANGED 事件，内核已订阅后自动同步 namespace.cwd
         self._workspace_manager = WorkspaceManager(self._bus)
         self._workspace_manager.load()
         self._kernel = ReplKernel(self._bus)
         self._kernel.set_workspace_manager(self._workspace_manager)
+        self._perf_log("EventBus + WorkspaceManager + ReplKernel", _t)
 
         # 侧边栏折叠状态（默认展开；恢复上次会话）
         self._project_dock_visible = True
 
+        _t = time.perf_counter()
         self._build_ui()
+        self._perf_log("_build_ui (含三页面构造)", _t)
+
+        _t = time.perf_counter()
         self._load_gui_state()
         self._install_page_shortcuts()
         self._setup_command_palette()
         self._connect()
         self.statusBar().showMessage("就绪")
+        self._perf_log("状态恢复 + 快捷键 + 命令面板 + connect", _t)
+
+        logger.debug("[启动] MainWindow.__init__ 总耗时: %.1f ms", (time.perf_counter() - _t_total) * 1000.0)
 
     @property
     def kernel(self) -> ReplKernel:
         """REPL 内核（测试与外部集成用）."""
         return self._kernel
+
+    @staticmethod
+    def _perf_log(label: str, start: float) -> None:
+        """向主窗口模块 logger 输出阶段耗时（毫秒，DEBUG 级别）."""
+        delta_ms = (time.perf_counter() - start) * 1000.0
+        logger.debug("[启动] %s: %.1f ms", label, delta_ms)
 
     def _build_ui(self) -> None:
         """组装 Dock 窗口布局：中央 QStackedWidget + 三个 QDockWidget."""
@@ -88,9 +107,21 @@ class MainWindow(QMainWindow):
         root.addWidget(self._build_header())
 
         self._stack = QStackedWidget()
+        # 局部 import：配合 widgets/__init__.py + pages/__init__.py + core/__init__.py
+        # 懒加载，确保 main_window 模块加载本身秒级完成（不触发 pyqtgraph/h5py 等重链）
+        from .pages.flowchart_page import FlowchartPage
+        from .pages.notebook_page import NotebookPage
+        from .pages.template_page import TemplatePage
+
+        _t = time.perf_counter()
         self._notebook_page = NotebookPage(self._kernel, self._bus)
+        self._perf_log("NotebookPage 构造", _t)
+        _t = time.perf_counter()
         self._flowchart_page = FlowchartPage()
+        self._perf_log("FlowchartPage 构造", _t)
+        _t = time.perf_counter()
         self._template_page = TemplatePage()
+        self._perf_log("TemplatePage 构造", _t)
         self._stack.addWidget(self._notebook_page)
         self._stack.addWidget(self._flowchart_page)
         self._stack.addWidget(self._template_page)

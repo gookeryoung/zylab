@@ -239,14 +239,7 @@ class ReplKernel:
         ns["help"] = _help
         ns["cd"] = _cd
         ns["cwd"] = Path.cwd().resolve()
-        # seaborn 快捷符号（已硬依赖，用户手写代码直接 sns.set_theme/lineplot）
-        try:
-            import seaborn as sns  # pragma: no cover - 硬依赖
-
-            ns["sns"] = sns
-        except ImportError:  # pragma: no cover - 硬依赖永不触发
-            pass
-        # matplotlib rcParams 默认配置（含中文字体）
+        # matplotlib rcParams 默认配置（含中文字体）+ seaborn/matplotlib.pyplot 注入
         apply_matplotlib_defaults(ns)
         self.builtin_names = frozenset(ns)
 

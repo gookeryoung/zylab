@@ -156,11 +156,11 @@ def test_close_idempotent(tmp_path) -> None:
 
 def test_create_oserror(tmp_path, monkeypatch) -> None:
     """底层 HDF5 创建失败应包装为 ProjectFileError."""
-    import zylab.core.project as project_mod
+    import h5py
 
     def boom(*args, **kwargs):
         raise OSError("磁盘故障")
 
-    monkeypatch.setattr(project_mod.h5py, "File", boom)
+    monkeypatch.setattr(h5py, "File", boom)
     with pytest.raises(ProjectFileError, match="工程文件创建失败"):
         Project.create(tmp_path / "x.zprj")

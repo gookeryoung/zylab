@@ -13,6 +13,7 @@ import logging
 import os
 import sys
 import tempfile
+import time
 from pathlib import Path
 
 from ..core import set_root_level, update_runtime_config
@@ -35,6 +36,16 @@ __all__ = [
 
 logger = logging.getLogger(__name__)
 
+
+def _perf_log(label: str, start: float) -> None:
+    """向 ``gui.app`` 模块 logger 输出阶段耗时（毫秒，DEBUG 级别）.
+
+    仅当日志级别设为 DEBUG 时输出；避免生产 INFO 日志被性能数据淹没.
+    """
+    delta_ms = (time.perf_counter() - start) * 1000.0
+    logger.debug("[启动] %s: %.1f ms", label, delta_ms)
+
+
 _THEME_FILE = "theme.txt"
 
 #: SVG 令牌进程内缓存：key = palette.name，value = _write_theme_svgs 返回的 token 字典.
@@ -51,6 +62,7 @@ def register_fonts() -> list[str]:
     重复调用无害（Qt 对同一字体文件幂等）；注册失败（文件缺失/损坏）仅告警，
     界面回退系统等宽字体，不中断启动。
     """
+    _t = time.perf_counter()
     loaded: list[str] = []
     for path in sorted(_FONTS_DIR.glob("*.ttf")):
         font_id = QFontDatabase.addApplicationFont(str(path))
@@ -58,7 +70,7 @@ def register_fonts() -> list[str]:
             logger.warning("内置字体注册失败: %s", path.name)
             continue
         loaded.extend(QFontDatabase.applicationFontFamilies(font_id))
-    logger.debug("内置字体已注册: %s", loaded or "无")
+    logger.debug("[启动] register_fonts: %.1f ms (字体=%s)", (time.perf_counter() - _t) * 1000.0, loaded or "无")
     return loaded
 
 
@@ -189,6 +201,7 @@ def apply_theme(app: QApplication, name: str) -> theme.Palette:
     Raises:
         ValueError: 主题名不存在时抛出（样式表保持不变）。
     """
+    _t_theme = time.perf_counter()
     pal = theme.palette(name)  # 未知名先抛错，不动当前状态
     theme.set_current_theme(name)
 
@@ -198,10 +211,15 @@ def apply_theme(app: QApplication, name: str) -> theme.Palette:
     # Layer 3: 确保 ProxyStyle 已安装（polish 钩子会把新 QPalette 同步到全部控件）
     _ensure_proxy_style(app)
 
-    # Layer 2: QSS Fragment 重渲染
+    # Layer 2: QSS Fragment 重渲染（含 SVG 令牌生成）
+    _t_qss = time.perf_counter()
     app.setStyleSheet(load_stylesheet(pal))
-
-    logger.debug("主题已切换: %s", name)
+    logger.debug(
+        "[启动] apply_theme('%s'): %.1f ms（QSS/令牌 %.1f ms）",
+        name,
+        (time.perf_counter() - _t_theme) * 1000.0,
+        (time.perf_counter() - _t_qss) * 1000.0,
+    )
     return pal
 
 
@@ -289,15 +307,21 @@ def create_app(argv: list[str] | None = None, theme_name: str = theme.DEFAULT_TH
     使 QMessageBox/QFileDialog/QInputDialog 等标准对话框的按钮文字
     （Save/Discard/Cancel 等）显示为本地化语言。
     """
+    _t_create = time.perf_counter()
     existing = QApplication.instance()
     app = existing if isinstance(existing, QApplication) else QApplication(argv if argv is not None else sys.argv)
-    # 1. Fusion 基础风格
+    # 1. Fusion 基础风格 + ProxyStyle 包装
     app.setStyle("Fusion")
-    # 2. 包装 ProxyStyle（后续 apply_theme 会再次确保已安装）
     app.setStyle(_proxy_style_module.ProxyStyle(app.style()))
+
+    _t = time.perf_counter()
     _load_qt_translations(app)
+    _perf_log("Qt 翻译加载", _t)
+
     register_fonts()
+
     apply_theme(app, theme_name)
+    logger.debug("[启动] create_app 总耗时: %.1f ms", (time.perf_counter() - _t_create) * 1000.0)
     return app
 
 
@@ -389,7 +413,10 @@ def main() -> int:  # pragma: no cover（事件循环阻塞，需图形环境手
     from zylab.core.config import default_data_dir
     from zylab.core.log import setup_logging
 
+    _t_total = time.perf_counter()
+
     setup_logging("dev")
+    _perf_log("setup_logging", _t_total)
 
     data_dir = default_data_dir()
 
@@ -404,6 +431,7 @@ def main() -> int:  # pragma: no cover（事件循环阻塞，需图形环境手
     autosave_interval_sec: int | None = None
     workspace_history_limit: int | None = None
 
+    _t = time.perf_counter()
     settings_path = data_dir / "settings.json"
     if settings_path.is_file():
         try:
@@ -433,10 +461,14 @@ def main() -> int:  # pragma: no cover（事件循环阻塞，需图形环境手
         legacy_theme = load_theme_name(data_dir)
         if legacy_theme != theme.DEFAULT_THEME:
             theme_name = legacy_theme
+    _perf_log("读取 settings.json", _t)
 
+    _t = time.perf_counter()
     app = create_app(theme_name=theme_name)
+    _perf_log("create_app (QApplication + 主题 + 样式)", _t)
 
     # 2. 应用字体/字号/日志/运行时配置（主题已在 create_app 中应用，跳过避免重复切换）
+    _t = time.perf_counter()
     apply_settings(
         app,
         font_family_body=font_family_body,
@@ -448,10 +480,17 @@ def main() -> int:  # pragma: no cover（事件循环阻塞，需图形环境手
         autosave_interval_sec=autosave_interval_sec,
         workspace_history_limit=workspace_history_limit,
     )
+    _perf_log("apply_settings", _t)
 
     register_user_themes(data_dir)
+
+    _t = time.perf_counter()
     from .main_window import MainWindow  # 惰性导入，加速 --help 等非 GUI 路径
 
     window = MainWindow()
+    _perf_log("MainWindow.__init__", _t)
+
     window.show()
+    _perf_log("窗口 show()", _t_total)
+    logger.debug("[启动] ============ GUI 启动总耗时: %.1f ms ============", (time.perf_counter() - _t_total) * 1000.0)
     return exec_app(app)

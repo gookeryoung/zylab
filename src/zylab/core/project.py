@@ -17,12 +17,14 @@ import json
 import logging
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
-import h5py
 import numpy as np
 
 from .errors import ProjectFileError
+
+if TYPE_CHECKING:
+    import h5py
 
 __all__ = ["PROJECT_SCHEMA_VERSION", "PROJECT_SUFFIX", "Project"]
 
@@ -66,6 +68,8 @@ class Project:
         :param name: 工程名称。
         :param app_version: 创建方应用版本。
         """
+        import h5py
+
         path = Path(path)
         path.parent.mkdir(parents=True, exist_ok=True)
         tmp = path.with_suffix(path.suffix + ".tmp")
@@ -96,6 +100,8 @@ class Project:
         if not path.exists():
             raise ProjectFileError(f"工程文件不存在: {path}")
         try:
+            import h5py
+
             h5 = h5py.File(path, mode)
         except OSError as exc:
             raise ProjectFileError(f"工程文件无法打开（非 HDF5 或已损坏）: {path}") from exc
@@ -179,6 +185,8 @@ class Project:
 
     def _require_dataset(self, group: str, name: str) -> h5py.Dataset:
         """获取数据集，不存在抛 :class:`ProjectFileError`."""
+        import h5py
+
         if group not in self._h5 or name not in self._h5[group]:
             raise ProjectFileError(f"数据集不存在: {group}/{name}")
         node = self._h5[group][name]

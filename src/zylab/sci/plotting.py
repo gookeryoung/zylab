@@ -156,6 +156,8 @@ def apply_matplotlib_defaults(ns: dict[str, Any] | None = None) -> frozenset[str
         ns["available_fonts"] = frozenset(available)
         ns["cn_font_candidates"] = list(_CN_FONT_CANDIDATES)
         ns["curve_palette"] = list(CURVE_PALETTE)
+        ns["sns"] = sns
+        ns["plt"] = plt
     return frozenset(available)
 
 

@@ -15,8 +15,6 @@ from __future__ import annotations
 import html
 from pathlib import Path
 
-import pyqtgraph as pg
-
 from zylab.console import ReplKernel
 from zylab.core import EventBus
 from zylab.sci import (
@@ -65,7 +63,6 @@ from ..qt_compat import (
     exec_dialog,
     exec_menu,
 )
-from ..widgets.plot_widget import PlotMenuConfig, ZyPlotWidget
 from .var_browser import VarDetailDialog, VarTableModel, VarTagDelegate, mono_font
 
 __all__ = ["CellEditor", "CellWidget", "NotebookPage", "VarTableModel"]  # VarTableModel 经 var_browser re-export
@@ -447,6 +444,10 @@ class CellWidget(QFrame):
     def _add_plot(self, out: PlotOutput) -> None:
         """绘图输出：内嵌 ZyPlotWidget（多 series 同图、主题色循环、轴色随主题、
         seaborn whitegrid 对齐、增强中文右键菜单）."""
+        import pyqtgraph as pg
+
+        from ..widgets.plot_widget import PlotMenuConfig, ZyPlotWidget
+
         pal = theme.current_palette()
         defaults = PG_CURVE_DEFAULTS
         plot = ZyPlotWidget(parent=self)
