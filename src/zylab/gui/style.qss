@@ -129,7 +129,8 @@ QPushButton#workspaceOpenBtn:pressed {
     background-color: ${QSS_SELECTION_BG};
 }
 
-/* 头部帮助按钮（#headerHelpBtn）— 与 workspaceOpenBtn 同规格，22px 对齐 headerBar */
+/* 头部设置/帮助按钮 — 与 workspaceOpenBtn 同规格，22px 对齐 headerBar */
+QPushButton#headerSettingsBtn,
 QPushButton#headerHelpBtn {
     background: transparent;
     color: ${QSS_NAV_TEXT};
@@ -141,11 +142,13 @@ QPushButton#headerHelpBtn {
     min-width: 0px;
     max-width: 22px;
 }
+QPushButton#headerSettingsBtn:hover,
 QPushButton#headerHelpBtn:hover {
     background-color: ${QSS_NAV_BG_SELECTED};
     border-color: ${QSS_NAV_ACCENT};
     color: ${QSS_NAV_ACCENT};
 }
+QPushButton#headerSettingsBtn:pressed,
 QPushButton#headerHelpBtn:pressed {
     background-color: ${QSS_SELECTION_BG};
 }

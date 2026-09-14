@@ -37,6 +37,10 @@ logger = logging.getLogger(__name__)
 
 _THEME_FILE = "theme.txt"
 
+#: SVG 令牌进程内缓存：key = palette.name，value = _write_theme_svgs 返回的 token 字典.
+#: 同一主题的颜色固定，字体/字号变化不影响 SVG（SVG 只涉及颜色），按主题名缓存安全。
+_SVG_TOKENS_CACHE: dict[str, dict[str, str]] = {}
+
 #: 内置字体目录（随包分发，当前为 DejaVu Sans Mono 等宽件）
 _FONTS_DIR = Path(__file__).resolve().parent.parent / "assets" / "fonts"
 
@@ -137,9 +141,18 @@ def load_stylesheet(palette: theme.Palette | None = None) -> str:
     本函数只负责生成 SVG 令牌并传入。这样拆分后 Fragment 层与 SVG 生成
     解耦，测试时可直接调 ``style.load_stylesheet(svg_tokens={})`` 跳过
     临时文件写入。
+
+    SVG 令牌按主题名进程内缓存，同一主题重复调用不会重写磁盘。缓存命中时
+    会校验目标文件是否仍存在（``_write_theme_svgs`` 切主题时会清理旧主题
+    文件，缓存路径可能悬空），文件丢失则重新生成。
     """
     pal = palette if palette is not None else theme.current_palette()
+    svg_tokens = _SVG_TOKENS_CACHE.get(pal.name)
+    # 缓存命中但文件可能已被切主题时清理，检查后再决定是否重新生成
+    if svg_tokens is not None and all(Path(p).exists() for p in svg_tokens.values()):
+        return _style_layer.load_stylesheet(pal, svg_tokens=svg_tokens)
     svg_tokens = _write_theme_svgs(pal)
+    _SVG_TOKENS_CACHE[pal.name] = svg_tokens
     return _style_layer.load_stylesheet(pal, svg_tokens=svg_tokens)
 
 

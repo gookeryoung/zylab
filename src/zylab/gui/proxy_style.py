@@ -84,10 +84,48 @@ class ProxyStyle(QProxyStyle):
     ) -> int:
         """根据主题非色令牌覆盖 Fusion 的像素级尺寸.
 
-        主要处理：check indicator 大小、focus frame 宽度等 QSS 无对应
-        属性的指标值。大部分控件尺寸已由 QSS 的 min-height / padding
-        控制，这里只覆盖 Fusion 默认值不一致的场景。
+        覆盖策略：只覆盖 QSS 难以直接控制且 Fusion 默认值与主题设计令牌
+        不一致的指标。其余指标原样透传给 Fusion，让 QSS 的 min-height/
+        padding 等规则主导控件尺寸。
+
+        覆盖项：
+        - PM_FocusFrameHMargin / PM_FocusFrameVMargin — Fusion 默认 1px，
+          主题间距令牌 SPACING_XS(4px) 更协调；
+        - PM_IndicatorWidth / Height — Fusion 默认 ~13px，覆盖为 16px 与
+          26-32px 控件高度更协调（checkbox indicator）；
+        - PM_ExclusiveIndicatorWidth / Height — radio button indicator 同上；
+        - PM_TabBarTabHSpace — Fusion 默认 ~20px，主题 SPACING_MD(16px) 更紧凑；
+        - PM_SmallIconSize — Fusion 默认 16px，匹配主题按钮内图标尺寸。
         """
+        # 延迟导入避免循环（theme 常量模块加载极轻）
+        from .theme import (
+            SPACING_MD,
+            SPACING_SM,
+            SPACING_XS,
+        )
+
+        # 字符串 → 像素整数（"32px" → 32）
+        def _px(value: str | int) -> int:
+            if isinstance(value, int):
+                return value
+            return int(value.removesuffix("px"))
+
+        theme_val = 0  # 0 表示"不覆盖，让 Fusion 处理"
+        if metric in (QStyle.PM_FocusFrameHMargin, QStyle.PM_FocusFrameVMargin):
+            theme_val = _px(SPACING_XS)  # 4px，比 Fusion 默认 1px 宽松
+        elif metric in (QStyle.PM_IndicatorWidth, QStyle.PM_IndicatorHeight):
+            theme_val = 16  # checkbox indicator 16×16，与 26-32px 控件高度协调
+        elif metric in (QStyle.PM_ExclusiveIndicatorWidth, QStyle.PM_ExclusiveIndicatorHeight):
+            theme_val = 16  # radio button indicator 16×16
+        elif metric == QStyle.PM_TabBarTabHSpace:
+            theme_val = _px(SPACING_MD)  # 16px tab 水平间距
+        elif metric == QStyle.PM_TabBarTabVSpace:
+            theme_val = _px(SPACING_SM)  # 8px tab 垂直间距
+        elif metric == QStyle.PM_SmallIconSize:
+            theme_val = 16  # 16px，与 Fusion 默认一致但显式声明稳定
+
+        if theme_val > 0:
+            return theme_val
         # 默认行为：让代理 style 的 base（Fusion）处理大部分 metric
         return super().pixelMetric(metric, option, widget)
 
