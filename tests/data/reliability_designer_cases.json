@@ -1,0 +1,48 @@
+{
+  "description": "感度试验序贯设计器下一水平规则（GJB/Z 377A 方法101-104/201-202 + Neyer）计算正确性校核数据集。期望值按各方法规则手工推演：兰利混合区间中点、升降法响应降/不响应升一级、Neyer 未翻转时 sigma*2^(m/2) 指数外推、概率单位等间隔表、步进法全响应后补一级收尾。",
+  "updown": [
+    {"name": "empty_history_midpoint", "doc": "无记录：取初始区间中点。", "levels": [], "responses": [], "x_low": 0.0, "x_high": 10.0, "step": 1.0, "expected": 5.0},
+    {"name": "response_steps_down", "doc": "上一发响应：水平下降一个步长（仅看上一发，与更早历史无关）。", "levels": [5.0, 4.0], "responses": [0, 1], "x_low": 0.0, "x_high": 10.0, "step": 1.0, "expected": 3.0},
+    {"name": "silent_steps_up", "doc": "上一发不响应：水平上升一个步长。", "levels": [5.0, 6.0], "responses": [0, 0], "x_low": 0.0, "x_high": 10.0, "step": 1.5, "expected": 7.5},
+    {"name": "zero_width_interval_midpoint", "doc": "极端零宽度初始区间：中点即唯一水平。", "levels": [], "responses": [], "x_low": 4.0, "x_high": 4.0, "step": 0.5, "expected": 4.0},
+    {"name": "nonpositive_step_rejected", "levels": [], "responses": [], "x_low": 0.0, "x_high": 10.0, "step": 0.0, "raises": "步长须为正"}
+  ],
+  "updown_adaptive": [
+    {"name": "empty_history_midpoint", "levels": [], "responses": [], "x_low": 0.0, "x_high": 10.0, "step": 1.0, "sigma": 2.0, "expected": 5.0},
+    {"name": "step_tracks_sigma", "doc": "sigma 估计大于初始步长：实际步长取 sigma=2，响应后降到 3。", "levels": [5.0], "responses": [1], "x_low": 0.0, "x_high": 10.0, "step": 1.0, "sigma": 2.0, "expected": 3.0},
+    {"name": "step_floor_kicks_in", "doc": "sigma 很小：步长不低于 step*floor_factor=0.2，不响应后升到 5.2。", "levels": [5.0], "responses": [0], "x_low": 0.0, "x_high": 10.0, "step": 1.0, "sigma": 0.1, "expected": 5.2},
+    {"name": "nonpositive_step_rejected", "levels": [5.0], "responses": [1], "x_low": 0.0, "x_high": 10.0, "step": -1.0, "sigma": 1.0, "raises": "步长须为正"},
+    {"name": "nonpositive_sigma_rejected", "levels": [5.0], "responses": [1], "x_low": 0.0, "x_high": 10.0, "step": 1.0, "sigma": 0.0, "raises": "σ 估计须为正"},
+    {"name": "floor_factor_at_boundary_rejected", "levels": [5.0], "responses": [1], "x_low": 0.0, "x_high": 10.0, "step": 1.0, "sigma": 1.0, "floor_factor": 1.0, "raises": "步长下限比例"}
+  ],
+  "langlie": [
+    {"name": "empty_history_midpoint", "levels": [], "responses": [], "x_low": 0.0, "x_high": 10.0, "expected": 5.0},
+    {"name": "mixed_interval_midpoint", "doc": "D0=5（最大全不响应水平）、D1=7（最小全响应水平）-> 中点 6。", "levels": [5.0, 3.0, 7.0], "responses": [0, 0, 1], "x_low": 0.0, "x_high": 10.0, "expected": 6.0},
+    {"name": "all_silent_uses_lower_bound", "doc": "全无响应：D0=5、D1 保持初始上界 10 -> 7.5。", "levels": [5.0, 3.0], "responses": [0, 0], "x_low": 0.0, "x_high": 10.0, "expected": 7.5},
+    {"name": "zero_width_interval", "doc": "极端零宽度初始区间：始终返回该水平。", "levels": [5.0, 3.0], "responses": [0, 0], "x_low": 5.0, "x_high": 5.0, "expected": 5.0}
+  ],
+  "ostr": [
+    {"name": "collapsed_interval_returns_midpoint", "doc": "极端退化：混合区间宽度为 0 时直接返回中点，不进入 D-最优候选搜索。", "levels": [], "responses": [], "x_low": 5.0, "x_high": 5.0, "model": "normal", "mu": 5.0, "sigma": 1.0, "expected": 5.0},
+    {"name": "mixed_history_choice_within_interval", "doc": "翻转后候选点夹在兰利混合区间 [5,7] 内（D-最优网格点被 clip）。", "levels": [5.0, 3.0, 7.0], "responses": [0, 0, 1], "x_low": 0.0, "x_high": 10.0, "model": "normal", "mu": 5.0, "sigma": 1.5, "expected_between": [5.0, 7.0]}
+  ],
+  "neyer": [
+    {"name": "empty_history_midpoint", "levels": [], "responses": [], "x_low": 0.0, "x_high": 10.0, "model": "normal", "mu": 5.0, "sigma": 1.0, "expected": 5.0},
+    {"name": "all_silent_extrapolates_up", "doc": "未翻转（全不响应，已发 m=1）：5 + sigma*2^(m/2)=5+sqrt(2)。", "levels": [5.0], "responses": [0], "x_low": 0.0, "x_high": 10.0, "model": "normal", "mu": 5.0, "sigma": 1.0, "expected": 6.414213562373095},
+    {"name": "all_response_extrapolates_down", "doc": "未翻转（全响应，m=2）：7 - 2*2^(1)=3。", "levels": [5.0, 7.0], "responses": [1, 1], "x_low": 0.0, "x_high": 10.0, "model": "normal", "mu": 5.0, "sigma": 2.0, "expected": 3.0},
+    {"name": "mixed_choice_clipped_to_bounds", "doc": "翻转后走 D-最优网格，结果被 clip 在初始界内。", "levels": [5.0, 3.0, 7.0], "responses": [0, 0, 1], "x_low": 0.0, "x_high": 10.0, "model": "normal", "mu": 5.0, "sigma": 1.5, "expected_between": [0.0, 10.0]}
+  ],
+  "probit": [
+    {"name": "six_even_levels", "x_low": 0.0, "x_high": 10.0, "n_levels": 6, "expected": [0.0, 2.0, 4.0, 6.0, 8.0, 10.0]},
+    {"name": "signed_interval_five_levels", "x_low": -2.0, "x_high": 2.0, "n_levels": 5, "expected": [-2.0, -1.0, 0.0, 1.0, 2.0]},
+    {"name": "minimum_two_levels", "x_low": 3.0, "x_high": 7.0, "n_levels": 2, "expected": [3.0, 7.0]},
+    {"name": "one_level_rejected", "x_low": 0.0, "x_high": 10.0, "n_levels": 1, "raises": "水平数须 ≥ 2"}
+  ],
+  "stepstress": [
+    {"name": "full_response_then_confirm_level", "doc": "典型：x=4 首次全响应后补一级 x=6 确认即停（x=6 计数由适配器给出为 2）。", "x_low": 0.0, "x_high": 10.0, "step": 2.0, "n_per_level": 3, "counts": {"0": 0, "2": 1, "4": 3, "6": 2}, "expected_levels": [0.0, 2.0, 4.0, 6.0], "expected_hits": [0, 1, 3, 2]},
+    {"name": "never_full_runs_to_upper_bound", "doc": "极端：始终无全响应，一直试到上界 10（含端点共 6 级）。", "x_low": 0.0, "x_high": 10.0, "step": 2.0, "n_per_level": 3, "counts": {"0": 0, "2": 0, "4": 0, "6": 0, "8": 0, "10": 0}, "expected_levels": [0.0, 2.0, 4.0, 6.0, 8.0, 10.0], "expected_hits": [0, 0, 0, 0, 0, 0]},
+    {"name": "full_response_at_first_level", "doc": "极端：最低水平即全响应，补一级后立即结束。", "x_low": 0.0, "x_high": 10.0, "step": 2.0, "n_per_level": 3, "counts": {"0": 3, "2": 1}, "expected_levels": [0.0, 2.0], "expected_hits": [3, 1]},
+    {"name": "preview_without_callback", "doc": "无计数回调：仅生成到上界的完整预览表，计数全 0。", "x_low": 0.0, "x_high": 6.0, "step": 2.0, "n_per_level": 3, "counts": null, "expected_levels": [0.0, 2.0, 4.0, 6.0], "expected_hits": [0, 0, 0, 0]},
+    {"name": "nonpositive_step_rejected", "x_low": 0.0, "x_high": 10.0, "step": 0.0, "n_per_level": 3, "counts": null, "raises": "步长须为正"},
+    {"name": "zero_shots_per_level_rejected", "x_low": 0.0, "x_high": 10.0, "step": 2.0, "n_per_level": 0, "counts": null, "raises": "每水平发数须 ≥ 1"}
+  ]
+}

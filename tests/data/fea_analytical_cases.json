@@ -1,0 +1,33 @@
+{
+  "description": "FEA 有限元计算正确性校核数据集：每组参数给出教科书闭式解析解（金标准），测试侧按参数建模并断言 FEA 结果。桁架/热传导线性场为精确解（容差 1e-8 量级），模态/屈曲为离散近似解（按网格密度给定相对容差）。覆盖典型参数、压缩/反向温度梯度、浅角/陡角桁架、粗细长度尺度等极端情形。",
+  "truss_tension": [
+    {"name": "typical_vertical_bar", "doc": "典型竖直拉杆：u=PL/(EA)=10*5/(1000*2)=0.025，sigma=P/A=5。", "L": 5.0, "E": 1000.0, "A": 2.0, "P": 10.0, "u_tip": 0.025, "stress": 5.0, "reaction": -10.0, "rtol": 1e-10},
+    {"name": "stiff_steel_like_bar", "doc": "高模量细长杆：位移 3.5e-4 小量级，校核小位移数值精度。", "L": 10.0, "E": 200000.0, "A": 1.0, "P": 7.0, "u_tip": 0.00035, "stress": 7.0, "reaction": -7.0, "rtol": 1e-10},
+    {"name": "compression_negative_load", "doc": "极端载荷反向（受压）：位移与应力均为负，符号约定校核。", "L": 2.0, "E": 500.0, "A": 1.0, "P": -4.0, "u_tip": -0.016, "stress": -4.0, "reaction": 4.0, "rtol": 1e-10},
+    {"name": "thin_bar_large_displacement_scale", "doc": "极端小截面积（A=0.01）：柔度大，u=10 与几何同量级，σ=100。", "L": 100.0, "E": 1000.0, "A": 0.01, "P": 1.0, "u_tip": 10.0, "stress": 100.0, "reaction": -1.0, "rtol": 1e-10}
+  ],
+  "two_bar_truss": [
+    {"name": "symmetric_45_degrees", "doc": "典型对称 45° 两杆：δ=PL/(2EA sin²θ)=0.014142 向下，杆受压 7.0711。", "a": 1.0, "h": 1.0, "E": 1000.0, "A": 1.0, "P": 10.0, "dy_tip": -0.01414213562373095, "stress": -7.071067811865475, "rtol": 1e-10},
+    {"name": "extreme_shallow_angle", "doc": "极端浅角（θ≈0.57°）：刚度 ∝sin²θ 极小，顶点位移近 1、压应力约 200。", "a": 10.0, "h": 0.1, "E": 210000.0, "A": 0.5, "P": 2.0, "dy_tip": -0.9525238130951786, "stress": -200.0099997500125, "rtol": 1e-08},
+    {"name": "extreme_steep_angle", "doc": "极端陡角（θ≈87°）：接近竖直并联拉杆，δ=0.12547、压应力 1.2516。", "a": 0.5, "h": 10.0, "E": 100.0, "A": 2.0, "P": 5.0, "dy_tip": -0.12546904284679405, "stress": -1.2515615246562992, "rtol": 1e-08}
+  ],
+  "cantilever_rod_modal": [
+    {"name": "steel_rod_unit_length_3_modes", "doc": "典型钢质悬臂杆纵向模态：ω_n=(2n-1)π/(2L)√(E/ρ)，32 单元一致质量。", "L": 1.0, "E": 210000000000.0, "rho": 7850.0, "n_elem": 32, "omegas": [8124.463577057186, 24373.390731171556, 40622.31788528593], "rtol": [0.01, 0.03, 0.05]},
+    {"name": "double_length_halves_frequency", "doc": "长度加倍：各阶频率严格减半（尺度律校核）。", "L": 2.0, "E": 210000000000.0, "rho": 7850.0, "n_elem": 32, "omegas": [4062.231788528593, 12186.695365585778, 20311.158942642964], "rtol": [0.01, 0.03, 0.05]},
+    {"name": "short_aluminum_rod_fundamental", "doc": "换材料（铝 E=70GPa、ρ=2700）+ 短杆 L=0.5，基频 ≈15996 rad/s。", "L": 0.5, "E": 70000000000.0, "rho": 2700.0, "n_elem": 16, "omegas": [15996.20681976934], "rtol": [0.01]}
+  ],
+  "cantilever_beam_modal": [
+    {"name": "steel_beam_fundamental", "doc": "典型悬臂梁一阶弯曲：ω=β₁²√(EI/(ρAL⁴))，β₁L=1.87510407，16 单元。", "L": 1.0, "E": 210000000000.0, "rho": 7850.0, "A": 0.0001, "I": 8.333e-10, "n_elem": 16, "omega": 52.496006021660754, "rtol": 0.02},
+    {"name": "double_length_scales_by_16", "doc": "长度加倍：弯曲基频按 L^-4 缩放下调为 1/16。", "L": 2.0, "E": 210000000000.0, "rho": 7850.0, "A": 0.0001, "I": 8.333e-10, "n_elem": 16, "omega": 13.124001505415189, "rtol": 0.02}
+  ],
+  "euler_column": [
+    {"name": "cantilever_fixed_free", "doc": "典型悬臂柱：P_cr=π²EI/(4L²)=51.815。", "bc": "cantilever", "L": 1.0, "E": 210000.0, "I": 0.0001, "n_elem": 16, "p_cr": 51.81542310571913, "rtol": 0.01},
+    {"name": "pinned_pinned", "doc": "两端铰支柱：P_cr=π²EI/L²，为悬臂的 4 倍。", "bc": "pinned", "L": 1.0, "E": 210000.0, "I": 0.0001, "n_elem": 16, "p_cr": 207.2616924228765, "rtol": 0.015},
+    {"name": "cantilever_double_length_quarter_load", "doc": "长度加倍：临界载荷按 L^-2 降为 1/4。", "bc": "cantilever", "L": 2.0, "E": 210000.0, "I": 0.0001, "n_elem": 16, "p_cr": 12.953855776429782, "rtol": 0.01}
+  ],
+  "thermal_linear_gradient": [
+    {"name": "typical_warming_strip", "doc": "典型线性导热：Q4 条带两端 100/200℃，梯度恒为 +10、热流密度 50（线性场为单元精确场）。", "L": 10.0, "h": 1.0, "nx": 20, "k": 5.0, "thickness": 0.3, "t0": 100.0, "t1": 200.0, "grad_x": 10.0, "flux": 50.0, "rtol": 1e-09},
+    {"name": "reversed_cooling_gradient", "doc": "极端反向梯度：300→0℃，dT/dx=-30、热流模长 150。", "L": 10.0, "h": 1.0, "nx": 20, "k": 5.0, "thickness": 0.3, "t0": 300.0, "t1": 0.0, "grad_x": -30.0, "flux": 150.0, "rtol": 1e-09},
+    {"name": "tiny_temperature_difference", "doc": "极端小温差（1℃ / L=4，梯度 0.25）：小量级热流恢复精度校核。", "L": 4.0, "h": 1.0, "nx": 8, "k": 1.0, "thickness": 1.0, "t0": 20.0, "t1": 21.0, "grad_x": 0.25, "flux": 0.25, "rtol": 1e-09}
+  ]
+}

@@ -1,0 +1,77 @@
+{
+  "description": "Spearman-Kärber 完全步进法（GJB/Z 377A 方法202）计算正确性校核数据集。期望 mu/sigma 按梯形积分闭式式手工独立核算：以下/上各补一个等间隔边（p=0/1），mu=b-Σ 1/2(p_i+p_{i+1})(x_{i+1}-x_i)，sigma^2=b^2-Σ 1/2(p_i+p_{i+1})(x_{i+1}^2-x_i^2)-mu^2，负值截 0 且不低于 spacing/2。",
+  "cases": [
+    {
+      "name": "typical_sigmoid_ramp",
+      "doc": "典型 S 形频率表（等间隔，频率 0→1 完整覆盖）：hits/n=[0,.2,.5,.8,1]，mu=2.0、sigma=sqrt(1.3)。",
+      "x_levels": [0, 1, 2, 3, 4],
+      "hits": [0, 2, 5, 8, 10],
+      "n_per_level": 10,
+      "expected": {"mu": 2.0, "sigma": 1.1401754250991383}
+    },
+    {
+      "name": "abrupt_transition_floor",
+      "doc": "极端突跳：0→1 频率在一个间隔内完成，mu=0.5（梯形系数 0/.5/1/1 之和 2.5），方差闭式值为负被截 0，sigma 退化为 spacing/2=0.5。",
+      "x_levels": [0, 1, 2],
+      "hits": [0, 5, 5],
+      "n_per_level": 5,
+      "expected": {"mu": 0.5, "sigma": 0.5}
+    },
+    {
+      "name": "all_responding_from_lowest",
+      "doc": "极端边界分布：首个受试水平即全响应，0→1 转换落在补出的下边界区间内，mu=-0.5。",
+      "x_levels": [0, 1, 2],
+      "hits": [5, 5, 5],
+      "n_per_level": 5,
+      "expected": {"mu": -0.5, "sigma": 0.5}
+    },
+    {
+      "name": "uniform_half_frequency",
+      "doc": "极端平直频率：除补边外所有水平频率恒为 0.5，mu=1.5、sigma=sqrt(4.25)。",
+      "x_levels": [0, 1, 2, 3],
+      "hits": [5, 5, 5, 5],
+      "n_per_level": 10,
+      "expected": {"mu": 1.5, "sigma": 2.0615528128088303}
+    },
+    {
+      "name": "uneven_spacing_floor",
+      "doc": "极端不等间隔（间距 2 和 3，平均 spacing=2.5）：mu=1.0、闭式 sigma=1.0 低于 spacing/2=1.25 下限。",
+      "x_levels": [0, 2, 5],
+      "hits": [0, 5, 5],
+      "n_per_level": 5,
+      "expected": {"mu": 1.0, "sigma": 1.25}
+    },
+    {
+      "name": "large_physical_scale",
+      "doc": "极端大量程（水平 ×100）：mu/sigma 线性放大。",
+      "x_levels": [0, 100, 200, 300, 400],
+      "hits": [0, 2, 5, 8, 10],
+      "n_per_level": 10,
+      "expected": {"mu": 200.0, "sigma": 114.0175425099138}
+    },
+    {
+      "name": "nonmonotone_frequencies",
+      "doc": "极端非单调频率（1,0,1，先全响应再全不响应再全响应）：Kärber 不要求单调，mu=0.5、sigma=1.5。",
+      "x_levels": [0, 1, 2],
+      "hits": [5, 0, 5],
+      "n_per_level": 5,
+      "expected": {"mu": 0.5, "sigma": 1.5}
+    },
+    {
+      "name": "single_level_rejected",
+      "doc": "极端最小输入：仅 1 个水平无法构成积分边。",
+      "x_levels": [1],
+      "hits": [3],
+      "n_per_level": 5,
+      "raises": "至少需要 2 个水平"
+    },
+    {
+      "name": "zero_shots_per_level_rejected",
+      "doc": "非法每水平发数：n_per_level=0。",
+      "x_levels": [0, 1, 2],
+      "hits": [0, 0, 0],
+      "n_per_level": 0,
+      "raises": "每水平发数"
+    }
+  ]
+}
