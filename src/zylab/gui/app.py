@@ -18,9 +18,12 @@ from pathlib import Path
 
 from ..core import set_root_level, update_runtime_config
 from . import proxy_style as _proxy_style_module
+from . import (
+    resources_rc,  # noqa: F401  注册 qrc 图标资源（:/icons/xxx.svg）
+    theme,
+)
 from . import style as _style_layer
-from . import theme
-from .qt_compat import QApplication, QFontDatabase, QLibraryInfo, QLocale, QTranslator, exec_app
+from .qt_compat import QApplication, QFile, QFontDatabase, QIODevice, QLibraryInfo, QLocale, QTranslator, exec_app
 
 __all__ = [
     "apply_settings",
@@ -80,12 +83,30 @@ _ARROW_SVG = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 10 6"><path d
 _ARROW_UP_PATH = "M0 6 L5 0 L10 6 Z"
 _ARROW_DOWN_PATH = "M0 0 L10 0 L5 6 Z"
 
-#: close 按钮 SVG 模板（从 assets/icons/close.svg 读取后注入主题色）
-_CLOSE_SVG_PATH = Path(__file__).resolve().parent.parent / "assets" / "icons" / "close.svg"
+#: close 按钮 SVG 源（qrc 编译后路径：:/icons/close.svg）
+_CLOSE_SVG_QRC = ":/icons/close.svg"
 
-#: 项目树 branch indicator（展开/收起 chevron 图标）
-_CHEVRON_RIGHT_SVG = Path(__file__).resolve().parent.parent / "assets" / "icons" / "chevron_right.svg"
-_CHEVRON_DOWN_SVG = Path(__file__).resolve().parent.parent / "assets" / "icons" / "chevron_down.svg"
+#: 项目树 branch indicator SVG 源
+_CHEVRON_RIGHT_QRC = ":/icons/chevron_right.svg"
+_CHEVRON_DOWN_QRC = ":/icons/chevron_down.svg"
+
+
+def _load_qrc_svg(qrc_path: str) -> str | None:
+    """从 qrc 资源读取 SVG 文本.
+
+    Args:
+        qrc_path: qrc 内路径（如 ``:/icons/close.svg``）。
+
+    Returns:
+        SVG 文本；找不到时返回 None。
+    """
+    f = QFile(qrc_path)
+    if not f.open(QIODevice.ReadOnly):
+        return None
+    try:
+        return bytes(f.readAll()).decode("utf-8")
+    finally:
+        f.close()
 
 
 def _write_theme_svgs(pal: theme.Palette) -> dict[str, str]:
@@ -110,8 +131,8 @@ def _write_theme_svgs(pal: theme.Palette) -> dict[str, str]:
         stale.extend(p for p in cache.glob(f"{name}-{os.getpid()}-*.svg") if p != target)
 
     # --- close 按钮（QTabBar 关闭标签） ---
-    if _CLOSE_SVG_PATH.exists():
-        close_template = _CLOSE_SVG_PATH.read_text(encoding="utf-8")
+    close_template = _load_qrc_svg(_CLOSE_SVG_QRC)
+    if close_template is not None:
         # 普通态：次要文字色（低调不抢眼）
         close_normal = cache / f"close-normal-{tag}.svg"
         close_normal.write_text(
@@ -127,17 +148,18 @@ def _write_theme_svgs(pal: theme.Palette) -> dict[str, str]:
 
     # --- 项目树 branch indicator（chevron-right 折叠态 / chevron-down 展开态） ---
     chevron_color = pal.text_secondary
-    svg_path_map = (
-        ("chevron-right", _CHEVRON_RIGHT_SVG, "QSS_CHEVRON_RIGHT"),
-        ("chevron-down", _CHEVRON_DOWN_SVG, "QSS_CHEVRON_DOWN"),
+    chevron_map = (
+        ("chevron-right", _CHEVRON_RIGHT_QRC, "QSS_CHEVRON_RIGHT"),
+        ("chevron-down", _CHEVRON_DOWN_QRC, "QSS_CHEVRON_DOWN"),
     )
-    for fname, src, token_key in svg_path_map:
-        if src.exists():
-            template = src.read_text(encoding="utf-8")
-            target = cache / f"{fname}-{tag}.svg"
-            target.write_text(template.replace("<svg ", f'<svg fill="{chevron_color}" ', 1), encoding="utf-8")
-            tokens[token_key] = target.as_posix()
-            stale.extend(p for p in cache.glob(f"{fname}-{os.getpid()}-*.svg") if p != target)
+    for fname, src_qrc, token_key in chevron_map:
+        template = _load_qrc_svg(src_qrc)
+        if template is None:
+            continue
+        target = cache / f"{fname}-{tag}.svg"
+        target.write_text(template.replace("<svg ", f'<svg fill="{chevron_color}" ', 1), encoding="utf-8")
+        tokens[token_key] = target.as_posix()
+        stale.extend(p for p in cache.glob(f"{fname}-{os.getpid()}-*.svg") if p != target)
 
     # 清理本进程旧主题残留（失败无害，忽略）
     for path in stale:
@@ -413,84 +435,84 @@ def main() -> int:  # pragma: no cover（事件循环阻塞，需图形环境手
     from zylab.core.config import default_data_dir
     from zylab.core.log import setup_logging
 
-    _t_total = time.perf_counter()
+    from .perf import PerfReport, render_startup_summary, timed
 
-    setup_logging("dev")
-    _perf_log("setup_logging", _t_total)
+    # 启用 perf 测量：ZYLAB_PERF=1 或 CLI --perf（默认关闭，零开销）
+    report = PerfReport(enabled=bool(os.environ.get("ZYLAB_PERF")))
 
-    data_dir = default_data_dir()
+    with timed("启动流程", report=report, level=logging.DEBUG):
+        setup_logging("dev")
 
-    # 1. 优先从 settings.json 读取完整配置（外观 + 运行时）
-    theme_name = theme.DEFAULT_THEME
-    font_family_body: str | None = None
-    font_family_mono: str | None = None
-    font_scale: float | None = None
-    log_level: str | None = None
-    max_workers: int | None = None
-    solver_timeout_s: int | None = None
-    autosave_interval_sec: int | None = None
-    workspace_history_limit: int | None = None
+        data_dir = default_data_dir()
 
-    _t = time.perf_counter()
-    settings_path = data_dir / "settings.json"
-    if settings_path.is_file():
-        try:
-            data = _json.loads(settings_path.read_text(encoding="utf-8"))
-            theme_name = str(data.get("theme", theme.DEFAULT_THEME))
-            font_family_body = data.get("font_family_body")
-            font_family_mono = data.get("font_family_mono")
-            font_scale_val = data.get("font_scale")
-            if font_scale_val is not None:
-                font_scale = float(font_scale_val)
-            log_level_val = data.get("log_level")
-            if log_level_val:
-                log_level = str(log_level_val)
-            if "max_workers" in data:
-                max_workers = int(data["max_workers"])
-            if "solver_timeout_s" in data:
-                solver_timeout_s = int(data["solver_timeout_s"])
-            if "autosave_interval_sec" in data:
-                autosave_interval_sec = int(data["autosave_interval_sec"])
-            if "workspace_history_limit" in data:
-                workspace_history_limit = int(data["workspace_history_limit"])
-        except (OSError, ValueError) as exc:
-            logger.warning("settings.json 解析失败，使用默认: %s", exc)
+        # 1. 优先从 settings.json 读取完整配置（外观 + 运行时）
+        theme_name = theme.DEFAULT_THEME
+        font_family_body: str | None = None
+        font_family_mono: str | None = None
+        font_scale: float | None = None
+        log_level: str | None = None
+        max_workers: int | None = None
+        solver_timeout_s: int | None = None
+        autosave_interval_sec: int | None = None
+        workspace_history_limit: int | None = None
 
-    # 兼容旧版 theme.txt（settings.json 中无 theme 字段时回退）
-    if theme_name == theme.DEFAULT_THEME:
-        legacy_theme = load_theme_name(data_dir)
-        if legacy_theme != theme.DEFAULT_THEME:
-            theme_name = legacy_theme
-    _perf_log("读取 settings.json", _t)
+        with timed("读取 settings.json", report=report, level=logging.DEBUG):
+            settings_path = data_dir / "settings.json"
+            if settings_path.is_file():
+                try:
+                    data = _json.loads(settings_path.read_text(encoding="utf-8"))
+                    theme_name = str(data.get("theme", theme.DEFAULT_THEME))
+                    font_family_body = data.get("font_family_body")
+                    font_family_mono = data.get("font_family_mono")
+                    font_scale_val = data.get("font_scale")
+                    if font_scale_val is not None:
+                        font_scale = float(font_scale_val)
+                    log_level_val = data.get("log_level")
+                    if log_level_val:
+                        log_level = str(log_level_val)
+                    if "max_workers" in data:
+                        max_workers = int(data["max_workers"])
+                    if "solver_timeout_s" in data:
+                        solver_timeout_s = int(data["solver_timeout_s"])
+                    if "autosave_interval_sec" in data:
+                        autosave_interval_sec = int(data["autosave_interval_sec"])
+                    if "workspace_history_limit" in data:
+                        workspace_history_limit = int(data["workspace_history_limit"])
+                except (OSError, ValueError) as exc:
+                    logger.warning("settings.json 解析失败，使用默认: %s", exc)
 
-    _t = time.perf_counter()
-    app = create_app(theme_name=theme_name)
-    _perf_log("create_app (QApplication + 主题 + 样式)", _t)
+            # 兼容旧版 theme.txt（settings.json 中无 theme 字段时回退）
+            if theme_name == theme.DEFAULT_THEME:
+                legacy_theme = load_theme_name(data_dir)
+                if legacy_theme != theme.DEFAULT_THEME:
+                    theme_name = legacy_theme
 
-    # 2. 应用字体/字号/日志/运行时配置（主题已在 create_app 中应用，跳过避免重复切换）
-    _t = time.perf_counter()
-    apply_settings(
-        app,
-        font_family_body=font_family_body,
-        font_family_mono=font_family_mono,
-        font_scale=font_scale,
-        log_level=log_level,
-        max_workers=max_workers,
-        solver_timeout_s=solver_timeout_s,
-        autosave_interval_sec=autosave_interval_sec,
-        workspace_history_limit=workspace_history_limit,
-    )
-    _perf_log("apply_settings", _t)
+        with timed("create_app (QApplication + 主题 + 样式)", report=report, level=logging.DEBUG):
+            app = create_app(theme_name=theme_name)
 
-    register_user_themes(data_dir)
+        # 2. 应用字体/字号/日志/运行时配置（主题已在 create_app 中应用，跳过避免重复切换）
+        with timed("apply_settings", report=report, level=logging.DEBUG):
+            apply_settings(
+                app,
+                font_family_body=font_family_body,
+                font_family_mono=font_family_mono,
+                font_scale=font_scale,
+                log_level=log_level,
+                max_workers=max_workers,
+                solver_timeout_s=solver_timeout_s,
+                autosave_interval_sec=autosave_interval_sec,
+                workspace_history_limit=workspace_history_limit,
+            )
 
-    _t = time.perf_counter()
-    from .main_window import MainWindow  # 惰性导入，加速 --help 等非 GUI 路径
+        register_user_themes(data_dir)
 
-    window = MainWindow()
-    _perf_log("MainWindow.__init__", _t)
+        with timed("MainWindow.__init__", report=report, level=logging.DEBUG):
+            from .main_window import MainWindow  # 惰性导入，加速 --help 等非 GUI 路径
 
-    window.show()
-    _perf_log("窗口 show()", _t_total)
-    logger.debug("[启动] ============ GUI 启动总耗时: %.1f ms ============", (time.perf_counter() - _t_total) * 1000.0)
+            window = MainWindow()
+
+        window.show()
+
+    render_startup_summary(report)
+    logger.debug("[启动] ============ GUI 启动总耗时: %.1f ms ============", report.total * 1000.0)
     return exec_app(app)

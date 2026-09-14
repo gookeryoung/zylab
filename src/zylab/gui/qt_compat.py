@@ -11,9 +11,12 @@ from __future__ import annotations
 
 try:
     from PySide6.QtCore import (
+        Property,
         QAbstractTableModel,
         QByteArray,
         QEvent,
+        QFile,
+        QIODevice,
         QLibraryInfo,
         QLocale,
         QModelIndex,
@@ -45,6 +48,7 @@ try:
         QImage,
         QKeyEvent,
         QKeySequence,
+        QLinearGradient,
         QMouseEvent,
         QPainter,
         QPainterPath,
@@ -113,9 +117,12 @@ try:
     QT_API = "pyside6"
 except ImportError:  # pragma: no cover（3.8 环境走此分支）
     from PySide2.QtCore import (  # type: ignore[missing-import]
+        Property,  # noqa: F401  ruff 误判：PySide2 环境下 AppController 会使用
         QAbstractTableModel,
         QByteArray,
         QEvent,
+        QFile,
+        QIODevice,
         QLibraryInfo,
         QLocale,
         QModelIndex,
@@ -147,6 +154,7 @@ except ImportError:  # pragma: no cover（3.8 环境走此分支）
         QImage,
         QKeyEvent,
         QKeySequence,  # type: ignore[missing-import]
+        QLinearGradient,  # type: ignore[missing-import]
         QMouseEvent,
         QPainter,
         QPainterPath,
@@ -230,6 +238,7 @@ __all__ = [
     "QDockWidget",
     "QDoubleSpinBox",
     "QEvent",
+    "QFile",
     "QFileDialog",
     "QFont",
     "QFontDatabase",
@@ -244,6 +253,7 @@ __all__ = [
     "QGroupBox",
     "QHBoxLayout",
     "QHeaderView",
+    "QIODevice",
     "QIcon",
     "QImage",
     "QInputDialog",
@@ -253,6 +263,7 @@ __all__ = [
     "QLayout",
     "QLibraryInfo",
     "QLineEdit",
+    "QLinearGradient",
     "QListWidget",
     "QListWidgetItem",
     "QLocale",

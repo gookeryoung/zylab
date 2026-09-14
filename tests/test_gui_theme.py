@@ -353,6 +353,7 @@ class TestMainWindowThemeSwitch:
     def test_palette_theme_confirm_persists(self, qtbot, monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
         """命令面板确认主题应立即应用并持久化到数据目录."""
         monkeypatch.setattr("zylab.gui.main_window.default_data_dir", lambda: tmp_path)
+        monkeypatch.setattr("zylab.core.config.default_data_dir", lambda: tmp_path)
         from zylab.gui.main_window import MainWindow
 
         try:
@@ -378,6 +379,7 @@ class TestMainWindowThemeSwitch:
     def test_palette_theme_preview_not_persisted(self, qtbot, monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
         """主题预览仅应用不持久化；Esc 还原原主题."""
         monkeypatch.setattr("zylab.gui.main_window.default_data_dir", lambda: tmp_path)
+        monkeypatch.setattr("zylab.core.config.default_data_dir", lambda: tmp_path)
         from zylab.gui.main_window import MainWindow
 
         try:

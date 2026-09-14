@@ -39,6 +39,9 @@ typecheck: ## 类型检查 (pyrefly)
 typecheck-ci: ## 类型检查 (pyrefly, CI 平台 linux — 捕获跨平台问题)
 	uv run pyrefly check --python-platform linux
 
+build_qrc: ## 编译 SVG 图标到 Qt qrc 资源（scripts/build_qrc.py）
+	uv run python scripts/build_qrc.py
+
 check: lint typecheck typecheck-ci cov ## 运行全套门禁 (lint + typecheck + typecheck-ci + cov)
 
 doc: ## 构建 Sphinx 文档

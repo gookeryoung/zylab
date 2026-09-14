@@ -4,6 +4,9 @@ SVG 源为单色剪影（path 无 fill 属性，默认黑）。着色方式为�
 注入 ``fill="颜色"``（SVG fill 可继承到 path），再经 loadFromData 渲染 ——
 背景天然透明，不依赖 QPainter 合成模式的平台行为。
 主题切换后由调用方重新生成。
+
+图标资源编译进 Qt qrc（``scripts/build_qrc.py`` 生成），路径为
+``:/icons/xxx.svg``；磁盘文件作为 fallback（未运行 qrc 编译时可用）。
 """
 
 from __future__ import annotations
@@ -11,8 +14,12 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
-from . import theme
-from .qt_compat import QByteArray, QIcon, QPixmap, Qt
+# 注册 qrc 资源（编译后的 SVG 图标）
+from . import (
+    resources_rc,  # noqa: F401
+    theme,
+)
+from .qt_compat import QByteArray, QFile, QIcon, QIODevice, QPixmap, Qt
 
 __all__ = ["NAV_ICON_NAMES", "load_icon", "nav_icon", "tinted_pixmap"]
 
@@ -28,6 +35,33 @@ _PIXMAP_CACHE: dict[tuple[str, str, int], QPixmap] = {}
 NAV_ICON_NAMES = ("notebook", "analysis", "template")
 
 
+def _load_svg_text(name: str) -> str | None:
+    """从 qrc 或磁盘加载 SVG 图标原始文本.
+
+    优先从 qrc 资源读取（``:/icons/xxx.svg``），找不到时回退到磁盘文件。
+
+    Args:
+        name: 图标文件基名（不含 ``.svg`` 后缀）。
+
+    Returns:
+        SVG 文本；找不到时返回 None。
+    """
+    # 优先 qrc
+    qrc_path = f":/icons/{name}.svg"
+    f = QFile(qrc_path)
+    if f.open(QIODevice.ReadOnly):
+        try:
+            return bytes(f.readAll()).decode("utf-8")
+        finally:
+            f.close()
+    # 回退磁盘
+    disk_path = _ICONS_DIR / f"{name}.svg"
+    try:
+        return disk_path.read_text(encoding="utf-8")
+    except OSError:
+        return None
+
+
 def load_icon(name: str, size: int = 16) -> QIcon:
     """加载 SVG 图标原色渲染并缩放到指定尺寸.
 
@@ -41,10 +75,8 @@ def load_icon(name: str, size: int = 16) -> QIcon:
     Returns:
         原色 QIcon；SVG 缺失或渲染失败时返回空 QIcon（界面退化为纯文字）。
     """
-    svg_path = _ICONS_DIR / f"{name}.svg"
-    try:
-        text = svg_path.read_text(encoding="utf-8")
-    except OSError:
+    text = _load_svg_text(name)
+    if text is None:
         return QIcon()
     pixmap = QPixmap()
     if not pixmap.loadFromData(QByteArray(text.encode("utf-8")), "SVG"):
@@ -66,10 +98,8 @@ def nav_icon(name: str, color: str | None = None) -> QIcon:
         着色后的 QIcon（背景透明）；SVG 缺失或渲染失败时返回空 QIcon
         （界面退化为纯文字导航，不抛错）。
     """
-    svg_path = _ICONS_DIR / f"{name}.svg"
-    try:
-        text = svg_path.read_text(encoding="utf-8")
-    except OSError:
+    text = _load_svg_text(name)
+    if text is None:
         return QIcon()
     pal = theme.current_palette()
     tint = color if color is not None else pal.nav_text
@@ -99,10 +129,8 @@ def tinted_pixmap(name: str, color: str, size: int = 16) -> QPixmap:
     cached = _PIXMAP_CACHE.get(key)
     if cached is not None:
         return cached
-    svg_path = _ICONS_DIR / f"{name}.svg"
-    try:
-        text = svg_path.read_text(encoding="utf-8")
-    except OSError:
+    text = _load_svg_text(name)
+    if text is None:
         return QPixmap()
     tinted = _FILL_ATTR_RE.sub("", text).replace("<svg ", f'<svg fill="{color}" ', 1)
     pixmap = QPixmap()

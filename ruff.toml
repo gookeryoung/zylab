@@ -1,4 +1,4 @@
-extend-exclude = ["docs", "examples", "template"]
+extend-exclude = ["docs", "examples", "template", "**/resources_rc.py"]
 line-length    = 120
 target-version = "py310"
 

@@ -1,0 +1,41 @@
+<?xml version="1.0" encoding="utf-8"?>
+<RCC version="1.0">
+  <qresource prefix="/">
+    <file alias="icons/about.svg">../assets/icons/about.svg</file>
+    <file alias="icons/analysis.svg">../assets/icons/analysis.svg</file>
+    <file alias="icons/arrow_down.svg">../assets/icons/arrow_down.svg</file>
+    <file alias="icons/arrow_up.svg">../assets/icons/arrow_up.svg</file>
+    <file alias="icons/check.svg">../assets/icons/check.svg</file>
+    <file alias="icons/chevron_down.svg">../assets/icons/chevron_down.svg</file>
+    <file alias="icons/chevron_right.svg">../assets/icons/chevron_right.svg</file>
+    <file alias="icons/close.svg">../assets/icons/close.svg</file>
+    <file alias="icons/cross.svg">../assets/icons/cross.svg</file>
+    <file alias="icons/export_csv.svg">../assets/icons/export_csv.svg</file>
+    <file alias="icons/export_png.svg">../assets/icons/export_png.svg</file>
+    <file alias="icons/new.svg">../assets/icons/new.svg</file>
+    <file alias="icons/new_analysis.svg">../assets/icons/new_analysis.svg</file>
+    <file alias="icons/notebook.svg">../assets/icons/notebook.svg</file>
+    <file alias="icons/open_file.svg">../assets/icons/open_file.svg</file>
+    <file alias="icons/open_project.svg">../assets/icons/open_project.svg</file>
+    <file alias="icons/pause.svg">../assets/icons/pause.svg</file>
+    <file alias="icons/play.svg">../assets/icons/play.svg</file>
+    <file alias="icons/plot.svg">../assets/icons/plot.svg</file>
+    <file alias="icons/plus.svg">../assets/icons/plus.svg</file>
+    <file alias="icons/question.svg">../assets/icons/question.svg</file>
+    <file alias="icons/rerun.svg">../assets/icons/rerun.svg</file>
+    <file alias="icons/result_cloud.svg">../assets/icons/result_cloud.svg</file>
+    <file alias="icons/result_curve.svg">../assets/icons/result_curve.svg</file>
+    <file alias="icons/result_error.svg">../assets/icons/result_error.svg</file>
+    <file alias="icons/result_table.svg">../assets/icons/result_table.svg</file>
+    <file alias="icons/result_text.svg">../assets/icons/result_text.svg</file>
+    <file alias="icons/run_all.svg">../assets/icons/run_all.svg</file>
+    <file alias="icons/save.svg">../assets/icons/save.svg</file>
+    <file alias="icons/save_as_template.svg">../assets/icons/save_as_template.svg</file>
+    <file alias="icons/save_project.svg">../assets/icons/save_project.svg</file>
+    <file alias="icons/script.svg">../assets/icons/script.svg</file>
+    <file alias="icons/settings.svg">../assets/icons/settings.svg</file>
+    <file alias="icons/template.svg">../assets/icons/template.svg</file>
+    <file alias="icons/trash.svg">../assets/icons/trash.svg</file>
+    <file alias="icons/variable.svg">../assets/icons/variable.svg</file>
+  </qresource>
+</RCC>

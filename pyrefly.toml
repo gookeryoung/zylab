@@ -1,5 +1,5 @@
 preset           = "strict"
-project-excludes = [".venv/**", "template/**", "assets/**", "tests/**", "src/zylab/gui/qt_compat.py"]
+project-excludes = [".venv/**", "template/**", "assets/**", "tests/**", "src/zylab/gui/qt_compat.py", "scripts/**", "src/zylab/gui/resources_rc.py"]
 project-includes = ["**/*.ipynb", "**/*.py*"]
 python-version   = "3.10"
 search-path      = ["src", "."]
@@ -8,6 +8,8 @@ search-path      = ["src", "."]
 # 目前这些 stub 不完整导致 implicit-any-* / missing-* / bad-* 类规则噪音过多，
 # 关闭后保留 strict 中有价值的规则（missing-import / bad-return / invalid-override 等）。
 [errors]
+# pyrefly/pyright 不识别 PySide Slot 装饰器，报告 not-callable（Slot | Unknown）
+not-callable = false
 # numpy/PySide 泛型参数未显式声明（ndarray[Unknown, Unknown] / QWidget | Unknown）
 implicit-any-type-argument = false
 # 测试 fixture / 回调 lambda 无显式参数类型

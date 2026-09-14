@@ -11,12 +11,11 @@ from zylab.core import EventBus, default_data_dir
 from zylab.sci import TOPIC_WORKSPACE_CHANGED, WorkspaceInfo, WorkspaceManager
 
 from . import theme
-from .app import apply_theme, save_theme_name
+from .controllers.app_controller import AppController
 from .icons import nav_icon
 from .qt_compat import (
     QDockWidget,
     QEvent,
-    QFileDialog,
     QFrame,
     QHBoxLayout,
     QKeySequence,
@@ -68,6 +67,9 @@ class MainWindow(QMainWindow):
         self._kernel = ReplKernel(self._bus)
         self._kernel.set_workspace_manager(self._workspace_manager)
         self._perf_log("EventBus + WorkspaceManager + ReplKernel", _t)
+
+        # 跨页面协调控制器（持有主题切换、工作区管理、运行状态、对话框）
+        self._controller = AppController(self)
 
         # 侧边栏折叠状态（默认展开；恢复上次会话）
         self._project_dock_visible = True
@@ -277,22 +279,9 @@ class MainWindow(QMainWindow):
     def _set_theme(self, name: str, persist: bool) -> None:
         """应用主题并刷新全部页面（persist 时持久化并提示状态栏）.
 
-        命令面板主题预览（persist=False）与确认（persist=True）共用；
-        预览只切样式不落盘，Esc 取消由面板发还原主题信号。
+        转发给 :class:`AppController`，原逻辑已迁移到 controller。
         """
-        from .qt_compat import QApplication
-
-        if name != theme.current_palette().name:
-            apply_theme(QApplication.instance(), name)
-        self._refresh_sidebar_icons()
-        self._refresh_workspace_ui()
-        self._refresh_project_tree_icons()
-        self._notebook_page.refresh_theme()
-        self._flowchart_page.refresh_theme()
-        self._template_page.refresh_theme()
-        if persist:
-            save_theme_name(default_data_dir(), name)
-            self.statusBar().showMessage(f"主题已切换: {theme.current_palette().display_name}")
+        self._controller.set_theme(name, persist)
 
     def _refresh_sidebar_icons(self) -> None:
         """按当前主题色重绘头部工作区操作按钮（侧边栏已改为 Dock）."""
@@ -333,51 +322,23 @@ class MainWindow(QMainWindow):
             self._status_cwd_label.setText(f"  📁 {path_str}")
 
     def _on_switch_workspace(self) -> None:
-        """弹出目录选择对话框，确认后经 WorkspaceManager 切换工作区."""
-        current = str(self._workspace_manager.cwd)
-        target = QFileDialog.getExistingDirectory(
-            self,
-            "选择工作区目录",
-            current,
-            QFileDialog.ShowDirsOnly | QFileDialog.DontResolveSymlinks,
-        )
-        if not target:
-            return  # 用户取消
-        self._switch_workspace_to(target)
+        """弹出目录选择对话框（转发给 AppController）."""
+        self._controller._on_pick_workspace()
 
     def _refresh_and_show_workspace_menu(self) -> None:
-        """刷新历史下拉菜单并立即弹出（供按钮点击或 setMenu 自动触发）."""
-        self._refresh_workspace_menu()
+        """刷新历史下拉菜单并立即弹出（转发给 AppController）."""
+        self._controller._refresh_workspace_menu()
 
     def _refresh_workspace_menu(self) -> None:
-        """重建历史工作区菜单（最近 10 条，点击即切换）."""
-        menu = self._workspace_history_menu
-        menu.clear()
-        history = self._workspace_manager.recent_workspaces(limit=10)
-        if not history:
-            # 无历史：显示禁用占位项
-            empty = menu.addAction("（暂无历史）")
-            empty.setEnabled(False)
-            return
-        for path in history:
-            action = menu.addAction(str(path))
-            action.setData(str(path))
-            action.triggered.connect(lambda _checked=False, p=str(path): self._switch_workspace_to(p))
-        menu.addSeparator()
-        open_action = menu.addAction("选择其他目录…")
-        open_action.triggered.connect(self._on_switch_workspace)
+        """重建历史工作区菜单（转发给 AppController）."""
+        self._controller._refresh_workspace_menu()
 
     def _switch_workspace_to(self, target: str) -> None:
-        """切换到指定工作区路径（校验 + 应用 + 持久化 + 提示）."""
-        target_path = target
-        info = self._workspace_manager.set_workspace(target_path)
-        if info.source == "invalid":
-            self.statusBar().showMessage(f"切换失败：目录不存在 — {target_path}")
-            return
-        self._workspace_manager.save()
-        self._save_gui_state()
-        self._refresh_workspace_menu()
-        self.statusBar().showMessage(f"工作区已切换：{info.path}")
+        """切换到指定工作区路径（转发给 AppController）."""
+        self._controller.switch_workspace_to(target)
+
+    def _on_switch_workspace_placeholder(self) -> None:
+        pass
 
     def _connect(self) -> None:
         """连接导航与跨页信号；订阅工作区变更事件同步 UI；状态栏常驻工作区路径与运行状态."""
@@ -433,127 +394,12 @@ class MainWindow(QMainWindow):
         QShortcut(QKeySequence("Ctrl+Shift+P"), self, self._palette.open_commands)
 
     def _open_about_dialog(self) -> None:
-        """弹出关于对话框（独立 QDialog，语义令牌驱动，深色/浅色主题一致）."""
-        from .qt_compat import QDialog, QGridLayout
-
-        dlg = QDialog(self)
-        dlg.setWindowTitle("关于 zylab")
-        dlg.setMinimumWidth(440)
-        root = QVBoxLayout(dlg)
-        root.setContentsMargins(theme.SPACING_LG, theme.SPACING_LG, theme.SPACING_LG, theme.SPACING_LG)
-        root.setSpacing(theme.SPACING_MD)
-
-        # 品牌头部区：primary 背景 + primary_text 反色文字
-        brand_frame = QFrame(objectName="aboutBrand")
-        brand_layout = QVBoxLayout(brand_frame)
-        brand_layout.setContentsMargins(theme.SPACING_LG, theme.SPACING_LG, theme.SPACING_LG, theme.SPACING_LG)
-        brand_layout.setSpacing(theme.SPACING_SM)
-        brand = QLabel("zylab", objectName="aboutAppName")
-        desc = QLabel("通用科学计算仿真分析平台", objectName="aboutAppDesc")
-        desc.setWordWrap(True)
-        brand_layout.addWidget(brand)
-        brand_layout.addWidget(desc)
-        root.addWidget(brand_frame)
-
-        # 应用信息卡片
-        info_card = QFrame(objectName="aboutCard")
-        info_layout = QVBoxLayout(info_card)
-        info_layout.setContentsMargins(theme.SPACING_LG, theme.SPACING_LG, theme.SPACING_LG, theme.SPACING_LG)
-        info_layout.setSpacing(theme.SPACING_MD)
-        info_title = QLabel("应用信息", objectName="aboutCardTitle")
-        info_layout.addWidget(info_title)
-
-        grid = QGridLayout()
-        grid.setHorizontalSpacing(theme.SPACING_MD)
-        grid.setVerticalSpacing(theme.SPACING_SM)
-        grid.setColumnStretch(1, 1)
-        info_pairs = (
-            ("版本", f"v{__version__}"),
-            ("技术栈", "PySide2/PySide6 · NumPy · SciPy · matplotlib"),
-            ("求解内核", "离线 FEA 求解器"),
-            ("开源许可", "MIT License"),
-        )
-        for row, (k, v) in enumerate(info_pairs):
-            key_lbl = QLabel(k, objectName="aboutInfoTitle")
-            val_lbl = QLabel(v, objectName="aboutInfoValue")
-            val_lbl.setWordWrap(True)
-            grid.addWidget(key_lbl, row, 0)
-            grid.addWidget(val_lbl, row, 1)
-        info_layout.addLayout(grid)
-        root.addWidget(info_card)
-
-        # 版权说明卡片
-        lic_card = QFrame(objectName="aboutCard")
-        lic_layout = QVBoxLayout(lic_card)
-        lic_layout.setContentsMargins(theme.SPACING_LG, theme.SPACING_LG, theme.SPACING_LG, theme.SPACING_LG)
-        lic_layout.setSpacing(theme.SPACING_SM)
-        lic_title = QLabel("开源许可", objectName="aboutCardTitle")
-        lic_body = QLabel(
-            "zylab 采用 MIT License 开源发布，使用 Python 标准库与第三方开源库。\n详见项目根目录 LICENSE 文件。",
-            objectName="aboutBody",
-        )
-        lic_body.setWordWrap(True)
-        lic_layout.addWidget(lic_title)
-        lic_layout.addWidget(lic_body)
-        root.addWidget(lic_card)
-
-        root.addStretch()
-
-        dlg.exec_() if hasattr(dlg, "exec_") else dlg.exec()
+        """弹出关于对话框（转发给 AppController）."""
+        self._controller.open_about_dialog()
 
     def _open_settings_dialog(self) -> None:
-        """弹出设置对话框（SettingsPanel 嵌入 QDialog）.
-
-        保存时一次性应用主题 + 字体族 + 字号（通过 apply_settings），
-        再刷新各页面和状态栏提示。
-        """
-        from .app import apply_settings
-        from .qt_compat import QApplication, QDialog
-        from .widgets.settings_panel import SettingsPanel
-
-        dlg = QDialog(self)
-        dlg.setWindowTitle("设置")
-        dlg.setMinimumSize(560, 480)
-
-        panel = SettingsPanel()
-        from .qt_compat import QVBoxLayout
-
-        root = QVBoxLayout(dlg)
-        root.setContentsMargins(0, 0, 0, 0)
-        root.addWidget(panel)
-
-        import contextlib
-
-        def _on_save() -> None:
-            cfg = panel.save()
-            apply_settings(
-                QApplication.instance(),
-                theme_name=cfg.get("theme"),
-                font_family_body=cfg.get("font_family_body"),
-                font_family_mono=cfg.get("font_family_mono"),
-                font_scale=cfg.get("font_scale"),
-                log_level=cfg.get("log_level"),
-                max_workers=cfg.get("max_workers"),
-                solver_timeout_s=cfg.get("solver_timeout_s"),
-                autosave_interval_sec=cfg.get("autosave_interval_sec"),
-                workspace_history_limit=cfg.get("workspace_history_limit"),
-            )
-            self._refresh_sidebar_icons()
-            self._refresh_project_tree_icons()
-            self._notebook_page.refresh_theme()
-            self._flowchart_page.refresh_theme()
-            self._template_page.refresh_theme()
-            self.statusBar().showMessage("设置已保存并应用", 3000)
-            dlg.accept()
-
-        with contextlib.suppress(RuntimeError, TypeError):
-            panel._save_btn.clicked.disconnect()
-        panel._save_btn.clicked.connect(_on_save)
-        with contextlib.suppress(RuntimeError, TypeError):
-            panel._cancel_btn.clicked.disconnect()
-        panel._cancel_btn.clicked.connect(dlg.reject)
-
-        dlg.exec_() if hasattr(dlg, "exec_") else dlg.exec()
+        """弹出设置对话框（转发给 AppController）."""
+        self._controller.open_settings_dialog()
 
     def _install_page_shortcuts(self) -> None:
         """页面级快捷键：Ctrl+1/2/3 直达，Ctrl+PgDn/PgUp 循环切换."""
@@ -726,32 +572,5 @@ class MainWindow(QMainWindow):
     # ------------------------------------------------------------------ 运行状态 indicator
 
     def set_run_status(self, state: str, detail: str = "") -> None:
-        """设置右下角运行状态 indicator（流程图/参数化计算运行完成后由主窗口统一呈现）.
-
-        :param state: "idle"（就绪）/ "running"（运行中）/ "success"（成功）/ "error"（失败）.
-        :param detail: 失败时的错误详情（tooltip 承载，不超过 200 字）。
-        """
-        from .icons import tinted_pixmap
-
-        pal = theme.current_palette()
-        state_map = {
-            "idle": ("question", "就绪", pal.text_secondary),
-            "running": ("play", "计算中…", pal.primary),
-            "success": ("check", "运行完成", pal.success_text),
-            "error": ("cross", "运行失败", pal.danger_text),
-        }
-        icon_name, label, color = state_map.get(state, state_map["idle"])
-        # PySide2 QLabel 无 setIcon，用 tinted_pixmap 渲染为 QPixmap 再 setPixmap
-        self._indicator_icon.setPixmap(tinted_pixmap(icon_name, color, 16))
-        self._indicator_text.setText(label)
-        # 动态属性切换：QSS QLabel#runStatusText[state="xxx"] 选择器匹配后自动换色
-        self._indicator_text.setProperty("state", state)
-        # 触发 QSS 重新求值（Qt 不保证 setProperty 后自动重绘，显式 polish 确保状态切换即时生效）
-        self._indicator_text.style().unpolish(self._indicator_text)
-        self._indicator_text.style().polish(self._indicator_text)
-        if detail and state == "error":
-            self._run_indicator_widget.setToolTip(f"运行失败：{detail[:200]}")
-        elif detail:
-            self._run_indicator_widget.setToolTip(detail[:200])
-        else:
-            self._run_indicator_widget.setToolTip("运行状态（流程图/参数化计算运行完成后在此统一显示）")
+        """设置右下角运行状态 indicator（转发给 AppController）."""
+        self._controller.set_run_status(state, detail)
