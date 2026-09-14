@@ -69,7 +69,7 @@ class TestSettingsPanelSaveLoadRestart:
         panel._theme_combo.setCurrentIndex(theme_idx)
         panel._font_body_combo.setCurrentText("Microsoft YaHei")
         panel._font_mono_combo.setCurrentText("Consolas")
-        panel._font_scale_spin.setValue(12)  # 1.2x
+        panel._font_scale_spin.setValue(1.2)  # 1.2x
 
         # --- 性能 2 字段 ---
         panel._max_workers_spin.setValue(8)
@@ -96,7 +96,7 @@ class TestSettingsPanelSaveLoadRestart:
         assert panel2._theme_combo.currentData() == "dark"
         assert panel2._font_body_combo.currentText() == "Microsoft YaHei"
         assert panel2._font_mono_combo.currentText() == "Consolas"
-        assert panel2._font_scale_spin.value() == 12
+        assert panel2._font_scale_spin.value() == pytest.approx(1.2)
         assert panel2._max_workers_spin.value() == 8
         assert panel2._solver_timeout_spin.value() == 600
         assert panel2._log_level_combo.currentText() == "DEBUG"
@@ -130,7 +130,7 @@ class TestSettingsPanelSaveLoadRestart:
         assert panel._log_level_combo.currentText() == "WARNING"
 
         # 缺失的字段走默认
-        assert panel._font_scale_spin.value() == 10  # 默认 1.0
+        assert panel._font_scale_spin.value() == 1.0  # 默认 1.0
         assert panel._autosave_spin.value() == 60
         assert panel._history_limit_spin.value() == 10
 
@@ -168,8 +168,8 @@ class TestSettingsPanelSaveLoadRestart:
         # 验证控件值回到默认
         # 默认主题是 light
         assert panel._theme_combo.currentData() == "light"
-        # font_scale 默认 1.0 → SpinBox 值 10
-        assert panel._font_scale_spin.value() == 10
+        # font_scale 默认 1.0 → DoubleSpinBox 值 1.0
+        assert panel._font_scale_spin.value() == 1.0
         assert panel._log_level_combo.currentText() == "INFO"
 
         # 重置后保存
@@ -212,7 +212,7 @@ class TestMainWindowSettingsDialogAppliesAtRuntime:
         panel._theme_combo.setCurrentIndex(theme_idx)
         panel._font_body_combo.setCurrentText("Microsoft YaHei")
         panel._font_mono_combo.setCurrentText("Consolas")
-        panel._font_scale_spin.setValue(12)
+        panel._font_scale_spin.setValue(1.2)
         panel._max_workers_spin.setValue(12)
         panel._solver_timeout_spin.setValue(900)
         panel._autosave_spin.setValue(240)

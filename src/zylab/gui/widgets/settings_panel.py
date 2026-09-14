@@ -15,6 +15,7 @@ from pathlib import Path
 from .. import theme
 from ..qt_compat import (
     QComboBox,
+    QDoubleSpinBox,
     QFormLayout,
     QGroupBox,
     QHBoxLayout,
@@ -150,8 +151,10 @@ class SettingsPanel(QWidget):
             self._font_mono_combo.addItem(family)
         font_form.addRow("等宽字体族", self._font_mono_combo)
 
-        self._font_scale_spin = QSpinBox()
-        self._font_scale_spin.setRange(int(_FONT_SCALE_MIN * 10), int(_FONT_SCALE_MAX * 10))
+        self._font_scale_spin = QDoubleSpinBox()
+        self._font_scale_spin.setRange(_FONT_SCALE_MIN, _FONT_SCALE_MAX)
+        self._font_scale_spin.setDecimals(1)
+        self._font_scale_spin.setSingleStep(_FONT_SCALE_STEP)
         self._font_scale_spin.setSuffix(" 倍")
         self._font_scale_spin.setSpecialValueText(f"{_FONT_SCALE_MIN} 倍")
         font_form.addRow("字号缩放", self._font_scale_spin)
@@ -373,7 +376,7 @@ class SettingsPanel(QWidget):
             self._font_mono_combo.setCurrentText(mono_font)
 
         scale = cfg.get("font_scale", _DEFAULTS["font_scale"])
-        self._font_scale_spin.setValue(int(float(scale) * 10))
+        self._font_scale_spin.setValue(float(scale))
 
         self._max_workers_spin.setValue(int(cfg.get("max_workers", _DEFAULTS["max_workers"])))
         self._solver_timeout_spin.setValue(int(cfg.get("solver_timeout_s", 0)))
@@ -387,13 +390,12 @@ class SettingsPanel(QWidget):
         self._history_limit_spin.setValue(int(cfg.get("workspace_history_limit", _DEFAULTS["workspace_history_limit"])))
 
     def _collect_from_ui(self) -> dict:
-        scale_value = self._font_scale_spin.value() / 10.0
         return {
             # --- 外观 ---
             "theme": self._theme_combo.currentData(),
             "font_family_body": self._font_body_combo.currentText().strip(),
             "font_family_mono": self._font_mono_combo.currentText().strip(),
-            "font_scale": round(scale_value, 1),
+            "font_scale": round(self._font_scale_spin.value(), 1),
             # --- 性能 ---
             "max_workers": self._max_workers_spin.value(),
             "solver_timeout_s": self._solver_timeout_spin.value(),

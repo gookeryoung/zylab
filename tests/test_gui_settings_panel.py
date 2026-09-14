@@ -31,8 +31,8 @@ class TestSettingsPanel:
         assert panel._autosave_spin.value() == 60
         # Tab 数量 = 4（外观/性能/行为/高级）
         assert panel._tabs.count() == 4
-        # 字体缩放默认 1.0（SpinBox * 10 = 10）
-        assert panel._font_scale_spin.value() == 10
+        # 字体缩放默认 1.0（DoubleSpinBox 直接存浮点）
+        assert panel._font_scale_spin.value() == 1.0
 
     def test_save_and_load_roundtrip(self, qtbot, _mock_data_dir: Path) -> None:
         """save() 写入磁盘 → load() 能读回相同配置."""
@@ -96,7 +96,7 @@ class TestSettingsPanel:
             panel._theme_combo.setCurrentIndex(theme_idx)
         panel._font_body_combo.setCurrentText("Microsoft YaHei")
         panel._font_mono_combo.setCurrentText("Consolas")
-        panel._font_scale_spin.setValue(12)  # 1.2x
+        panel._font_scale_spin.setValue(1.2)  # 1.2x
 
         # 性能
         panel._max_workers_spin.setValue(4)
@@ -128,7 +128,7 @@ class TestSettingsPanel:
         assert panel2._theme_combo.currentData() == "dark"
         assert panel2._font_body_combo.currentText() == "Microsoft YaHei"
         assert panel2._font_mono_combo.currentText() == "Consolas"
-        assert panel2._font_scale_spin.value() == 12
+        assert panel2._font_scale_spin.value() == pytest.approx(1.2)
         assert panel2._max_workers_spin.value() == 4
         assert panel2._solver_timeout_spin.value() == 300
         assert panel2._log_level_combo.currentText() == "WARNING"
@@ -142,7 +142,7 @@ class TestSettingsPanel:
 
         # 先改值
         panel._max_workers_spin.setValue(16)
-        panel._font_scale_spin.setValue(8)  # 0.8x
+        panel._font_scale_spin.setValue(0.8)  # 0.8x
 
         # 重置
         panel._reset_to_defaults()
@@ -152,7 +152,7 @@ class TestSettingsPanel:
 
         default_workers = max(1, (os.cpu_count() or 4) // 2)
         assert panel._max_workers_spin.value() == default_workers
-        assert panel._font_scale_spin.value() == 10  # 1.0
+        assert panel._font_scale_spin.value() == 1.0
 
     def test_partial_new_fields_merge(self, qtbot, _mock_data_dir: Path) -> None:
         """只有老字段（无新增字段）的 settings.json，新增字段应走默认."""
@@ -179,7 +179,7 @@ class TestSettingsPanel:
         assert panel._log_level_combo.currentText() == "ERROR"
 
         # 新增字段走默认
-        assert panel._font_scale_spin.value() == 10  # 1.0
+        assert panel._font_scale_spin.value() == 1.0
         assert panel._history_limit_spin.value() == 10
 
     def test_save_returns_complete_dict(self, qtbot, _mock_data_dir: Path) -> None:
