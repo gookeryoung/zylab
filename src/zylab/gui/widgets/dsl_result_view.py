@@ -18,13 +18,11 @@ ResultView，本视图仅显示占位说明。
 from __future__ import annotations
 
 import csv
+import logging
 from pathlib import Path
 from typing import Any
 
-import pyqtgraph as pg
-
 from zylab.flowchart.results import CloudData, CurveData, TableData, TextData, ViewData
-from zylab.sci.palettes import CURVE_PALETTE, PG_CURVE_DEFAULTS, resolve_curve_color
 
 from .. import theme
 from ..qt_compat import (
@@ -36,7 +34,30 @@ from ..qt_compat import (
 )
 from ._table_utils import build_table_widget
 from ._widget_utils import clear_layout
-from .plot_widget import PlotMenuConfig, ZyPlotWidget
+
+logger = logging.getLogger(__name__)
+
+# --- 可选 pyqtgraph 依赖 ---
+try:
+    import pyqtgraph as pg
+
+    from zylab.sci.palettes import CURVE_PALETTE, PG_CURVE_DEFAULTS, resolve_curve_color
+
+    from .plot_widget import PlotMenuConfig, ZyPlotWidget
+
+    _HAS_PYQTGRAPH = True
+except Exception:  # 兜底捕获（ImportError / DLL 加载失败等）
+    pg = None  # type: ignore[assignment]
+    CURVE_PALETTE: list[str] = []  # type: ignore[assignment]
+    PG_CURVE_DEFAULTS: dict[str, Any] = {}  # type: ignore[assignment]
+    resolve_curve_color = None  # type: ignore[assignment]
+    ZyPlotWidget = None  # type: ignore[assignment,misc]
+    PlotMenuConfig = None  # type: ignore[assignment,misc]
+    _HAS_PYQTGRAPH = False
+    logger.debug("pyqtgraph 不可用，曲线视图将使用 SimpleLinePlot fallback")
+
+# --- SimpleLinePlot fallback（始终可用，仅依赖 PySide QPainter） ---
+from .simple_line_plot import SimpleLinePlot  # noqa: E402  必须在 pg fallback 之后
 
 __all__ = ["DslGroupedResultView", "DslResultView"]
 
@@ -164,11 +185,17 @@ def _build_block(title: str, payload: ViewData | str) -> QGroupBox:  # pragma: n
     return box
 
 
-def build_curve_widget(data: CurveData) -> ZyPlotWidget:
-    """DSL 曲线视图（统一组件 + 多序列图例 + 轴标签 + 对数轴 + 峰值标注 +
-    系列样式覆盖 + seaborn whitegrid 对齐 + 完整中文右键菜单）."""
+def build_curve_widget(data: CurveData) -> QWidget:
+    """DSL 曲线视图（pyqtgraph 可用时走 ZyPlotWidget，否则 SimpleLinePlot fallback）."""
+    if _HAS_PYQTGRAPH:
+        return _build_curve_pyqtgraph(data)
+    return _build_curve_simple(data)
+
+
+def _build_curve_pyqtgraph(data: CurveData) -> QWidget:
+    """pyqtgraph 分支：多序列图例 + 轴标签 + 对数轴 + 峰值标注 + 完整右键菜单."""
     defaults = PG_CURVE_DEFAULTS
-    # 使用统一绘图组件（构造时传入对数轴参数）
+    assert ZyPlotWidget is not None and PlotMenuConfig is not None
     plot = ZyPlotWidget(log_x=data.log_x, log_y=data.log_y)
     if data.series:
         plot.addLegend(offset=defaults["legend_offset"])
@@ -177,26 +204,21 @@ def build_curve_widget(data: CurveData) -> ZyPlotWidget:
     if data.y_label:
         plot.setLabel("left", data.y_label)
     for index, series in enumerate(data.series):
-        # 系列样式覆盖：color / dash / width
         style = data.series_styles[index] if index < len(data.series_styles) else {}
         color = style.get("color")
         width = float(style.get("width", defaults["curve_width"]))
-        dash = style.get("dash")  # "solid"/"dashed"/"dotted"/"-"
+        dash = style.get("dash")
         if color:
+            assert pg is not None
             pen = pg.mkPen(_resolve_color(color), width=width)
             if dash == "dashed":
                 pen.setDashPattern([4, 2])
             elif dash == "dotted":
                 pen.setDashPattern([1, 2])
         else:
+            assert pg is not None
             pen = pg.mkPen(CURVE_PALETTE[index % len(CURVE_PALETTE)], width=width)
-        plot.plot(
-            list(series.x),
-            list(series.y),
-            name=series.name,
-            pen=pen,
-        )
-        # 峰值标注（该序列的极值点）
+        plot.plot(list(series.x), list(series.y), name=series.name, pen=pen)
         if data.mark_peak and len(series.y) > 0:
             peak_idx = _peak_index(series.y)
             plot.plot(
@@ -208,11 +230,30 @@ def build_curve_widget(data: CurveData) -> ZyPlotWidget:
                 symbolBrush="#EF4444",
                 symbolSize=8,
             )
-    # 完整中文右键菜单（DSL 参数化计算曲线的用户体验 bug 修复点）
-    plot.setup_context_menu(
-        PlotMenuConfig(
-            export_csv_fn=lambda path: _export_curve_csv(data, path),
-        )
+    plot.setup_context_menu(PlotMenuConfig(export_csv_fn=lambda path: _export_curve_csv(data, path)))
+    return plot
+
+
+def _build_curve_simple(data: CurveData) -> SimpleLinePlot:
+    """SimpleLinePlot fallback（仅依赖 PySide QPainter，无 pyqtgraph 也能跑）."""
+    plot = SimpleLinePlot()
+    # 整理 series 为 SimpleLinePlot.set_data 期望的格式：[(xs, ys, label), ...]
+    series_tuples: list[tuple[list[float], list[float], str]] = [
+        (list(s.x), list(s.y), s.name or f"Series_{i + 1}") for i, s in enumerate(data.series)
+    ]
+    # 提取显式 color 覆盖（长度须与 series 等长；缺 color 的位置用占位，set_data 会跳过）
+    colors: list[str] | None = None
+    if data.series_styles and any(s.get("color") for s in data.series_styles):
+        extracted = [s.get("color") or "" for s in data.series_styles]
+        # 只有至少一个 color 非空才传给 set_data（让 SimpleLinePlot 自行跳过空值用 theme 回退）
+        if any(extracted):
+            colors = extracted
+    plot.set_data(
+        series_tuples,
+        x_label=data.x_label,
+        y_label=data.y_label,
+        title=data.title,
+        colors=colors,
     )
     return plot
 

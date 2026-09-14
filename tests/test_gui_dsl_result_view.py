@@ -207,3 +207,77 @@ def test_dsl_curve_csv_empty_series(tmp_path) -> None:
     _export_curve_csv(curve, path)
     lines = tmp_path.joinpath("empty.csv").read_text(encoding="utf-8").splitlines()
     assert lines[0] == "x"
+
+
+@pytest.mark.gui
+def test_build_curve_widget_fallback_simple(monkeypatch, qtbot) -> None:
+    """_HAS_PYQTGRAPH=False 时 build_curve_widget 走 SimpleLinePlot fallback."""
+    from zylab.flowchart.results import CurveData, CurveSeries
+    from zylab.gui.widgets import dsl_result_view as drv
+    from zylab.gui.widgets.simple_line_plot import SimpleLinePlot
+
+    monkeypatch.setattr(drv, "_HAS_PYQTGRAPH", False)
+    curve = CurveData(
+        title="simple 降级测试",
+        x_label="x",
+        y_label="y",
+        series=(CurveSeries("s1", (0.0, 1.0, 2.0), (0.0, 1.0, 4.0)),),
+    )
+    w = drv.build_curve_widget(curve)
+    qtbot.addWidget(w)
+    assert isinstance(w, SimpleLinePlot)
+    assert w._title == "simple 降级测试"
+    assert w._x_label == "x"
+    assert w._y_label == "y"
+    assert len(w._series) == 1
+    assert w._series[0]["label"] == "s1"
+    assert w._series[0]["x"] == [0.0, 1.0, 2.0]
+    assert w._series[0]["y"] == [0.0, 1.0, 4.0]
+
+
+@pytest.mark.gui
+def test_build_curve_simple_with_color_override(monkeypatch, qtbot) -> None:
+    """simple fallback 应正确提取 series_styles 中的 color 覆盖."""
+    from zylab.flowchart.results import CurveData, CurveSeries
+    from zylab.gui.widgets import dsl_result_view as drv
+    from zylab.gui.widgets.simple_line_plot import SimpleLinePlot
+
+    monkeypatch.setattr(drv, "_HAS_PYQTGRAPH", False)
+    curve = CurveData(
+        title="颜色覆盖",
+        series=(CurveSeries("a", (0.0, 1.0), (1.0, 2.0)),),
+        series_styles=({"color": "#FF0000", "width": 3},),
+    )
+    w = drv.build_curve_widget(curve)
+    qtbot.addWidget(w)
+    assert isinstance(w, SimpleLinePlot)
+    assert w._series[0]["color"] == "#FF0000"
+
+
+@pytest.mark.gui
+def test_build_curve_simple_multi_series(monkeypatch, qtbot) -> None:
+    """simple fallback 多序列时 series_styles 缺 color 的序列走 theme 回退."""
+    from zylab.flowchart.results import CurveData, CurveSeries
+    from zylab.gui.widgets import dsl_result_view as drv
+    from zylab.gui.widgets.simple_line_plot import SimpleLinePlot
+
+    monkeypatch.setattr(drv, "_HAS_PYQTGRAPH", False)
+    curve = CurveData(
+        title="多序列 simple",
+        series=(
+            CurveSeries("a", (0.0, 1.0), (1.0, 2.0)),
+            CurveSeries("b", (0.0, 1.0), (2.0, 1.0)),
+            CurveSeries("", (0.0, 1.0), (3.0, 0.0)),
+        ),
+        series_styles=({"color": "#FF0000"}, {"color": "#00FF00"}, {}),
+    )
+    w = drv.build_curve_widget(curve)
+    qtbot.addWidget(w)
+    assert isinstance(w, SimpleLinePlot)
+    assert len(w._series) == 3
+    assert w._series[0]["label"] == "a"
+    assert w._series[0]["color"] == "#FF0000"
+    assert w._series[1]["color"] == "#00FF00"
+    assert w._series[2]["label"] == "Series_3"  # 空名字自动补
+    # 缺 color 的不应是空字符串（theme 回退应由 SimpleLinePlot.set_data 填充）
+    assert w._series[2]["color"] != ""

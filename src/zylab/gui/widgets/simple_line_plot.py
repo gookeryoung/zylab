@@ -68,7 +68,12 @@ class SimpleLinePlot(QWidget):
         fallback_colors = [pal.primary, pal.nav_accent, pal.success_text, pal.warning_text, pal.danger_text]
         self._series = []
         for i, (xs, ys, label) in enumerate(series):
-            color = colors[i] if colors and i < len(colors) else fallback_colors[i % len(fallback_colors)]
+            # 显式 color 若非空字符串则使用，否则走 theme 回退
+            color = ""
+            if colors and i < len(colors):
+                color = colors[i] or ""
+            if not color:
+                color = fallback_colors[i % len(fallback_colors)]
             self._series.append({"x": list(xs), "y": list(ys), "label": label, "color": color})
         self._x_label = x_label
         self._y_label = y_label
