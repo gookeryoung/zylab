@@ -81,6 +81,9 @@ class TestRuntimeConfig:
 
     def test_update_out_of_range_gets_clamped(self) -> None:
         """越界值应自动夹紧，不抛异常."""
+        # 先把 max_workers 调到中间值，避免 DEFAULT_MAX_WORKERS == WORKERS_MIN/MAX
+        update_runtime_config(max_workers=min(WORKERS_MAX - 1, max(WORKERS_MIN + 1, 4)))
+
         # max_workers 小于 WORKERS_MIN → 夹紧到 WORKERS_MIN
         updated = update_runtime_config(max_workers=-5)
         assert get_max_workers() == WORKERS_MIN
@@ -91,6 +94,8 @@ class TestRuntimeConfig:
         assert get_max_workers() == WORKERS_MAX
         assert updated == {"max_workers": WORKERS_MAX}
 
+        # 先把 autosave_interval_sec 调到中间值
+        update_runtime_config(autosave_interval_sec=120)
         # autosave_interval_sec 小于 0 → 夹紧到 AUTOSAVE_MIN
         updated = update_runtime_config(autosave_interval_sec=-10)
         assert get_autosave_interval() == AUTOSAVE_MIN
@@ -103,9 +108,10 @@ class TestRuntimeConfig:
         updated = update_runtime_config(solver_timeout_s=999999)
         assert get_solver_timeout() == SOLVER_TIMEOUT_MAX
 
-        # workspace_history_limit 超范围夹紧
+        # 先把 workspace_history_limit 调到中间值
+        update_runtime_config(workspace_history_limit=50)
+        # workspace_history_limit 超范围夹紧（负数）
         updated = update_runtime_config(workspace_history_limit=-1)
-        # HISTORY_LIMIT_MIN = 1
         assert get_workspace_history_limit() == 1
 
         # 还原
